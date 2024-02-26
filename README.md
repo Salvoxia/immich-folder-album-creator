@@ -64,22 +64,12 @@ The environment variables are analoguous to the script's command line arguments.
 To perform a manually triggered run, use the following command:
 
 ```bash
-docker run --env API_URL="https://immich.mydomain.com/api/" \ 
-        --env API_KEY="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" \
-        --env ROOT_PATH="/external_libs/photos" \
-        salvoxia/immich-folder-album-creator:latest \
-        /script/immich_auto_album.sh
+docker run -e API_URL="https://immich.mydomain.com/api/" -e API_KEY="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" -e ROOT_PATH="/external_libs/photos" salvoxia/immich-folder-album-creator:latest /script/immich_auto_album.sh
 ```
 
 To set up the container to periodically run the script, give it a name, pass the TZ variable and a valid crontab expression as environment variable. This example runs the script every hour:
 ```bash
-docker run --name immich-folder-album-creator \
-        --env TZ="Europe/Berlin \
-        --env CRON_EXPRESSION="0 * * * *" \
-        --env API_URL="https://immich.mydomain.com/api/" \ 
-        --env API_KEY="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" \
-        --env ROOT_PATH="/external_libs/photos" \
-        salvoxia/immich-folder-album-creator:latest
+docker run --name immich-folder-album-creator -e TZ="Europe/Berlin" -e CRON_EXPRESSION="0 * * * *" -e API_URL="https://immich.mydomain.com/api/" -e API_KEY="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" -e ROOT_PATH="/external_libs/photos" salvoxia/immich-folder-album-creator:latest
 ```
 
 ### Run the container with Docker-Compose
