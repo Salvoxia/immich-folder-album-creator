@@ -12,6 +12,8 @@ parser.add_argument("root_path", help="The external libarary's root path in Immi
 parser.add_argument("api_url", help="The root API URL of immich, e.g. https://immich.mydomain.com/api/")
 parser.add_argument("api_key", help="The Immich API Key to use")
 parser.add_argument("-u", "--unattended", action="store_true", help="Do not ask for user confirmation after identifying albums. Set this flag to run script as a cronjob.")
+parser.add_argument("-a", "--album-levels", default=1, type=int, help="Number of levels of sub-folder for which to create separate albums")
+parser.add_argument("-s", "--album-separator", default=" ", type=str, help="Separator string to use for compound album names created from nested folders")
 parser.add_argument("-c", "--chunk-size", default=2000, type=int, help="Maximum number of assets to add to an album with a single API call")
 parser.add_argument("-C", "--fetch-chunk-size", default=5000, type=int, help="Maximum number of assets to fetch with a single API call")
 parser.add_argument("-l", "--log-level", default="INFO", choices=['CRITICAL', 'ERROR', 'WARNING', 'INFO', 'DEBUG'], help="Log level to use")
@@ -19,7 +21,6 @@ args = vars(parser.parse_args())
 # set up logger to log in logfmt format
 logging.basicConfig(level=args["log_level"], stream=sys.stdout, format='time=%(asctime)s level=%(levelname)s msg=%(message)s')
 logging.Formatter.formatTime = (lambda self, record, datefmt=None: datetime.datetime.fromtimestamp(record.created, datetime.timezone.utc).astimezone().isoformat(sep="T",timespec="milliseconds"))
-#logging.basicConfig(level=args["log_level"])
 
 
 root_path = args["root_path"]
@@ -28,6 +29,8 @@ api_key = args["api_key"]
 number_of_images_per_request = args["chunk_size"]
 number_of_assets_to_fetch_per_request = args["fetch_chunk_size"]
 unattended = args["unattended"]
+album_Levels = args["album_levels"]
+album_level_separator = args["album_separator"]
 logging.debug("root_path = %s", root_path)
 logging.debug("root_url = %s", root_path)
 logging.debug("api_key = %s", api_key)
@@ -85,10 +88,22 @@ for asset in assets:
     asset_path = asset['originalPath']
     if root_path not in asset_path:
         continue
-    album_name = asset_path.replace(root_path, '').split('/')[0]
+    # Chunks of the asset's path below root_path
+    path_chunks = asset_path.replace(root_path, '').split('/') 
+    # A single chunk means it's just the image file in no sub folder, ignore
+    if len(path_chunks) == 1:
+        continue
+    album_name_chunks = ()
+    # either use as many path chunks as we have (excluding the asset name itself),
+    # or the specified album levels
+    album_name_chunk_size = min(len(path_chunks)-1, album_Levels)
+    #logging.debug("path_chunks = %s", list(path_chunks))
+    #logging.debug("album_name_chunk_size = %s", album_name_chunk_size)
+    # Copy album name chunks from the path to use as album name
+    album_name_chunks = path_chunks[:album_name_chunk_size]
+    album_name = album_level_separator.join(album_name_chunks)
     # Check that the extracted album name is not actually a file name in root_path
-    if not asset_path.endswith(album_name):
-        album_to_assets[album_name].append(asset['id'])
+    album_to_assets[album_name].append(asset['id'])
 
 album_to_assets = {k:v for k, v in sorted(album_to_assets.items(), key=(lambda item: item[0]))}
 
