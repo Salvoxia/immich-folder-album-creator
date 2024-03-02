@@ -37,6 +37,8 @@ logging.debug("api_key = %s", api_key)
 logging.debug("number_of_images_per_request = %d", number_of_images_per_request)
 logging.debug("number_of_assets_to_fetch_per_request = %d", number_of_assets_to_fetch_per_request)
 logging.debug("unattended = %s", unattended)
+logging.debug("album_Levels = %d", album_Levels)
+logging.debug("album_level_separator = %s", album_level_separator)
 
 # Yield successive n-sized 
 # chunks from l. 
@@ -97,8 +99,6 @@ for asset in assets:
     # either use as many path chunks as we have (excluding the asset name itself),
     # or the specified album levels
     album_name_chunk_size = min(len(path_chunks)-1, album_Levels)
-    #logging.debug("path_chunks = %s", list(path_chunks))
-    #logging.debug("album_name_chunk_size = %s", album_name_chunk_size)
     # Copy album name chunks from the path to use as album name
     album_name_chunks = path_chunks[:album_name_chunk_size]
     album_name = album_level_separator.join(album_name_chunks)
