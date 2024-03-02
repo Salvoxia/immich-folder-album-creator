@@ -12,7 +12,7 @@ parser.add_argument("root_path", help="The external libarary's root path in Immi
 parser.add_argument("api_url", help="The root API URL of immich, e.g. https://immich.mydomain.com/api/")
 parser.add_argument("api_key", help="The Immich API Key to use")
 parser.add_argument("-u", "--unattended", action="store_true", help="Do not ask for user confirmation after identifying albums. Set this flag to run script as a cronjob.")
-parser.add_argument("-a", "--album-levels", default=1, type=int, help="Number of levels of sub-folder for which to create separate albums")
+parser.add_argument("-a", "--album-levels", default=1, type=int, help="Number of levels of sub-folder for which to create separate albums. Must be at least 1.")
 parser.add_argument("-s", "--album-separator", default=" ", type=str, help="Separator string to use for compound album names created from nested folders. Only effective if -a is set to a value > 1")
 parser.add_argument("-c", "--chunk-size", default=2000, type=int, help="Maximum number of assets to add to an album with a single API call")
 parser.add_argument("-C", "--fetch-chunk-size", default=5000, type=int, help="Maximum number of assets to fetch with a single API call")
@@ -29,7 +29,7 @@ api_key = args["api_key"]
 number_of_images_per_request = args["chunk_size"]
 number_of_assets_to_fetch_per_request = args["fetch_chunk_size"]
 unattended = args["unattended"]
-album_Levels = args["album_levels"]
+album_levels = args["album_levels"]
 album_level_separator = args["album_separator"]
 logging.debug("root_path = %s", root_path)
 logging.debug("root_url = %s", root_path)
@@ -37,8 +37,13 @@ logging.debug("api_key = %s", api_key)
 logging.debug("number_of_images_per_request = %d", number_of_images_per_request)
 logging.debug("number_of_assets_to_fetch_per_request = %d", number_of_assets_to_fetch_per_request)
 logging.debug("unattended = %s", unattended)
-logging.debug("album_Levels = %d", album_Levels)
+logging.debug("album_levels = %d", album_levels)
 logging.debug("album_level_separator = %s", album_level_separator)
+
+# Verify album levels
+if album_levels < 1:
+    parser.print_help()
+    exit(1)
 
 # Yield successive n-sized 
 # chunks from l. 
@@ -98,7 +103,7 @@ for asset in assets:
     album_name_chunks = ()
     # either use as many path chunks as we have (excluding the asset name itself),
     # or the specified album levels
-    album_name_chunk_size = min(len(path_chunks)-1, album_Levels)
+    album_name_chunk_size = min(len(path_chunks)-1, album_levels)
     # Copy album name chunks from the path to use as album name
     album_name_chunks = path_chunks[:album_name_chunk_size]
     album_name = album_level_separator.join(album_name_chunks)
