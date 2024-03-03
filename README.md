@@ -59,7 +59,7 @@ The environment variables are analoguous to the script's command line arguments.
 | ROOT_PATH            | yes | The external libarary's root path in Immich                                                        |
 | API_URL            | yes | The root API URL of immich, e.g. https://immich.mydomain.com/api/                                    |
 | API_KEY            | yes | The Immich API Key to use                                                                            |
-| ALBUM_LEVELS       | no | Number of levels of sub-folder for which to create separate albums. Must be at least 1. (default: 1) |
+| ALBUM_LEVELS       | no | Number of levels of sub-folder for which to create separate albums. Must be at least 1. (default: 1) Refer to [How it works](#how-it-works) for a detailed explanation|
 | ALBUM_SEPARATOR    | no | Separator string to use for compound album names created from nested folders. Only effective if -a is set to a value > 1 (default: " ") |
 | CHUNK_SIZE         | no | Maximum number of assets to add to an album with a single API call (default: 2000)  |
 | FETCH_CHUNK_SIZE   | no | Maximum number of assets to fetch with a single API call (default: 5000)            |
