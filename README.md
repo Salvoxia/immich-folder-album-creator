@@ -22,8 +22,8 @@ pip3 install -r requirements.txt
 ```
 3. Run the script
 ```bash
-python3 ./immich_auto_album.py
-usage: immich_auto_album.py [-h] [-u] [-c CHUNK_SIZE] [-C FETCH_CHUNK_SIZE] [-l {CRITICAL,ERROR,WARNING,INFO,DEBUG}] root_path api_url api_key
+python3 ./immich_auto_album.py -h
+usage: immich_auto_album.py [-h] [-u] [-a ALBUM_LEVELS] [-s ALBUM_SEPARATOR] [-c CHUNK_SIZE] [-C FETCH_CHUNK_SIZE] [-l {CRITICAL,ERROR,WARNING,INFO,DEBUG}] root_path api_url api_key
 
 Create Immich Albums from an external library path based on the top level folders
 
@@ -35,6 +35,10 @@ positional arguments:
 options:
   -h, --help            show this help message and exit
   -u, --unattended      Do not ask for user confirmation after identifying albums. Set this flag to run script as a cronjob. (default: False)
+  -a ALBUM_LEVELS, --album-levels ALBUM_LEVELS
+                        Number of levels of sub-folder for which to create separate albums. Must be at least 1. (default: 1)
+  -s ALBUM_SEPARATOR, --album-separator ALBUM_SEPARATOR
+                        Separator string to use for compound album names created from nested folders. Only effective if -a is set to a value > 1 (default: )
   -c CHUNK_SIZE, --chunk-size CHUNK_SIZE
                         Maximum number of assets to add to an album with a single API call (default: 2000)
   -C FETCH_CHUNK_SIZE, --fetch-chunk-size FETCH_CHUNK_SIZE
@@ -52,9 +56,11 @@ The environment variables are analoguous to the script's command line arguments.
 
 | Environment varible   |  Mandatory? | Description   |
 | :------------------- | :----------- | :------------ |
-| ROOT_PATH            | yes | The external libarary's root path in Immich                                      |
-| API_URL            | yes | The root API URL of immich, e.g. https://immich.mydomain.com/api/                  |
-| API_KEY            | yes | The Immich API Key to use                                                          |
+| ROOT_PATH            | yes | The external libarary's root path in Immich                                                        |
+| API_URL            | yes | The root API URL of immich, e.g. https://immich.mydomain.com/api/                                    |
+| API_KEY            | yes | The Immich API Key to use                                                                            |
+| ALBUM_LEVELS       | no | Number of levels of sub-folder for which to create separate albums. Must be at least 1. (default: 1) |
+| ALBUM_SEPARATOR    | no | Separator string to use for compound album names created from nested folders. Only effective if -a is set to a value > 1 (default: " ") |
 | CHUNK_SIZE         | no | Maximum number of assets to add to an album with a single API call (default: 2000)  |
 | FETCH_CHUNK_SIZE   | no | Maximum number of assets to fetch with a single API call (default: 5000)            |
 | LOG_LEVEL          | no | Log level to use (default: INFO), allowed values: CRITICAL,ERROR,WARNING,INFO,DEBUG |
@@ -111,24 +117,48 @@ services:
 
 The script utilizies [Immich's REST API](https://immich.app/docs/api/) to query all images indexed by Immich, extract the folder for all images that are in the top level of a provided `root_path`, then creates albums with the names of these folders (if not yet exists) and adds the images to the correct albums.
 
-It is important to understand the concept of `root_path`. Suppose you provide an external library to Immich under the path `/external_libs/photos`.
+The following arguments influence what albums are created:  
+`root_path`, `--album-levels` and `--album-separator`  
+
+  - `root_path` is the base path where images are looked for. Only images within that base path will be considered for album creation.
+  - `--album-levels` controls how many levels of nested folders are considered when creating albums. The default is `1`. For examples see below.
+  - `--album-separator` sets the separator used for concatenating nested folder names to create an album name. It is a blank by default.
+
+__Exmaples:__  
+Suppose you provide an external library to Immich under the path `/external_libs/photos`.
 The folder structure of `photos` might look like this:
+
 ```
+/external_libs/photos/2020
+/external_libs/photos/2020/02 Feb
+/external_libs/photos/2020/02 Feb/Vacation
 /external_libs/photos/Birthdays/John
 /external_libs/photos/Birthdays/Jane
 /external_libs/photos/Skiing 2023
-/external_libs/photos/Vacation 2020 02
 ```
-If you set `root_path` to `/external_libs/photos`, the script will create three albums:
- - Birthdays
- - Skiing 2023
- - Vacation 2020 02
 
-All photos from John's and Jane's birthdays will be added to the `Birthdays` album.
+Albums created for `root_path = /external_libs/photos` (`--album-levels` is implicitly set to `1`):
+ - `2020` (containing all images from `2020` and all sub-folders)
+ - `Birthdays` (containing all images from Birthdays itself as well as `John` and `Jane`)
+ - `Skiing 2023`
 
-If you set `root_path` to `/external_libs/photos/Birthdays`, only two albums will be created:
- - John
- - Jane
+Albums created for `root_path = /external_libs/photos/Birthdays`:
+ - `Birthdays` (containing all images from Birthdays itself as well as `John` and `Jane`)
 
-Since Immich does not support nested albums ([yet?](https://github.com/immich-app/immich/discussions/2073)), neither does this script.
+ Albums created for `root_path = /external_libs/photos` and `--album-levels = 2`:
+ - `2020` (containing all images from `2020` itself, if any)
+ - `2020 02 Feb` (containing all images from `02 Feb` itself and `02 Feb/Vacation`)
+ - `Birthdays John`
+ - `Birthdays Jane`
+ - `Skiing 2023`
+
+ Albums created for `root_path = /external_libs/photos`, `--album-levels = 3` and `--album-separator " - "` :
+ - `2020` (containing all images from `2020` itself, if any)
+ - `2020 - 02 Feb` (containing all images from `02 Feb` itself, if any)
+ - `2020 - 02 Feb - Vacation` (containing all imags from `Vacation`)
+ - `Birthdays - John`
+ - `Birthdays - Jane`
+ - `Skiing 2023`
+
+Since Immich does not support real nested albums ([yet?](https://github.com/immich-app/immich/discussions/2073)), neither does this script.
 
