@@ -1,24 +1,27 @@
 #!/usr/bin/env sh
 
-# Always run unattended
-arg_fetch_chunk_size=""
-arg_chunk_size=""
-arg_log_Level=""
-arg_root_path=""
-arg_api_url=""
-arg_api_key=""
+args="-u $ROOT_PATH $API_URL $API_KEY"
+
+if [ ! -z "$ALBUM_LEVELS" ]; then
+    args="-a $ALBUM_LEVELS $args"
+fi
+
+if [ ! -z "$ALBUM_SEPARATOR" ]; then
+    args="-s \"$ALBUM_SEPARATOR\" $args"
+fi
 
 if [ ! -z "$FETCH_CHUNK_SIZE" ]; then
-    arg_fetch_chunk_size="-C $FETCH_CHUNK_SIZE"
+    args="-C $FETCH_CHUNK_SIZE $args"
 fi
 
 if [ ! -z "$CHUNK_SIZE" ]; then
-    arg_chunk_size="-c $CHUNK_SIZE"
+    args="-c $CHUNK_SIZE $args"
 fi
 
 if [ ! -z "$LOG_LEVEL" ]; then
-    arg_log_Level="-l $LOG_LEVEL"
+    args="-l $LOG_LEVEL $args"
 fi
 
+
 BASEDIR=$(dirname "$0")
-python3 $BASEDIR/immich_auto_album.py -u $arg_fetch_chunk_size $arg_chunk_size $arg_log_Level $ROOT_PATH $API_URL $API_KEY
+echo $args | xargs python3 -u $BASEDIR/immich_auto_album.py
