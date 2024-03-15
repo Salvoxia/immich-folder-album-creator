@@ -143,7 +143,8 @@ Albums created for `root_path = /external_libs/photos` (`--album-levels` is impl
  - `Skiing 2023`
 
 Albums created for `root_path = /external_libs/photos/Birthdays`:
- - `Birthdays` (containing all images from Birthdays itself as well as `John` and `Jane`)
+ - `John`
+ - `Jane`
 
  Albums created for `root_path = /external_libs/photos` and `--album-levels = 2`:
  - `2020` (containing all images from `2020` itself, if any)
