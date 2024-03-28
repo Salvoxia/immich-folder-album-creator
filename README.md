@@ -3,7 +3,7 @@
 This is a python script designed to automatically create albums in [Immich](https://immich.app/) from a folder structure mounted into the Immich container.
 This is useful for automatically creating and populating albums for external libraries.
 
-__Current compatibility:__ Immich v1.99.x and below
+__Current compatibility:__ Immich v1.100.x and below
 
 ## Disclaimer
 This script is mostly based on the following original script: [REDVM/immich_auto_album.py](https://gist.github.com/REDVM/d8b3830b2802db881f5b59033cf35702)
