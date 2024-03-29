@@ -124,7 +124,7 @@ The following arguments influence what albums are created:
   - `--album-levels` controls how many levels of nested folders are considered when creating albums. The default is `1`. For examples see below.
   - `--album-separator` sets the separator used for concatenating nested folder names to create an album name. It is a blank by default.
 
-__Exmaples:__  
+__Examples:__  
 Suppose you provide an external library to Immich under the path `/external_libs/photos`.
 The folder structure of `photos` might look like this:
 
