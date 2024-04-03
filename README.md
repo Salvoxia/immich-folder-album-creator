@@ -2,6 +2,7 @@
 
 This is a python script designed to automatically create albums in [Immich](https://immich.app/) from a folder structure mounted into the Immich container.
 This is useful for automatically creating and populating albums for external libraries.
+Using the provided docker image, the script can simply be added to the Immich compose stack and run along the rest of Immich's containers.
 
 __Current compatibility:__ Immich v1.100.x and below
 
