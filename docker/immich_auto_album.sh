@@ -1,6 +1,22 @@
 #!/usr/bin/env sh
 
-args="-u $ROOT_PATH $API_URL $API_KEY"
+# parse comma separated root paths
+root_paths=$(echo "$ROOT_PATH" | tr "," "\n")
+main_root_path=""
+additional_root_paths=""
+for path in ${root_paths}; do
+  if [ -z "$main_root_path" ]; then
+    main_root_path="$path"
+  else
+    additional_root_paths="-r $path $additional_root_paths"
+  fi
+done
+
+args="$main_root_path $API_URL $API_KEY"
+
+if [ ! -z "$additional_root_paths" ]; then
+    args="$additional_root_paths $args"
+fi
 
 if [ ! -z "$ALBUM_LEVELS" ]; then
     args="-a $ALBUM_LEVELS $args"
