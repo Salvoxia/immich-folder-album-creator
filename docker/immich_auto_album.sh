@@ -12,7 +12,7 @@ for path in ${root_paths}; do
   fi
 done
 
-args="$main_root_path $API_URL $API_KEY"
+args="-u $main_root_path $API_URL $API_KEY"
 
 if [ ! -z "$additional_root_paths" ]; then
     args="$additional_root_paths $args"
