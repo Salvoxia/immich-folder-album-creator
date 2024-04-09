@@ -8,9 +8,10 @@ from collections import defaultdict
 
 
 parser = argparse.ArgumentParser(description="Create Immich Albums from an external library path based on the top level folders", formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-parser.add_argument("root_path", help="The external libarary's root path in Immich")
+parser.add_argument("root_path", action='append', help="The external libarary's root path in Immich")
 parser.add_argument("api_url", help="The root API URL of immich, e.g. https://immich.mydomain.com/api/")
 parser.add_argument("api_key", help="The Immich API Key to use")
+parser.add_argument("-r", "--root-path", action="append", help="Additional external libarary root path in Immich; May be specified multiple times for multiple import paths or external libraries.")
 parser.add_argument("-u", "--unattended", action="store_true", help="Do not ask for user confirmation after identifying albums. Set this flag to run script as a cronjob.")
 parser.add_argument("-a", "--album-levels", default=1, type=int, help="Number of levels of sub-folder for which to create separate albums. Must be at least 1.")
 parser.add_argument("-s", "--album-separator", default=" ", type=str, help="Separator string to use for compound album names created from nested folders. Only effective if -a is set to a value > 1")
@@ -22,8 +23,7 @@ args = vars(parser.parse_args())
 logging.basicConfig(level=args["log_level"], stream=sys.stdout, format='time=%(asctime)s level=%(levelname)s msg=%(message)s')
 logging.Formatter.formatTime = (lambda self, record, datefmt=None: datetime.datetime.fromtimestamp(record.created, datetime.timezone.utc).astimezone().isoformat(sep="T",timespec="milliseconds"))
 
-
-root_path = args["root_path"]
+root_paths = args["root_path"]
 root_url = args["api_url"]
 api_key = args["api_key"]
 number_of_images_per_request = args["chunk_size"]
@@ -31,7 +31,7 @@ number_of_assets_to_fetch_per_request = args["fetch_chunk_size"]
 unattended = args["unattended"]
 album_levels = args["album_levels"]
 album_level_separator = args["album_separator"]
-logging.debug("root_path = %s", root_path)
+logging.debug("root_path = %s", root_paths)
 logging.debug("root_url = %s", root_url)
 logging.debug("api_key = %s", api_key)
 logging.debug("number_of_images_per_request = %d", number_of_images_per_request)
@@ -61,8 +61,12 @@ requests_kwargs = {
         'Accept': 'application/json'
     }
 }
-if root_path[-1] != '/':
-    root_path = root_path + '/'
+
+# append trailing slash to all root paths
+for i in range(len(root_paths)):
+    if root_paths[i][-1] != '/':
+        root_paths[i] = root_paths[i] + '/'
+# append trailing slash to root URL
 if root_url[-1] != '/':
     root_url = root_url + '/'
 
@@ -93,22 +97,23 @@ logging.info("Sorting assets to corresponding albums using folder name")
 album_to_assets = defaultdict(list)
 for asset in assets:
     asset_path = asset['originalPath']
-    if root_path not in asset_path:
-        continue
-    # Chunks of the asset's path below root_path
-    path_chunks = asset_path.replace(root_path, '').split('/') 
-    # A single chunk means it's just the image file in no sub folder, ignore
-    if len(path_chunks) == 1:
-        continue
-    album_name_chunks = ()
-    # either use as many path chunks as we have (excluding the asset name itself),
-    # or the specified album levels
-    album_name_chunk_size = min(len(path_chunks)-1, album_levels)
-    # Copy album name chunks from the path to use as album name
-    album_name_chunks = path_chunks[:album_name_chunk_size]
-    album_name = album_level_separator.join(album_name_chunks)
-    # Check that the extracted album name is not actually a file name in root_path
-    album_to_assets[album_name].append(asset['id'])
+    for root_path in root_paths:
+        if root_path not in asset_path:
+            continue
+        # Chunks of the asset's path below root_path
+        path_chunks = asset_path.replace(root_path, '').split('/') 
+        # A single chunk means it's just the image file in no sub folder, ignore
+        if len(path_chunks) == 1:
+            continue
+        album_name_chunks = ()
+        # either use as many path chunks as we have (excluding the asset name itself),
+        # or the specified album levels
+        album_name_chunk_size = min(len(path_chunks)-1, album_levels)
+        # Copy album name chunks from the path to use as album name
+        album_name_chunks = path_chunks[:album_name_chunk_size]
+        album_name = album_level_separator.join(album_name_chunks)
+        # Check that the extracted album name is not actually a file name in root_path
+        album_to_assets[album_name].append(asset['id'])
 
 album_to_assets = {k:v for k, v in sorted(album_to_assets.items(), key=(lambda item: item[0]))}
 
