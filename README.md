@@ -24,7 +24,7 @@ pip3 install -r requirements.txt
 3. Run the script
 ```bash
 python3 ./immich_auto_album.py -h
-usage: immich_auto_album.py [-h] [-u] [-a ALBUM_LEVELS] [-s ALBUM_SEPARATOR] [-c CHUNK_SIZE] [-C FETCH_CHUNK_SIZE] [-l {CRITICAL,ERROR,WARNING,INFO,DEBUG}] root_path api_url api_key
+usage: immich_auto_album.py [-h] [-r ROOT_PATH] [-u] [-a ALBUM_LEVELS] [-s ALBUM_SEPARATOR] [-c CHUNK_SIZE] [-C FETCH_CHUNK_SIZE] [-l {CRITICAL,ERROR,WARNING,INFO,DEBUG}] root_path api_url api_key
 
 Create Immich Albums from an external library path based on the top level folders
 
@@ -35,6 +35,8 @@ positional arguments:
 
 options:
   -h, --help            show this help message and exit
+  -r ROOT_PATH, --root-path ROOT_PATH
+                        Additional external libarary root path in Immich; May be specified multiple times for multiple import paths or external libraries. (default: None)
   -u, --unattended      Do not ask for user confirmation after identifying albums. Set this flag to run script as a cronjob. (default: False)
   -a ALBUM_LEVELS, --album-levels ALBUM_LEVELS
                         Number of levels of sub-folder for which to create separate albums. Must be at least 1. (default: 1)
@@ -45,7 +47,7 @@ options:
   -C FETCH_CHUNK_SIZE, --fetch-chunk-size FETCH_CHUNK_SIZE
                         Maximum number of assets to fetch with a single API call (default: 5000)
   -l {CRITICAL,ERROR,WARNING,INFO,DEBUG}, --log-level {CRITICAL,ERROR,WARNING,INFO,DEBUG}
-                        Log level to use (default: INFO)
+                        Log level to use (default: INFO
 ```
 
 ### Docker
@@ -57,7 +59,7 @@ The environment variables are analoguous to the script's command line arguments.
 
 | Environment varible   |  Mandatory? | Description   |
 | :------------------- | :----------- | :------------ |
-| ROOT_PATH            | yes | The external libarary's root path in Immich                                                        |
+| ROOT_PATH            | yes | A single or a comma separated list of import paths for external libraries in Immich                       |
 | API_URL            | yes | The root API URL of immich, e.g. https://immich.mydomain.com/api/                                    |
 | API_KEY            | yes | The Immich API Key to use                                                                            |
 | ALBUM_LEVELS       | no | Number of levels of sub-folder for which to create separate albums. Must be at least 1. (default: 1) Refer to [How it works](#how-it-works) for a detailed explanation|
@@ -77,6 +79,11 @@ docker run -e API_URL="https://immich.mydomain.com/api/" -e API_KEY="xxxxxxxxxxx
 To set up the container to periodically run the script, give it a name, pass the TZ variable and a valid crontab expression as environment variable. This example runs the script every hour:
 ```bash
 docker run --name immich-folder-album-creator -e TZ="Europe/Berlin" -e CRON_EXPRESSION="0 * * * *" -e API_URL="https://immich.mydomain.com/api/" -e API_KEY="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" -e ROOT_PATH="/external_libs/photos" salvoxia/immich-folder-album-creator:latest
+```
+
+If your external library uses multiple import paths or you have set up multiple external libraries, you can pass multiple paths in `ROOT_PATH` by setting it to a comma separated list of paths:  
+```bash
+docker run --name immich-folder-album-creator -e TZ="Europe/Berlin" -e CRON_EXPRESSION="0 * * * *" -e API_URL="https://immich.mydomain.com/api/" -e API_KEY="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" -e ROOT_PATH="/external_libs/photos,/external_libs/more_photos" salvoxia/immich-folder-album-creator:latest
 ```
 
 ### Run the container with Docker-Compose
@@ -116,12 +123,12 @@ services:
 
 ## How it works
 
-The script utilizies [Immich's REST API](https://immich.app/docs/api/) to query all images indexed by Immich, extract the folder for all images that are in the top level of a provided `root_path`, then creates albums with the names of these folders (if not yet exists) and adds the images to the correct albums.
+The script utilizies [Immich's REST API](https://immich.app/docs/api/) to query all images indexed by Immich, extract the folder for all images that are in the top level of any provided `root_path`, then creates albums with the names of these folders (if not yet exists) and adds the images to the correct albums.
 
 The following arguments influence what albums are created:  
 `root_path`, `--album-levels` and `--album-separator`  
 
-  - `root_path` is the base path where images are looked for. Only images within that base path will be considered for album creation.
+  - `root_path` is the base path where images are looked for. Multiple root paths can be specified by adding the `-r` argument as many times as necessary. Only images within that base path will be considered for album creation.
   - `--album-levels` controls how many levels of nested folders are considered when creating albums. The default is `1`. For examples see below.
   - `--album-separator` sets the separator used for concatenating nested folder names to create an album name. It is a blank by default.
 
