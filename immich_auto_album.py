@@ -41,7 +41,7 @@ logging.debug("album_levels = %d", album_levels)
 logging.debug("album_level_separator = %s", album_level_separator)
 
 # Verify album levels
-if album_levels < 1:
+if album_levels == 0:
     parser.print_help()
     exit(1)
 
@@ -105,12 +105,21 @@ for asset in assets:
         # A single chunk means it's just the image file in no sub folder, ignore
         if len(path_chunks) == 1:
             continue
+        
+        # remove last item from path chunks, which is the file name
+        del path_chunks[-1]
         album_name_chunks = ()
-        # either use as many path chunks as we have (excluding the asset name itself),
+        # either use as many path chunks as we have,
         # or the specified album levels
-        album_name_chunk_size = min(len(path_chunks)-1, album_levels)
+        album_name_chunk_size = min(len(path_chunks), album_levels)
+        if album_levels < 0:
+            album_name_chunk_size = min(len(path_chunks), abs(album_levels))*-1
+
         # Copy album name chunks from the path to use as album name
         album_name_chunks = path_chunks[:album_name_chunk_size]
+        if album_name_chunk_size < 0:
+            album_name_chunks = path_chunks[album_name_chunk_size:]
+
         album_name = album_level_separator.join(album_name_chunks)
         # Check that the extracted album name is not actually a file name in root_path
         album_to_assets[album_name].append(asset['id'])
