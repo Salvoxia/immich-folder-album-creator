@@ -22,7 +22,7 @@ curl https://raw.githubusercontent.com/Salvoxia/immich-folder-album-creator/main
 pip3 install -r requirements.txt
 ```
 3. Run the script
-```bash
+```
 python3 ./immich_auto_album.py -h
 usage: immich_auto_album.py [-h] [-r ROOT_PATH] [-u] [-a ALBUM_LEVELS] [-s ALBUM_SEPARATOR] [-c CHUNK_SIZE] [-C FETCH_CHUNK_SIZE] [-l {CRITICAL,ERROR,WARNING,INFO,DEBUG}] root_path api_url api_key
 
@@ -39,7 +39,7 @@ options:
                         Additional external libarary root path in Immich; May be specified multiple times for multiple import paths or external libraries. (default: None)
   -u, --unattended      Do not ask for user confirmation after identifying albums. Set this flag to run script as a cronjob. (default: False)
   -a ALBUM_LEVELS, --album-levels ALBUM_LEVELS
-                        Number of levels of sub-folder for which to create separate albums. Must be at least 1. (default: 1)
+                        Number of sub-folders below the root path used for album name creation. Positive numbers start from top of the folder structure, negative numbers from the bottom. Cannot be 0. (default: 1)
   -s ALBUM_SEPARATOR, --album-separator ALBUM_SEPARATOR
                         Separator string to use for compound album names created from nested folders. Only effective if -a is set to a value > 1 (default: )
   -c CHUNK_SIZE, --chunk-size CHUNK_SIZE
@@ -47,7 +47,7 @@ options:
   -C FETCH_CHUNK_SIZE, --fetch-chunk-size FETCH_CHUNK_SIZE
                         Maximum number of assets to fetch with a single API call (default: 5000)
   -l {CRITICAL,ERROR,WARNING,INFO,DEBUG}, --log-level {CRITICAL,ERROR,WARNING,INFO,DEBUG}
-                        Log level to use (default: INFO
+                        Log level to use (default: INFO)
 ```
 
 ### Docker
@@ -62,7 +62,7 @@ The environment variables are analoguous to the script's command line arguments.
 | ROOT_PATH            | yes | A single or a comma separated list of import paths for external libraries in Immich                       |
 | API_URL            | yes | The root API URL of immich, e.g. https://immich.mydomain.com/api/                                    |
 | API_KEY            | yes | The Immich API Key to use                                                                            |
-| ALBUM_LEVELS       | no | Number of levels of sub-folder for which to create separate albums. Must be at least 1. (default: 1) Refer to [How it works](#how-it-works) for a detailed explanation|
+| ALBUM_LEVELS       | no | Number of sub-folders below the root path used for album name creation. Positive numbers start from top of the folder structure, negative numbers from the bottom. Cannot be 0. Refer to [How it works](#how-it-works) for a detailed explanation|
 | ALBUM_SEPARATOR    | no | Separator string to use for compound album names created from nested folders. Only effective if -a is set to a value > 1 (default: " ") |
 | CHUNK_SIZE         | no | Maximum number of assets to add to an album with a single API call (default: 2000)  |
 | FETCH_CHUNK_SIZE   | no | Maximum number of assets to fetch with a single API call (default: 5000)            |
@@ -140,6 +140,7 @@ The folder structure of `photos` might look like this:
 /external_libs/photos/2020
 /external_libs/photos/2020/02 Feb
 /external_libs/photos/2020/02 Feb/Vacation
+/external_libs/photos/2020/08 Aug/Vacation
 /external_libs/photos/Birthdays/John
 /external_libs/photos/Birthdays/Jane
 /external_libs/photos/Skiing 2023
@@ -156,18 +157,28 @@ Albums created for `root_path = /external_libs/photos/Birthdays`:
 
  Albums created for `root_path = /external_libs/photos` and `--album-levels = 2`:
  - `2020` (containing all images from `2020` itself, if any)
- - `2020 02 Feb` (containing all images from `02 Feb` itself and `02 Feb/Vacation`)
- - `Birthdays John`
- - `Birthdays Jane`
+ - `2020 02 Feb` (containing all images from `2020/02 Feb` itself, `2020/02 Feb/Vacation` and `2020/02 Aug/Vacation`)
+ - `Birthdays John` (containing all imags from `Birthdays/John`)
+ - `Birthdays Jane` (containing all imags from `Birthdays/John`)
  - `Skiing 2023`
 
  Albums created for `root_path = /external_libs/photos`, `--album-levels = 3` and `--album-separator " - "` :
  - `2020` (containing all images from `2020` itself, if any)
  - `2020 - 02 Feb` (containing all images from `02 Feb` itself, if any)
- - `2020 - 02 Feb - Vacation` (containing all imags from `Vacation`)
+ - `2020 - 02 Feb - Vacation` (containing all imags from `2020/02 Feb/Vacation`)
+ - `2020 - 08 Aug - Vacation` (containing all imags from `2020/02 Aug/Vacation`)
  - `Birthdays - John`
  - `Birthdays - Jane`
  - `Skiing 2023`
+
+  Albums created for `root_path = /external_libs/photos`, `--album-levels = -1` and `--album-separator " - "` :
+ - `2020` (containing all images from `2020` itself, if any)
+ - `02 Feb` (containing all images from `2020/02 Feb` itself, if any)
+ - `Vacation` (containing all images from `2020/02 Feb/Vacation` AND `2020/08 Aug/Vacation`)
+ - `John` (containing all imags from `Birthdays/John`)
+ - `Jane` (containing all imags from `Birthdays/Jane`)
+ - `Skiing 2023`
+ Note that with negative `album-levels` images from different parent folders will be mixed in the same album if they reside in folders with the same name (see `Vacation` in example above).
 
 Since Immich does not support real nested albums ([yet?](https://github.com/immich-app/immich/discussions/2073)), neither does this script.
 

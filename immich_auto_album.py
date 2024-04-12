@@ -13,7 +13,7 @@ parser.add_argument("api_url", help="The root API URL of immich, e.g. https://im
 parser.add_argument("api_key", help="The Immich API Key to use")
 parser.add_argument("-r", "--root-path", action="append", help="Additional external libarary root path in Immich; May be specified multiple times for multiple import paths or external libraries.")
 parser.add_argument("-u", "--unattended", action="store_true", help="Do not ask for user confirmation after identifying albums. Set this flag to run script as a cronjob.")
-parser.add_argument("-a", "--album-levels", default=1, type=int, help="Number of levels of sub-folder for which to create separate albums. Must be at least 1.")
+parser.add_argument("-a", "--album-levels", default=1, type=int, help="Number of sub-folders below the root path used for album name creation. Positive numbers start from top of the folder structure, negative numbers from the bottom. Cannot be 0.")
 parser.add_argument("-s", "--album-separator", default=" ", type=str, help="Separator string to use for compound album names created from nested folders. Only effective if -a is set to a value > 1")
 parser.add_argument("-c", "--chunk-size", default=2000, type=int, help="Maximum number of assets to add to an album with a single API call")
 parser.add_argument("-C", "--fetch-chunk-size", default=5000, type=int, help="Maximum number of assets to fetch with a single API call")
