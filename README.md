@@ -178,6 +178,7 @@ Albums created for `root_path = /external_libs/photos/Birthdays`:
  - `John` (containing all imags from `Birthdays/John`)
  - `Jane` (containing all imags from `Birthdays/Jane`)
  - `Skiing 2023`
+ 
  Note that with negative `album-levels` images from different parent folders will be mixed in the same album if they reside in folders with the same name (see `Vacation` in example above).
 
 Since Immich does not support real nested albums ([yet?](https://github.com/immich-app/immich/discussions/2073)), neither does this script.
