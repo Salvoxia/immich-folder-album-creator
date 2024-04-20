@@ -2,6 +2,8 @@ name: build-image
 
 on:
   push:
+    paths-ignore:
+    - 'README.md'
     branches:
     - main
     - dev
