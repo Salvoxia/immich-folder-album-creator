@@ -5,6 +5,7 @@ import logging
 import sys
 import datetime
 from collections import defaultdict
+import urllib3
 
 
 parser = argparse.ArgumentParser(description="Create Immich Albums from an external library path based on the top level folders", formatter_class=argparse.ArgumentDefaultsHelpFormatter)
@@ -18,6 +19,7 @@ parser.add_argument("-s", "--album-separator", default=" ", type=str, help="Sepa
 parser.add_argument("-c", "--chunk-size", default=2000, type=int, help="Maximum number of assets to add to an album with a single API call")
 parser.add_argument("-C", "--fetch-chunk-size", default=5000, type=int, help="Maximum number of assets to fetch with a single API call")
 parser.add_argument("-l", "--log-level", default="INFO", choices=['CRITICAL', 'ERROR', 'WARNING', 'INFO', 'DEBUG'], help="Log level to use")
+parser.add_argument("-i", "--ignore-ssl", action="store_true", help="Set to true to ignore SSL verification")
 args = vars(parser.parse_args())
 # set up logger to log in logfmt format
 logging.basicConfig(level=args["log_level"], stream=sys.stdout, format='time=%(asctime)s level=%(levelname)s msg=%(message)s')
@@ -31,6 +33,7 @@ number_of_assets_to_fetch_per_request = args["fetch_chunk_size"]
 unattended = args["unattended"]
 album_levels = args["album_levels"]
 album_level_separator = args["album_separator"]
+ignore_ssl = args["ignore_ssl"]
 logging.debug("root_path = %s", root_paths)
 logging.debug("root_url = %s", root_url)
 logging.debug("api_key = %s", api_key)
@@ -39,11 +42,15 @@ logging.debug("number_of_assets_to_fetch_per_request = %d", number_of_assets_to_
 logging.debug("unattended = %s", unattended)
 logging.debug("album_levels = %d", album_levels)
 logging.debug("album_level_separator = %s", album_level_separator)
+logging.debug("ignore_ssl = %s", ignore_ssl)
 
 # Verify album levels
 if album_levels == 0:
     parser.print_help()
     exit(1)
+
+if ignore_ssl:
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # Yield successive n-sized 
 # chunks from l. 
@@ -59,7 +66,8 @@ requests_kwargs = {
         'x-api-key': api_key,
         'Content-Type': 'application/json',
         'Accept': 'application/json'
-    }
+    },
+    'verify' : not ignore_ssl
 }
 
 # append trailing slash to all root paths
