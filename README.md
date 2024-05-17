@@ -39,7 +39,8 @@ options:
                         Additional external libarary root path in Immich; May be specified multiple times for multiple import paths or external libraries. (default: None)
   -u, --unattended      Do not ask for user confirmation after identifying albums. Set this flag to run script as a cronjob. (default: False)
   -a ALBUM_LEVELS, --album-levels ALBUM_LEVELS
-                        Number of sub-folders below the root path used for album name creation. Positive numbers start from top of the folder structure, negative numbers from the bottom. Cannot be 0. (default: 1)
+                        Number of sub-folders or range of sub-folder levels below the root path used for album name creation. Positive numbers start from top of the folder structure, negative numbers from the bottom. Cannot be 0. If a range should be set, the start level and end level must be separated by a comma
+                        like '<startLevel>,<endLevel>'. If negative levels are used in a range, <startLevel> must be less than or equal to <endLevel>. (default: 1)
   -s ALBUM_SEPARATOR, --album-separator ALBUM_SEPARATOR
                         Separator string to use for compound album names created from nested folders. Only effective if -a is set to a value > 1 (default: )
   -c CHUNK_SIZE, --chunk-size CHUNK_SIZE
@@ -62,7 +63,7 @@ The environment variables are analoguous to the script's command line arguments.
 | ROOT_PATH            | yes | A single or a comma separated list of import paths for external libraries in Immich                       |
 | API_URL            | yes | The root API URL of immich, e.g. https://immich.mydomain.com/api/                                    |
 | API_KEY            | yes | The Immich API Key to use                                                                            |
-| ALBUM_LEVELS       | no | Number of sub-folders below the root path used for album name creation. Positive numbers start from top of the folder structure, negative numbers from the bottom. Cannot be 0. Refer to [How it works](#how-it-works) for a detailed explanation|
+| ALBUM_LEVELS       | no | Number of sub-folders or range of sub-folder levels below the root path used for album name creation. Positive numbers start from top of the folder structure, negative numbers from the bottom. Cannot be 0. If a range should be set, the start level and end level must be separated by a comma. Refer to [How it works](#how-it-works) for a detailed explanation|
 | ALBUM_SEPARATOR    | no | Separator string to use for compound album names created from nested folders. Only effective if -a is set to a value > 1 (default: " ") |
 | CHUNK_SIZE         | no | Maximum number of assets to add to an album with a single API call (default: 2000)  |
 | FETCH_CHUNK_SIZE   | no | Maximum number of assets to fetch with a single API call (default: 5000)            |
@@ -179,7 +180,24 @@ Albums created for `root_path = /external_libs/photos/Birthdays`:
  - `Jane` (containing all imags from `Birthdays/Jane`)
  - `Skiing 2023`
  
- Note that with negative `album-levels` images from different parent folders will be mixed in the same album if they reside in folders with the same name (see `Vacation` in example above).
+ ### Album Level Ranges
+
+ It is possible to specify not just a nunmber for `album-levels`, but a range from level x to level y in the folder structure that should make up an album's name:  
+ `--album-levels="2,3"`  
+ The range is applied to the folder structure beneath `root_path` from the top for positive levels and from the bottom for negative levels.
+ Suppose the following folder structure for an external library with the script's `root_path` set to `/external_libs/photos`:
+ ```
+/external_libs/photos/2020/2020 02 Feb/Vacation
+/external_libs/photos/2020/2020 08 Aug/Vacation
+```
+ - `--album-levels="2,3"` will create albums (for this folder structure, this is equal to `--album-levels="-2"`)
+    - `2020 02 Feb Facation`
+    - `2020 08 Aug Vacation`
+  - `--album-levels="2,2"` will create albums (for this folder structure, this is equal to `--album-levels="-2,-2"`)
+    - `2020 02 Feb`
+    - `2020 08 Aug`
+
+⚠️ Note that with negative `album-levels` or album level ranges, images from different parent folders will be mixed in the same album if they reside in sub-folders with the same name (see `Vacation` in example above).
 
 Since Immich does not support real nested albums ([yet?](https://github.com/immich-app/immich/discussions/2073)), neither does this script.
 
