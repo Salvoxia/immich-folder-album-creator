@@ -1,3 +1,8 @@
+[![Docker][docker-image]][docker-url]
+
+[docker-image]: https://img.shields.io/docker/pulls/salvoxia/immich-folder-album-creator.svg
+[docker-url]: https://hub.docker.com/r/salvoxia/immich-folder-album-creator/
+
 # Immich Folder Album Creator
 
 This is a python script designed to automatically create albums in [Immich](https://immich.app/) from a folder structure mounted into the Immich container.
@@ -60,10 +65,11 @@ The environment variables are analoguous to the script's command line arguments.
 
 | Environment varible   |  Mandatory? | Description   |
 | :------------------- | :----------- | :------------ |
-| ROOT_PATH            | yes | A single or a comma separated list of import paths for external libraries in Immich                       |
-| API_URL            | yes | The root API URL of immich, e.g. https://immich.mydomain.com/api/                                    |
-| API_KEY            | yes | The Immich API Key to use                                                                            |
-| ALBUM_LEVELS       | no | Number of sub-folders or range of sub-folder levels below the root path used for album name creation. Positive numbers start from top of the folder structure, negative numbers from the bottom. Cannot be 0. If a range should be set, the start level and end level must be separated by a comma. Refer to [How it works](#how-it-works) for a detailed explanation|
+| ROOT_PATH            | yes | A single or a comma separated list of import paths for external libraries in Immich´|
+| API_URL            | yes | The root API URL of immich, e.g. https://immich.mydomain.com/api/ |
+| API_KEY            | yes | The Immich API Key to use  
+| CRON_EXPRESSION    | yes | A [crontab-style expression](https://crontab.guru/) (e.g. "0 * * * *") to perform album creation on a schedule (e.g. every hour). |
+| ALBUM_LEVELS       | no | Number of sub-folders or range of sub-folder levels below the root path used for album name creation. Positive numbers start from top of the folder structure, negative numbers from the bottom. Cannot be 0. If a range should be set, the start level and end level must be separated by a comma. Refer to [How it works](#how-it-works) for a detailed explanation |
 | ALBUM_SEPARATOR    | no | Separator string to use for compound album names created from nested folders. Only effective if -a is set to a value > 1 (default: " ") |
 | CHUNK_SIZE         | no | Maximum number of assets to add to an album with a single API call (default: 2000)  |
 | FETCH_CHUNK_SIZE   | no | Maximum number of assets to fetch with a single API call (default: 5000)            |
