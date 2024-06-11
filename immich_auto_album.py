@@ -141,6 +141,29 @@ def create_album_name(path_chunks):
     logging.debug("album_name_chunks = %s", album_name_chunks)
     return album_level_separator.join(album_name_chunks)
 
+# Fetches assets from the Immich API
+# Takes different API versions into account for compatibility
+def fetchAssets():
+    assets = []
+    # Initial API call, let's fetch our first chunk
+    r = requests.get(root_url+'asset?take='+str(number_of_assets_to_fetch_per_request), **requests_kwargs)
+    assert r.status_code == 200
+    logging.debug("Received %s assets with chunk 1", len(r.json()))
+    assets = assets + r.json()
+
+    # If we got a full chunk size back, let's perfrom subsequent calls until we get less than a full chunk size
+    skip = 0
+    while len(r.json()) == number_of_assets_to_fetch_per_request:
+        skip += number_of_assets_to_fetch_per_request
+        r = requests.get(root_url+'asset?take='+str(number_of_assets_to_fetch_per_request)+'&skip='+str(skip), **requests_kwargs)
+        if skip == number_of_assets_to_fetch_per_request and assets == r.json():
+            logging.info("Non-chunked Immich API detected, stopping fetching assets since we already got all in our first call")
+            break
+        assert r.status_code == 200
+        logging.debug("Received %s assets with chunk", len(r.json()))
+        assets = assets + r.json()
+    return assets
+
 requests_kwargs = {
     'headers' : {
         'x-api-key': api_key,
@@ -158,24 +181,7 @@ if root_url[-1] != '/':
     root_url = root_url + '/'
 
 logging.info("Requesting all assets")
-assets = []
-# Initial API call, let's fetch our first chunk
-r = requests.get(root_url+'asset?take='+str(number_of_assets_to_fetch_per_request), **requests_kwargs)
-assert r.status_code == 200
-logging.debug("Received %s assets with chunk 1", len(r.json()))
-assets = assets + r.json()
-
-# If we got a full chunk size back, let's perfrom subsequent calls until we get less than a full chunk size
-skip = 0
-while len(r.json()) == number_of_assets_to_fetch_per_request:
-    skip += number_of_assets_to_fetch_per_request
-    r = requests.get(root_url+'asset?take='+str(number_of_assets_to_fetch_per_request)+'&skip='+str(skip), **requests_kwargs)
-    if skip == number_of_assets_to_fetch_per_request and assets == r.json():
-        logging.info("Non-chunked Immich API detected, stopping fetching assets since we already got all in our first call")
-        break
-    assert r.status_code == 200
-    logging.debug("Received %s assets with chunk", len(r.json()))
-    assets = assets + r.json()
+assets = fetchAssets()
 logging.info("%d photos found", len(assets))
 
 
