@@ -1,11 +1,8 @@
 import requests
-import os
 import argparse
 import logging
 import sys
 import datetime
-import array as arr
-import json
 from collections import defaultdict
 
 # Trying to deal with python's isnumeric() function
