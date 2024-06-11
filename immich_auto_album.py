@@ -207,7 +207,7 @@ def fetchAssetsMinorV106():
     assets = []
     # prepare request body
     body = {}
-    #body['isNotInAlbum'] = 'false'
+    body['isNotInAlbum'] = 'true'
     # This API call allows a maximum page size of 1000
     number_of_assets_to_fetch_per_request_search = min(1000, number_of_assets_to_fetch_per_request)
     body['size'] = number_of_assets_to_fetch_per_request_search
