@@ -5,6 +5,7 @@ import logging
 import sys
 import datetime
 import array as arr
+import json
 from collections import defaultdict
 
 # Trying to deal with python's isnumeric() function
@@ -87,7 +88,17 @@ if not is_integer(album_levels):
         if album_levels_range_arr[0] > 0:
             album_levels_range_arr[0] -= 1
             album_levels_range_arr[1] -= 1
-      
+
+
+# Request arguments for API calls
+requests_kwargs = {
+    'headers' : {
+        'x-api-key': api_key,
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+    }
+}
+
 # Yield successive n-sized 
 # chunks from l. 
 def divide_chunks(l, n): 
@@ -143,7 +154,32 @@ def create_album_name(path_chunks):
 
 # Fetches assets from the Immich API
 # Takes different API versions into account for compatibility
+def fetchServerVersion():
+    # This API call was only introduced with version 1.106.1, so it will fail
+    # for older versions.
+    # Initialize the version with the latest version without this API call
+    version = {'major': 1, 'minor': 105, "patch": 1}
+    r = requests.get(root_url+'server-info/version', **requests_kwargs)
+    assert r.status_code == 200 or r.status_code == 404
+    if r.status_code == 200:
+        version = r.json()
+        logging.info("Detected Immich server version %s.%s.%s", version['major'], version['minor'], version['patch'])
+    else:
+        logging.info("Detected Immich server version %s.%s.%s or older", version['major'], version['minor'], version['patch'])
+    return version
+
+# Fetches assets from the Immich API
+# Takes different API versions into account for compatibility
 def fetchAssets():
+    if version['major'] == 1 and version['minor'] <= 105:
+        return fetchAssetsLegacy()
+    else:
+        return fetchAssetsMinorV106()
+
+
+# Fetches assets from the Immich API
+# Uses the legacy GET /asset call which only exists up to v1.105.x
+def fetchAssetsLegacy():
     assets = []
     # Initial API call, let's fetch our first chunk
     r = requests.get(root_url+'asset?take='+str(number_of_assets_to_fetch_per_request), **requests_kwargs)
@@ -164,13 +200,93 @@ def fetchAssets():
         assets = assets + r.json()
     return assets
 
-requests_kwargs = {
-    'headers' : {
-        'x-api-key': api_key,
-        'Content-Type': 'application/json',
-        'Accept': 'application/json'
+# Fetches assets from the Immich API
+# Uses the /search/meta-data call. Much more efficient than the legacy method
+# since this call allows to filter for assets that are not in an album only.
+def fetchAssetsMinorV106():
+    assets = []
+    # prepare request body
+    body = {}
+    #body['isNotInAlbum'] = 'false'
+    # This API call allows a maximum page size of 1000
+    number_of_assets_to_fetch_per_request_search = min(1000, number_of_assets_to_fetch_per_request)
+    body['size'] = number_of_assets_to_fetch_per_request_search
+    # Initial API call, let's fetch our first chunk
+    page = 1
+    body['page'] = str(page)
+    r = requests.post(root_url+'search/metadata', json=body, **requests_kwargs)
+    r.raise_for_status()
+    responseJson = r.json()
+    assetsReceived = responseJson['assets']['items']
+    logging.debug("Received %s assets with chunk %s", len(assetsReceived), page)
+
+    assets = assets + assetsReceived
+    # If we got a full chunk size back, let's perfrom subsequent calls until we get less than a full chunk size
+    while len(assetsReceived) == number_of_assets_to_fetch_per_request_search:
+        page += 1
+        body['page'] = page
+        r = requests.post(root_url+'search/metadata', json=body, **requests_kwargs)
+        assert r.status_code == 200
+        responseJson = r.json()
+        assetsReceived = responseJson['assets']['items']
+        logging.debug("Received %s assets with chunk %s", len(assetsReceived), page)
+        assets = assets + assetsReceived
+    return assets
+
+
+# Fetches assets from the Immich API
+# Takes different API versions into account for compatibility
+def fetchAlbums():
+    apiEndpoint = 'albums'
+    if version['major'] == 1 and version['minor'] <= 105:
+        apiEndpoint = 'album'
+
+    r = requests.get(root_url+apiEndpoint, **requests_kwargs)
+    r.raise_for_status()
+    return r.json()
+
+# Creates an album with the provided name and returns the ID of the
+# created album
+def createAlbum(albumName):
+    apiEndpoint = 'albums'
+    if version['major'] == 1 and version['minor'] <= 105:
+        apiEndpoint = 'album'
+    data = {
+        'albumName': albumName,
+        'description': albumName
     }
-}
+    r = requests.post(root_url+apiEndpoint, json=data, **requests_kwargs)
+    assert r.status_code in [200, 201]
+    return r.json()['id']
+
+# Adds the provided assetIds to the provided albumId
+def addAssetsToAlbum(albumId, assets):
+    apiEndpoint = 'albums'
+    if version['major'] == 1 and version['minor'] <= 105:
+        apiEndpoint = 'album'
+    # Divide our assets into chunks of number_of_images_per_request,
+    # So the API can cope
+    assets_chunked = list(divide_chunks(assets, number_of_images_per_request))
+    for assets_chunk in assets_chunked:
+        data = {'ids':assets_chunk}
+        r = requests.put(root_url+apiEndpoint+f'/{albumId}/assets', json=data, **requests_kwargs)
+        if r.status_code not in [200, 201]:
+            print(album)
+            print(r.json())
+            print(data)
+            continue
+        assert r.status_code in [200, 201]
+        response = r.json()
+
+        cpt = 0
+        for res in response:
+            if not res['success']:
+                if  res['error'] != 'duplicate':
+                    logging.warning("Error adding an asset to an album: %s", res['error'])
+            else:
+                cpt += 1
+        if cpt > 0:
+            logging.info("%d new assets added to %s", cpt, album)
 
 # append trailing slash to all root paths
 for i in range(len(root_paths)):
@@ -179,6 +295,8 @@ for i in range(len(root_paths)):
 # append trailing slash to root URL
 if root_url[-1] != '/':
     root_url = root_url + '/'
+
+version = fetchServerVersion()
 
 logging.info("Requesting all assets")
 assets = fetchAssets()
@@ -219,9 +337,8 @@ if not unattended:
 album_to_id = {}
 
 logging.info("Listing existing albums on immich")
-r = requests.get(root_url+'album', **requests_kwargs)
-assert r.status_code == 200
-albums = r.json()
+
+albums = fetchAlbums()
 album_to_id = {album['albumName']:album['id'] for album in albums }
 logging.info("%d existing albums identified", len(albums))
 
@@ -231,13 +348,7 @@ cpt = 0
 for album in album_to_assets:
     if album in album_to_id:
         continue
-    data = {
-        'albumName': album,
-        'description': album
-    }
-    r = requests.post(root_url+'album', json=data, **requests_kwargs)
-    assert r.status_code in [200, 201]
-    album_to_id[album] = r.json()['id']
+    album_to_id[album] = createAlbum(album)
     logging.info('Album %s added!', album)
     cpt += 1
 logging.info("%d albums created", cpt)
@@ -248,29 +359,6 @@ logging.info("Adding assets to albums")
 # so we can each time ad all assets to same album, no photo will be duplicated 
 for album, assets in album_to_assets.items():
     id = album_to_id[album]
-    
-    # Divide our assets into chunks of number_of_images_per_request,
-    # So the API can cope
-    assets_chunked = list(divide_chunks(assets, number_of_images_per_request))
-    for assets_chunk in assets_chunked:
-        data = {'ids':assets_chunk}
-        r = requests.put(root_url+f'album/{id}/assets', json=data, **requests_kwargs)
-        if r.status_code not in [200, 201]:
-            print(album)
-            print(r.json())
-            print(data)
-            continue
-        assert r.status_code in [200, 201]
-        response = r.json()
-
-        cpt = 0
-        for res in response:
-            if not res['success']:
-                if  res['error'] != 'duplicate':
-                    logging.warning("Error adding an asset to an album: %s", res['error'])
-            else:
-                cpt += 1
-        if cpt > 0:
-            logging.info("%d new assets added to %s", cpt, album)
+    addAssetsToAlbum(id, assets)
 
 logging.info("Done!")
