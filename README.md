@@ -56,6 +56,10 @@ options:
                         Log level to use (default: INFO)
 ```
 
+__Plain example without optional arguments:__
+```bash
+python3 ./immich_auto_album.py /path/to/external/lib https://immich.mydomain.com/api thisIsMyApiKeyCopiedFromImmichWebGui
+```
 ### Docker
 
 A Docker image is provided to be used as a runtime environment. It can be used to either run the script manually, or via cronjob by providing a crontab expression to the container. The container can then be added to the Immich compose stack directly.
