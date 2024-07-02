@@ -60,6 +60,11 @@ __Plain example without optional arguments:__
 ```bash
 python3 ./immich_auto_album.py /path/to/external/lib https://immich.mydomain.com/api thisIsMyApiKeyCopiedFromImmichWebGui
 ```
+
+#### The `root_path`
+The root path  `/path/to/external/lib/` is the path you have mounted your external library into the Immich container.  
+If you are following [Immich's External library Documentation](https://immich.app/docs/guides/external-library), you are using an environment variable called `${EXTERNAL_PATH}` which is mounted to `/usr/src/app/external` in the Immich container. Your `root_path` to pass to the script is `/usr/src/app/external`.
+
 ### Docker
 
 A Docker image is provided to be used as a runtime environment. It can be used to either run the script manually, or via cronjob by providing a crontab expression to the container. The container can then be added to the Immich compose stack directly.
@@ -69,7 +74,7 @@ The environment variables are analoguous to the script's command line arguments.
 
 | Environment varible   |  Mandatory? | Description   |
 | :------------------- | :----------- | :------------ |
-| ROOT_PATH            | yes | A single or a comma separated list of import paths for external libraries in Immich´|
+| ROOT_PATH            | yes | A single or a comma separated list of import paths for external libraries in Immich. Refer to [The root_path](#the-root_path)|
 | API_URL            | yes | The root API URL of immich, e.g. https://immich.mydomain.com/api/ |
 | API_KEY            | yes | The Immich API Key to use  
 | CRON_EXPRESSION    | yes | A [crontab-style expression](https://crontab.guru/) (e.g. "0 * * * *") to perform album creation on a schedule (e.g. every hour). |
