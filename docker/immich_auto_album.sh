@@ -42,6 +42,10 @@ if [ "$INSECURE" = "true" ]; then
     args="-k $args"
 fi
 
+if [ ! -z "$IGNORE" ]; then
+    args="-i \"$IGNORE\" $args"
+fi
+
 
 BASEDIR=$(dirname "$0")
 echo $args | xargs python3 -u $BASEDIR/immich_auto_album.py
