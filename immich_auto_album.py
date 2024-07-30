@@ -27,6 +27,7 @@ parser.add_argument("-c", "--chunk-size", default=2000, type=int, help="Maximum 
 parser.add_argument("-C", "--fetch-chunk-size", default=5000, type=int, help="Maximum number of assets to fetch with a single API call")
 parser.add_argument("-l", "--log-level", default="INFO", choices=['CRITICAL', 'ERROR', 'WARNING', 'INFO', 'DEBUG'], help="Log level to use")
 parser.add_argument("-k", "--insecure", action="store_true", help="Set to true to ignore SSL verification")
+parser.add_argument("-i", "--ignore", default="", type=str, help="A string containing a list of folders, sub-folder sequences or file names separated by ':' that will be ignored.")
 args = vars(parser.parse_args())
 # set up logger to log in logfmt format
 logging.basicConfig(level=args["log_level"], stream=sys.stdout, format='time=%(asctime)s level=%(levelname)s msg=%(message)s')
@@ -43,6 +44,7 @@ album_levels = args["album_levels"]
 album_levels_range_arr = ()
 album_level_separator = args["album_separator"]
 insecure = args["insecure"]
+ignore_albums = args["ignore"]
 logging.debug("root_path = %s", root_paths)
 logging.debug("root_url = %s", root_url)
 logging.debug("api_key = %s", api_key)
@@ -53,6 +55,7 @@ logging.debug("album_levels = %s", album_levels)
 #logging.debug("album_levels_range = %s", album_levels_range)
 logging.debug("album_level_separator = %s", album_level_separator)
 logging.debug("insecure = %s", insecure)
+logging.debug("ignore = %s", ignore_albums)
 
 # Verify album levels
 if is_integer(album_levels) and album_levels == 0:
@@ -93,6 +96,10 @@ if not is_integer(album_levels):
             album_levels_range_arr[0] -= 1
             album_levels_range_arr[1] -= 1
 
+if not ignore_albums == "":
+    ignore_albums = ignore_albums.split(":")
+else:
+    ignore_albums = False
 
 # Request arguments for API calls
 requests_kwargs = {
@@ -316,6 +323,17 @@ for asset in assets:
     for root_path in root_paths:
         if root_path not in asset_path:
             continue
+        # Check ignore_albums
+        ignore = False
+        if ignore_albums:
+            for ignore_entry in ignore_albums:
+                if ignore_entry in asset_path:
+                    ignore = True
+                    break
+            if ignore:
+                logging.debug("Ignoring asset %s due to ignore_albums setting!", asset_path)
+                continue
+            
         # Chunks of the asset's path below root_path
         path_chunks = asset_path.replace(root_path, '').split('/') 
         # A single chunk means it's just the image file in no sub folder, ignore
