@@ -28,8 +28,7 @@ pip3 install -r requirements.txt
 ```
 3. Run the script
 ```
-python3 ./immich_auto_album.py -h
-usage: immich_auto_album.py [-h] [-r ROOT_PATH] [-u] [-a ALBUM_LEVELS] [-s ALBUM_SEPARATOR] [-c CHUNK_SIZE] [-C FETCH_CHUNK_SIZE] [-l {CRITICAL,ERROR,WARNING,INFO,DEBUG}] [-k] root_path api_url api_key
+usage: immich_auto_album.py [-h] [-r ROOT_PATH] [-u] [-a ALBUM_LEVELS] [-s ALBUM_SEPARATOR] [-c CHUNK_SIZE] [-C FETCH_CHUNK_SIZE] [-l {CRITICAL,ERROR,WARNING,INFO,DEBUG}] [-k] [-i IGNORE] root_path api_url api_key
 
 Create Immich Albums from an external library path based on the top level folders
 
@@ -55,6 +54,8 @@ options:
   -l {CRITICAL,ERROR,WARNING,INFO,DEBUG}, --log-level {CRITICAL,ERROR,WARNING,INFO,DEBUG}
                         Log level to use (default: INFO)
   -k, --insecure        Set to true to ignore SSL verification (default: False)
+  -i IGNORE, --ignore IGNORE
+                        A string containing a list of folders, sub-folder sequences or file names separated by ':' that will be ignored. (default: )
 ```
 
 __Plain example without optional arguments:__
@@ -85,6 +86,7 @@ The environment variables are analoguous to the script's command line arguments.
 | FETCH_CHUNK_SIZE   | no | Maximum number of assets to fetch with a single API call (default: 5000)            |
 | LOG_LEVEL          | no | Log level to use (default: INFO), allowed values: CRITICAL,ERROR,WARNING,INFO,DEBUG |
 | INSECURE           | no | Set to `true` to disable SSL verification for the Immich API server, useful for self-signed certificates (default: `false`), allowed values: `true`, `false` |
+| INSECURE           | no | A string containing a list of folders, sub-folder sequences or file names separated by ':' that will be ignored. |
 
 #### Run the container with Docker
 
@@ -166,6 +168,11 @@ The folder structure of `photos` might look like this:
 
 Albums created for `root_path = /external_libs/photos` (`--album-levels` is implicitly set to `1`):
  - `2020` (containing all images from `2020` and all sub-folders)
+ - `Birthdays` (containing all images from Birthdays itself as well as `John` and `Jane`)
+ - `Skiing 2023`
+
+ Albums created for `root_path = /external_libs/photos` (`--album-levels` is implicitly set to `1`) and `--ignore "Vacation"`:
+ - `2020` (containing all images from `2020`, `2020/02 Feb` and `2020/08 Aug`, but __NOT__ `2020/02 Feb/Vacation` or `2020/08 Aug/Vacation`)
  - `Birthdays` (containing all images from Birthdays itself as well as `John` and `Jane`)
  - `Skiing 2023`
 
