@@ -28,7 +28,8 @@ pip3 install -r requirements.txt
 ```
 3. Run the script
 ```
-usage: immich_auto_album.py [-h] [-r ROOT_PATH] [-u] [-a ALBUM_LEVELS] [-s ALBUM_SEPARATOR] [-c CHUNK_SIZE] [-C FETCH_CHUNK_SIZE] [-l {CRITICAL,ERROR,WARNING,INFO,DEBUG}] [-k] [-i IGNORE] root_path api_url api_key
+usage: immich_auto_album.py [-h] [-r ROOT_PATH] [-u] [-a ALBUM_LEVELS] [-s ALBUM_SEPARATOR] [-c CHUNK_SIZE] [-C FETCH_CHUNK_SIZE] [-l {CRITICAL,ERROR,WARNING,INFO,DEBUG}] [-k] [-i IGNORE] [-m {CREATE,CLEANUP,DELETE_ALL}]
+                            root_path api_url api_key
 
 Create Immich Albums from an external library path based on the top level folders
 
@@ -43,8 +44,8 @@ options:
                         Additional external libarary root path in Immich; May be specified multiple times for multiple import paths or external libraries. (default: None)
   -u, --unattended      Do not ask for user confirmation after identifying albums. Set this flag to run script as a cronjob. (default: False)
   -a ALBUM_LEVELS, --album-levels ALBUM_LEVELS
-                        Number of sub-folders or range of sub-folder levels below the root path used for album name creation. Positive numbers start from top of the folder structure, negative numbers from the bottom. Cannot be 0. If a range should be set, the
-                        start level and end level must be separated by a comma like '<startLevel>,<endLevel>'. If negative levels are used in a range, <startLevel> must be less than or equal to <endLevel>. (default: 1)
+                        Number of sub-folders or range of sub-folder levels below the root path used for album name creation. Positive numbers start from top of the folder structure, negative numbers from the bottom. Cannot be 0. If a range
+                        should be set, the start level and end level must be separated by a comma like '<startLevel>,<endLevel>'. If negative levels are used in a range, <startLevel> must be less than or equal to <endLevel>. (default: 1)
   -s ALBUM_SEPARATOR, --album-separator ALBUM_SEPARATOR
                         Separator string to use for compound album names created from nested folders. Only effective if -a is set to a value > 1 (default: )
   -c CHUNK_SIZE, --chunk-size CHUNK_SIZE
@@ -56,6 +57,13 @@ options:
   -k, --insecure        Set to true to ignore SSL verification (default: False)
   -i IGNORE, --ignore IGNORE
                         A string containing a list of folders, sub-folder sequences or file names separated by ':' that will be ignored. (default: )
+  -m {CREATE,CLEANUP,DELETE_ALL}, --mode {CREATE,CLEANUP,DELETE_ALL}
+                        Mode for the script to run with. 
+                        CREATE = Create albums based on folder names and provided arguments; 
+                        CLEANUP = Create album nmaes based on current images and script arguments, but delete albums if they exist;
+                        DELETE_ALL = Delete all albums. 
+                        If the mode is anything but CREATE, --unattended does not have any effect. 
+                        (default: CREATE)
 ```
 
 __Plain example without optional arguments:__
@@ -87,6 +95,7 @@ The environment variables are analoguous to the script's command line arguments.
 | LOG_LEVEL          | no | Log level to use (default: INFO), allowed values: CRITICAL,ERROR,WARNING,INFO,DEBUG |
 | INSECURE           | no | Set to `true` to disable SSL verification for the Immich API server, useful for self-signed certificates (default: `false`), allowed values: `true`, `false` |
 | INSECURE           | no | A string containing a list of folders, sub-folder sequences or file names separated by ':' that will be ignored. |
+| MODE               | no | Mode for the script to run with. <br> __CREATE__ = Create albums based on folder names and provided arguments<br>__CLEANUP__ = Create album nmaes based on current images and script arguments, but delete albums if they exist <br> __DELETE_ALL__ = Delete all albums. <br> If the mode is anything but CREATE, --unattended does not have any effect. <br> (default: CREATE) |
 
 #### Run the container with Docker
 
