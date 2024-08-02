@@ -242,7 +242,7 @@ Since Immich does not support real nested albums ([yet?](https://github.com/immi
 
 ## Cleaning Up Albums
 
-The script supports differnt run modes (option -m/--mode or env variable `MODE` for Docker). The default mode is `CREATE`, which is used to create albums.
+The script supports differnt run modes (option `-m`/`--mode` or env variable `MODE` for Docker). The default mode is `CREATE`, which is used to create albums.
 The other two modes are `CLEANUP` and `DELETE_ALL`:
   - `CLEANUP`: The script will generate album names using the script's arguments and the assets found in Immich, but instead of creating the albums, it will delete them (if they exist). This is useful if a large number of albums was created with no/the wrong `--album-separator` or `--album-levels` settings.
   - `DELETE_ALL`: ⚠️ As the name suggests, this mode blindly deletes ALL albums from Immich. Use with caution!
