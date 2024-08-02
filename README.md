@@ -14,58 +14,64 @@ __Current compatibility:__ Immich v1.111.x and below
 ## Disclaimer
 This script is mostly based on the following original script: [REDVM/immich_auto_album.py](https://gist.github.com/REDVM/d8b3830b2802db881f5b59033cf35702)
 
-## Installation
+# Table of Contents
+1. [Usage (Bare Python Script)](#bare-python-script)
+2. [Usage (Docker)](#docker)
+3. [Choosing the correct `root_path`](#choosing-the-correct-root_path)
+4. [How It Works (with Examples)](#how-it-works)
+5. [Cleaning Up Albums](#cleaning-up-albums)
 
+## Usage
 ### Bare Python Script
 1. Download the script and its requirements
-```bash
-curl https://raw.githubusercontent.com/Salvoxia/immich-folder-album-creator/main/immich_auto_album.py -o immich_auto_album.py
-curl https://raw.githubusercontent.com/Salvoxia/immich-folder-album-creator/main/requirements.txt -o requirements.txt
-```
+    ```bash
+    curl https://raw.githubusercontent.com/Salvoxia/immich-folder-album-creator/main/immich_auto_album.py -o immich_auto_album.py
+    curl https://raw.githubusercontent.com/Salvoxia/immich-folder-album-creator/main/requirements.txt -o requirements.txt
+    ```
 2. Install requirements
-```bash
-pip3 install -r requirements.txt
-```
+    ```bash
+    pip3 install -r requirements.txt
+    ```
 3. Run the script
-```
-usage: immich_auto_album.py [-h] [-r ROOT_PATH] [-u] [-a ALBUM_LEVELS] [-s ALBUM_SEPARATOR] [-c CHUNK_SIZE] [-C FETCH_CHUNK_SIZE] [-l {CRITICAL,ERROR,WARNING,INFO,DEBUG}] [-k] [-i IGNORE] root_path api_url api_key
+    ```
+    usage: immich_auto_album.py [-h] [-r ROOT_PATH] [-u] [-a ALBUM_LEVELS] [-s ALBUM_SEPARATOR] [-c CHUNK_SIZE] [-C FETCH_CHUNK_SIZE] [-l {CRITICAL,ERROR,WARNING,INFO,DEBUG}] [-k] [-i IGNORE] [-m {CREATE,CLEANUP,DELETE_ALL}] [-d] root_path api_url api_key
 
-Create Immich Albums from an external library path based on the top level folders
+    Create Immich Albums from an external library path based on the top level folders
 
-positional arguments:
-  root_path             The external libarary's root path in Immich
-  api_url               The root API URL of immich, e.g. https://immich.mydomain.com/api/
-  api_key               The Immich API Key to use
+    positional arguments:
+      root_path             The external libarary's root path in Immich
+      api_url               The root API URL of immich, e.g. https://immich.mydomain.com/api/
+      api_key               The Immich API Key to use
 
-options:
-  -h, --help            show this help message and exit
-  -r ROOT_PATH, --root-path ROOT_PATH
-                        Additional external libarary root path in Immich; May be specified multiple times for multiple import paths or external libraries. (default: None)
-  -u, --unattended      Do not ask for user confirmation after identifying albums. Set this flag to run script as a cronjob. (default: False)
-  -a ALBUM_LEVELS, --album-levels ALBUM_LEVELS
-                        Number of sub-folders or range of sub-folder levels below the root path used for album name creation. Positive numbers start from top of the folder structure, negative numbers from the bottom. Cannot be 0. If a range should be set, the
-                        start level and end level must be separated by a comma like '<startLevel>,<endLevel>'. If negative levels are used in a range, <startLevel> must be less than or equal to <endLevel>. (default: 1)
-  -s ALBUM_SEPARATOR, --album-separator ALBUM_SEPARATOR
-                        Separator string to use for compound album names created from nested folders. Only effective if -a is set to a value > 1 (default: )
-  -c CHUNK_SIZE, --chunk-size CHUNK_SIZE
-                        Maximum number of assets to add to an album with a single API call (default: 2000)
-  -C FETCH_CHUNK_SIZE, --fetch-chunk-size FETCH_CHUNK_SIZE
-                        Maximum number of assets to fetch with a single API call (default: 5000)
-  -l {CRITICAL,ERROR,WARNING,INFO,DEBUG}, --log-level {CRITICAL,ERROR,WARNING,INFO,DEBUG}
-                        Log level to use (default: INFO)
-  -k, --insecure        Set to true to ignore SSL verification (default: False)
-  -i IGNORE, --ignore IGNORE
-                        A string containing a list of folders, sub-folder sequences or file names separated by ':' that will be ignored. (default: )
-```
+    options:
+      -h, --help            show this help message and exit
+      -r ROOT_PATH, --root-path ROOT_PATH
+                            Additional external libarary root path in Immich; May be specified multiple times for multiple import paths or external libraries. (default: None)
+      -u, --unattended      Do not ask for user confirmation after identifying albums. Set this flag to run script as a cronjob. (default: False)
+      -a ALBUM_LEVELS, --album-levels ALBUM_LEVELS
+                            Number of sub-folders or range of sub-folder levels below the root path used for album name creation. Positive numbers start from top of the folder structure, negative numbers from the bottom. Cannot be 0. If a range should be set, the
+                            start level and end level must be separated by a comma like '<startLevel>,<endLevel>'. If negative levels are used in a range, <startLevel> must be less than or equal to <endLevel>. (default: 1)
+      -s ALBUM_SEPARATOR, --album-separator ALBUM_SEPARATOR
+                            Separator string to use for compound album names created from nested folders. Only effective if -a is set to a value > 1 (default: )
+      -c CHUNK_SIZE, --chunk-size CHUNK_SIZE
+                            Maximum number of assets to add to an album with a single API call (default: 2000)
+      -C FETCH_CHUNK_SIZE, --fetch-chunk-size FETCH_CHUNK_SIZE
+                            Maximum number of assets to fetch with a single API call (default: 5000)
+      -l {CRITICAL,ERROR,WARNING,INFO,DEBUG}, --log-level {CRITICAL,ERROR,WARNING,INFO,DEBUG}
+                            Log level to use (default: INFO)
+      -k, --insecure        Set to true to ignore SSL verification (default: False)
+      -i IGNORE, --ignore IGNORE
+                            A string containing a list of folders, sub-folder sequences or file names separated by ':' that will be ignored. (default: )
+      -m {CREATE,CLEANUP,DELETE_ALL}, --mode {CREATE,CLEANUP,DELETE_ALL}
+                            Mode for the script to run with. CREATE = Create albums based on folder names and provided arguments; CLEANUP = Create album nmaes based on current images and script arguments, but delete albums if they exist; DELETE_ALL = Delete all
+                            albums. If the mode is anything but CREATE, --unattended does not have any effect. Only performs deletion if -d/--delete-confirm option is set, otherwise only performs a dry-run. (default: CREATE)
+      -d, --delete-confirm  Confirm deletion of albums when running in mode CLEANUP or DELETE_ALL. If this flag is not set, these modes will perform a dry run only. Has no effect in mode CREATE (default: False)
+    ```
 
 __Plain example without optional arguments:__
 ```bash
 python3 ./immich_auto_album.py /path/to/external/lib https://immich.mydomain.com/api thisIsMyApiKeyCopiedFromImmichWebGui
 ```
-
-#### The `root_path`
-The root path  `/path/to/external/lib/` is the path you have mounted your external library into the Immich container.  
-If you are following [Immich's External library Documentation](https://immich.app/docs/guides/external-library), you are using an environment variable called `${EXTERNAL_PATH}` which is mounted to `/usr/src/app/external` in the Immich container. Your `root_path` to pass to the script is `/usr/src/app/external`.
 
 ### Docker
 
@@ -76,24 +82,29 @@ The environment variables are analoguous to the script's command line arguments.
 
 | Environment varible   |  Mandatory? | Description   |
 | :------------------- | :----------- | :------------ |
-| ROOT_PATH            | yes | A single or a comma separated list of import paths for external libraries in Immich. Refer to [The root_path](#the-root_path)|
+| ROOT_PATH            | yes | A single or a comma separated list of import paths for external libraries in Immich. <br>Refer to [Choosing the correct `root_path`](#choosing-the-correct-root_path).|
 | API_URL            | yes | The root API URL of immich, e.g. https://immich.mydomain.com/api/ |
 | API_KEY            | yes | The Immich API Key to use  
 | CRON_EXPRESSION    | yes | A [crontab-style expression](https://crontab.guru/) (e.g. "0 * * * *") to perform album creation on a schedule (e.g. every hour). |
-| ALBUM_LEVELS       | no | Number of sub-folders or range of sub-folder levels below the root path used for album name creation. Positive numbers start from top of the folder structure, negative numbers from the bottom. Cannot be 0. If a range should be set, the start level and end level must be separated by a comma. Refer to [How it works](#how-it-works) for a detailed explanation |
+| ALBUM_LEVELS       | no | Number of sub-folders or range of sub-folder levels below the root path used for album name creation. Positive numbers start from top of the folder structure, negative numbers from the bottom. Cannot be 0. If a range should be set, the start level and end level must be separated by a comma. <br>Refer to [How it works](#how-it-works) for a detailed explanation and examples. |
 | ALBUM_SEPARATOR    | no | Separator string to use for compound album names created from nested folders. Only effective if -a is set to a value > 1 (default: " ") |
 | CHUNK_SIZE         | no | Maximum number of assets to add to an album with a single API call (default: 2000)  |
 | FETCH_CHUNK_SIZE   | no | Maximum number of assets to fetch with a single API call (default: 5000)            |
 | LOG_LEVEL          | no | Log level to use (default: INFO), allowed values: CRITICAL,ERROR,WARNING,INFO,DEBUG |
 | INSECURE           | no | Set to `true` to disable SSL verification for the Immich API server, useful for self-signed certificates (default: `false`), allowed values: `true`, `false` |
 | INSECURE           | no | A string containing a list of folders, sub-folder sequences or file names separated by ':' that will be ignored. |
+| MODE               | no | Mode for the script to run with. <br> __CREATE__ = Create albums based on folder names and provided arguments<br>__CLEANUP__ = Create album nmaes based on current images and script arguments, but delete albums if they exist <br> __DELETE_ALL__ = Delete all albums. <br> If the mode is anything but CREATE, `--unattended` does not have any effect. <br> (default: CREATE). <br>Refer to [Cleaning Up Albums](#cleaning-up-albums). |
+| DELETE_CONFIRM     | no | Confirm deletion of albums when running in mode CLEANUP or DELETE_ALL. If this flag is not set, these modes will perform a dry run only. Has no effect in mode CREATE (default: False). <br>Refer to [Cleaning Up Albums](#cleaning-up-albums).|
 
 #### Run the container with Docker
 
-To perform a manually triggered run, use the following command:
-
+To perform a manually triggered __dry run__ (only list albums that __would__ be created), use the following command:
 ```bash
 docker run -e API_URL="https://immich.mydomain.com/api/" -e API_KEY="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" -e ROOT_PATH="/external_libs/photos" salvoxia/immich-folder-album-creator:latest /script/immich_auto_album.sh
+```
+To actually create albums after performing a dry run, use the following command (setting the `UNATTENDED` environment variable):
+```bash
+docker run -e UNATTENDED="1" -e API_URL="https://immich.mydomain.com/api/" -e API_KEY="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" -e ROOT_PATH="/external_libs/photos" salvoxia/immich-folder-album-creator:latest /script/immich_auto_album.sh
 ```
 
 To set up the container to periodically run the script, give it a name, pass the TZ variable and a valid crontab expression as environment variable. This example runs the script every hour:
@@ -140,6 +151,10 @@ services:
       TZ: Europe/Berlin
 
 ```
+
+## Choosing the correct `root_path`
+The root path  `/path/to/external/lib/` is the path you have mounted your external library into the Immich container.  
+If you are following [Immich's External library Documentation](https://immich.app/docs/guides/external-library), you are using an environment variable called `${EXTERNAL_PATH}` which is mounted to `/usr/src/app/external` in the Immich container. Your `root_path` to pass to the script is `/usr/src/app/external`.
 
 ## How it works
 
@@ -225,3 +240,15 @@ Albums created for `root_path = /external_libs/photos/Birthdays`:
 
 Since Immich does not support real nested albums ([yet?](https://github.com/immich-app/immich/discussions/2073)), neither does this script.
 
+## Cleaning Up Albums
+
+The script supports differnt run modes (option -m/--mode or env variable `MODE` for Docker). The default mode is `CREATE`, which is used to create albums.
+The other two modes are `CLEANUP` and `DELETE_ALL`:
+  - `CLEANUP`: The script will generate album names using the script's arguments and the assets found in Immich, but instead of creating the albums, it will delete them (if they exist). This is useful if a large number of albums was created with no/the wrong `--album-separator` or `--album-levels` settings.
+  - `DELETE_ALL`: ⚠️ As the name suggests, this mode blindly deletes ALL albums from Immich. Use with caution!
+
+To prevent accidental deletions, setting the mode to `CLEANUP` or `DELETE_ALL` alone will not actually delete any albums, but only perform a dry run. The dry run prints a list of albums that the script __would__ delete.  
+To actually delete albums, the option `-d/--delete-confirm` (or env variable `DELETE_CONFIRM` for Docker) must be set.
+
+__WARNING ⚠️__  
+Deleting albums cannot be undone! The only option is to let the script run again and create new albums base on the passed arguments and current assets in Immich.

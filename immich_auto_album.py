@@ -1,3 +1,4 @@
+
 import requests
 import argparse
 import logging
@@ -15,6 +16,15 @@ def is_integer(str):
     except ValueError:
         return False
 
+# Constants holding script run modes
+# Creat albums based on folder names and script arguments
+SCRIPT_MODE_CREATE = "CREATE"
+# Create album names based on folder names, but delete these albums
+SCRIPT_MODE_CLEANUP = "CLEANUP"
+# Delete ALL albums
+SCRIPT_MODE_DELETE_ALL = "DELETE_ALL"
+
+
 parser = argparse.ArgumentParser(description="Create Immich Albums from an external library path based on the top level folders", formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 parser.add_argument("root_path", action='append', help="The external libarary's root path in Immich")
 parser.add_argument("api_url", help="The root API URL of immich, e.g. https://immich.mydomain.com/api/")
@@ -28,6 +38,8 @@ parser.add_argument("-C", "--fetch-chunk-size", default=5000, type=int, help="Ma
 parser.add_argument("-l", "--log-level", default="INFO", choices=['CRITICAL', 'ERROR', 'WARNING', 'INFO', 'DEBUG'], help="Log level to use")
 parser.add_argument("-k", "--insecure", action="store_true", help="Set to true to ignore SSL verification")
 parser.add_argument("-i", "--ignore", default="", type=str, help="A string containing a list of folders, sub-folder sequences or file names separated by ':' that will be ignored.")
+parser.add_argument("-m", "--mode", default=SCRIPT_MODE_CREATE, choices=[SCRIPT_MODE_CREATE, SCRIPT_MODE_CLEANUP, SCRIPT_MODE_DELETE_ALL], help="Mode for the script to run with. CREATE = Create albums based on folder names and provided arguments; CLEANUP = Create album nmaes based on current images and script arguments, but delete albums if they exist; DELETE_ALL = Delete all albums. If the mode is anything but CREATE, --unattended does not have any effect. Only performs deletion if -d/--delete-confirm option is set, otherwise only performs a dry-run.")
+parser.add_argument("-d", "--delete-confirm", action="store_true", help="Confirm deletion of albums when running in mode "+SCRIPT_MODE_CLEANUP+" or "+SCRIPT_MODE_DELETE_ALL+". If this flag is not set, these modes will perform a dry run only. Has no effect in mode "+SCRIPT_MODE_CREATE)
 args = vars(parser.parse_args())
 # set up logger to log in logfmt format
 logging.basicConfig(level=args["log_level"], stream=sys.stdout, format='time=%(asctime)s level=%(levelname)s msg=%(message)s')
@@ -45,6 +57,13 @@ album_levels_range_arr = ()
 album_level_separator = args["album_separator"]
 insecure = args["insecure"]
 ignore_albums = args["ignore"]
+mode = args["mode"]
+delete_confirm = args["delete_confirm"]
+
+# Override unattended if we're running in destructive mode
+if mode != SCRIPT_MODE_CREATE:
+    unattended = False
+
 logging.debug("root_path = %s", root_paths)
 logging.debug("root_url = %s", root_url)
 logging.debug("api_key = %s", api_key)
@@ -56,6 +75,8 @@ logging.debug("album_levels = %s", album_levels)
 logging.debug("album_level_separator = %s", album_level_separator)
 logging.debug("insecure = %s", insecure)
 logging.debug("ignore = %s", ignore_albums)
+logging.debug("mode = %s", mode)
+logging.debug("delete_confirm = %s", delete_confirm)
 
 # Verify album levels
 if is_integer(album_levels) and album_levels == 0:
@@ -219,7 +240,11 @@ def fetchAssetsMinorV106():
     assets = []
     # prepare request body
     body = {}
-    body['isNotInAlbum'] = 'true'
+    # only request images that are not in any album if we are running in CREATE mode,
+    # otherwise we need all images, even if they are part of an album
+    if mode == SCRIPT_MODE_CREATE:
+        body['isNotInAlbum'] = 'true'
+
     # This API call allows a maximum page size of 1000
     number_of_assets_to_fetch_per_request_search = min(1000, number_of_assets_to_fetch_per_request)
     body['size'] = number_of_assets_to_fetch_per_request_search
@@ -246,7 +271,7 @@ def fetchAssetsMinorV106():
     return assets
 
 
-# Fetches assets from the Immich API
+# Fetches albums from the Immich API
 # Takes different API versions into account for compatibility
 def fetchAlbums():
     apiEndpoint = 'albums'
@@ -257,6 +282,20 @@ def fetchAlbums():
     r.raise_for_status()
     return r.json()
 
+# Deletes an album identified by album['id']
+# Takes different API versions into account for compatibility
+# Returns False if the album could not be deleted, otherwise True
+def deleteAlbum(album):
+    apiEndpoint = 'albums'
+    if version['major'] == 1 and version['minor'] <= 105:
+        apiEndpoint = 'album'
+    logging.debug("Album ID = %s, Album Name = %s", album['id'], album['albumName'])
+    r = requests.delete(root_url+apiEndpoint+'/'+album['id'], **requests_kwargs)
+    if r.status_code not in [200, 201]:
+        logging.error("Error deleting album %s: %s", album['albumName'], r.reason)
+        return False
+    return True
+    
 # Creates an album with the provided name and returns the ID of the
 # created album
 def createAlbum(albumName):
@@ -309,6 +348,25 @@ if root_url[-1] != '/':
     root_url = root_url + '/'
 
 version = fetchServerVersion()
+# Special case: Run Mode DELETE_ALL albums
+if mode == SCRIPT_MODE_DELETE_ALL:
+    albums = fetchAlbums()
+    logging.info("%d existing albums identified", len(albums))
+    # Delete Confirm check
+    if not delete_confirm:
+        album_names = []
+        for album in albums:
+            album_names.append(album['albumName'])
+        print("Would delete the following albums (ALL albums!). Call with --delete-confirm to actually delete albums!")
+        print(album_names)
+        exit(0)
+    cpt = 0
+    for album in albums:
+        if deleteAlbum(album):
+            logging.info("Deleted album %s", album['albumName'])
+            cpt += 1
+    logging.info("Deleted %d/%d albums", cpt, len(albums))
+    exit(0)
 
 logging.info("Requesting all assets")
 assets = fetchAssets()
@@ -352,10 +410,10 @@ album_to_assets = {k:v for k, v in sorted(album_to_assets.items(), key=(lambda i
 
 logging.info("%d albums identified", len(album_to_assets))
 logging.info("Album list: %s", list(album_to_assets.keys()))
-if not unattended:
-    print("Press Enter to continue, Ctrl+C to abort")
-    input()
 
+if not unattended and mode == SCRIPT_MODE_CREATE:
+    print("Press enter to create these albums, Ctrl+C to abort")
+    input()
 
 album_to_id = {}
 
@@ -365,7 +423,28 @@ albums = fetchAlbums()
 album_to_id = {album['albumName']:album['id'] for album in albums }
 logging.info("%d existing albums identified", len(albums))
 
+# mode CLEANUP
+if mode == SCRIPT_MODE_CLEANUP:
+    # Delete Confirm check
+    if not delete_confirm:
+        print("Would delete the following albums. Call with --delete-confirm to actually delete albums!")
+        print(list(album_to_id.keys()))
+        exit(0)
+    
+    cpt = 0
+    for album in album_to_assets:
+        if album in album_to_id:
+            album_to_delete = dict()
+            album_to_delete['id'] = album_to_id[album]
+            album_to_delete['albumName'] = album
+            if deleteAlbum(album_to_delete):
+                logging.info("Deleted album %s", album_to_delete['albumName'])
+                cpt += 1
+    logging.info("Deleted %d/%d albums", cpt, len(album_to_assets))
+    exit(0)
 
+
+# mode CREATE
 logging.info("Creating albums if needed")
 cpt = 0
 for album in album_to_assets:

@@ -12,7 +12,12 @@ for path in ${root_paths}; do
   fi
 done
 
-args="-u $main_root_path $API_URL $API_KEY"
+unattended=
+if [ ! -z "$UNATTENDED" ]; then
+    unattended="-u"
+fi
+
+args="$unattended $main_root_path $API_URL $API_KEY"
 
 if [ ! -z "$additional_root_paths" ]; then
     args="$additional_root_paths $args"
@@ -46,6 +51,13 @@ if [ ! -z "$IGNORE" ]; then
     args="-i \"$IGNORE\" $args"
 fi
 
+if [ ! -z "$MODE" ]; then
+    args="-m \"$MODE\" $args"
+fi
+
+if [ ! -z "$DELETE_CONFIRM" ]; then
+    args="-d $args"
+fi
 
 BASEDIR=$(dirname "$0")
 echo $args | xargs python3 -u $BASEDIR/immich_auto_album.py
