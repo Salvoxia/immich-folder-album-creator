@@ -1,3 +1,4 @@
+
 import requests
 import argparse
 import logging
@@ -37,7 +38,8 @@ parser.add_argument("-C", "--fetch-chunk-size", default=5000, type=int, help="Ma
 parser.add_argument("-l", "--log-level", default="INFO", choices=['CRITICAL', 'ERROR', 'WARNING', 'INFO', 'DEBUG'], help="Log level to use")
 parser.add_argument("-k", "--insecure", action="store_true", help="Set to true to ignore SSL verification")
 parser.add_argument("-i", "--ignore", default="", type=str, help="A string containing a list of folders, sub-folder sequences or file names separated by ':' that will be ignored.")
-parser.add_argument("-m", "--mode", default=SCRIPT_MODE_CREATE, choices=[SCRIPT_MODE_CREATE, SCRIPT_MODE_CLEANUP, SCRIPT_MODE_DELETE_ALL], help="Mode for the script to run with. CREATE = Create albums based on folder names and provided arguments; CLEANUP = Create album nmaes based on current images and script arguments, but delete albums if they exist; DELETE_ALL = Delete all albums. If the mode is anything but CREATE, --unattended does not have any effect.")
+parser.add_argument("-m", "--mode", default=SCRIPT_MODE_CREATE, choices=[SCRIPT_MODE_CREATE, SCRIPT_MODE_CLEANUP, SCRIPT_MODE_DELETE_ALL], help="Mode for the script to run with. CREATE = Create albums based on folder names and provided arguments; CLEANUP = Create album nmaes based on current images and script arguments, but delete albums if they exist; DELETE_ALL = Delete all albums. If the mode is anything but CREATE, --unattended does not have any effect. Only performs deletion if -d/--delete-confirm option is set, otherwise only performs a dry-run.")
+parser.add_argument("-d", "--delete-confirm", action="store_true", help="Confirm deletion of albums when running in mode"+SCRIPT_MODE_CLEANUP+" or "+SCRIPT_MODE_DELETE_ALL+". If this flag is not set, these modes will perform a dry run only. Has no effect in mode "+SCRIPT_MODE_CREATE)
 args = vars(parser.parse_args())
 # set up logger to log in logfmt format
 logging.basicConfig(level=args["log_level"], stream=sys.stdout, format='time=%(asctime)s level=%(levelname)s msg=%(message)s')
@@ -56,6 +58,7 @@ album_level_separator = args["album_separator"]
 insecure = args["insecure"]
 ignore_albums = args["ignore"]
 mode = args["mode"]
+delete_confirm = args["delete_confirm"]
 
 # Override unattended if we're running in destructive mode
 if mode != SCRIPT_MODE_CREATE:
@@ -72,6 +75,8 @@ logging.debug("album_levels = %s", album_levels)
 logging.debug("album_level_separator = %s", album_level_separator)
 logging.debug("insecure = %s", insecure)
 logging.debug("ignore = %s", ignore_albums)
+logging.debug("mode = %s", mode)
+logging.debug("delete_confirm = %s", delete_confirm)
 
 # Verify album levels
 if is_integer(album_levels) and album_levels == 0:
@@ -347,8 +352,14 @@ version = fetchServerVersion()
 if mode == SCRIPT_MODE_DELETE_ALL:
     albums = fetchAlbums()
     logging.info("%d existing albums identified", len(albums))
-    print("Going to delete ALL albums! Press enter to proceed, Ctrl+C to abort")
-    input()
+    # Delete Confirm check
+    if not delete_confirm:
+        album_names = []
+        for album in albums:
+            album_names.append(album['albumName'])
+        print("Would delete the following albums (ALL albums!). Call with --delete-confirm to actually delete albums!")
+        print(album_names)
+        exit(0)
     cpt = 0
     for album in albums:
         if deleteAlbum(album):
@@ -399,13 +410,10 @@ album_to_assets = {k:v for k, v in sorted(album_to_assets.items(), key=(lambda i
 
 logging.info("%d albums identified", len(album_to_assets))
 logging.info("Album list: %s", list(album_to_assets.keys()))
-if not unattended:
-    userHint = "Press enter to create these albums, Ctrl+C to abort"
-    if mode != SCRIPT_MODE_CREATE:
-        userHint = "Attention! Press enter to DELETE these albums (if they exist), Ctrl+C to abort"
-    print(userHint)
-    input()
 
+if not unattended and mode == SCRIPT_MODE_CREATE:
+    print("Press enter to create these albums, Ctrl+C to abort")
+    input()
 
 album_to_id = {}
 
@@ -417,6 +425,12 @@ logging.info("%d existing albums identified", len(albums))
 
 # mode CLEANUP
 if mode == SCRIPT_MODE_CLEANUP:
+    # Delete Confirm check
+    if not delete_confirm:
+        print("Would delete the following albums. Call with --delete-confirm to actually delete albums!")
+        print(list(album_to_id.keys()))
+        exit(0)
+    
     cpt = 0
     for album in album_to_assets:
         if album in album_to_id:
