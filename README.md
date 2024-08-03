@@ -221,7 +221,7 @@ Albums created for `root_path = /external_libs/photos/Birthdays`:
  
  ### Album Level Ranges
 
- It is possible to specify not just a nunmber for `album-levels`, but a range from level x to level y in the folder structure that should make up an album's name:  
+ It is possible to specify not just a number for `--album-levels`, but a range from level x to level y in the folder structure that should make up an album's name:  
  `--album-levels="2,3"`  
  The range is applied to the folder structure beneath `root_path` from the top for positive levels and from the bottom for negative levels.
  Suppose the following folder structure for an external library with the script's `root_path` set to `/external_libs/photos`:
@@ -236,7 +236,9 @@ Albums created for `root_path = /external_libs/photos/Birthdays`:
     - `2020 02 Feb`
     - `2020 08 Aug`
 
-⚠️ Note that with negative `album-levels` or album level ranges, images from different parent folders will be mixed in the same album if they reside in sub-folders with the same name (see `Vacation` in example above).
+⚠️ __Important:__ When passing negative ranges as album levels, you __must__ pass the argument in the form `--album-levels="-2,-2"`. Emphasis is on the equals sign `=` separating the option from the value. Otherwise, you might get an error `argument -a/--album-levels: expected one argument`!
+
+⚠️ __Attention:__ Note that with negative `album-levels` or album level ranges, images from different parent folders will be mixed in the same album if they reside in sub-folders with the same name (see `Vacation` in example above).
 
 Since Immich does not support real nested albums ([yet?](https://github.com/immich-app/immich/discussions/2073)), neither does this script.
 
