@@ -6,6 +6,6 @@ COPY immich_auto_album.py requirements.txt docker/immich_auto_album.sh docker/se
 RUN pip install --no-cache-dir -r /script/requirements.txt \
     && chmod +x /script/setup_cron.sh /script/immich_auto_album.sh \
     && rm -rf /tmp/* /var/tmp/* /var/cache/apk/* /var/cache/distfiles/*
-
+ENV IS_DOCKER=1
 WORKDIR /script
 CMD ["sh", "-c", "/script/setup_cron.sh && crond -f"]

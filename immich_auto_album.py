@@ -3,6 +3,7 @@ import requests
 import argparse
 import logging
 import sys
+import os
 import datetime
 from collections import defaultdict
 import urllib3
@@ -23,6 +24,8 @@ SCRIPT_MODE_CREATE = "CREATE"
 SCRIPT_MODE_CLEANUP = "CLEANUP"
 # Delete ALL albums
 SCRIPT_MODE_DELETE_ALL = "DELETE_ALL"
+# Environment variable to check if the script is running inside Docker
+ENV_IS_DOCKER = "IS_DOCKER"
 
 
 parser = argparse.ArgumentParser(description="Create Immich Albums from an external library path based on the top level folders", formatter_class=argparse.ArgumentDefaultsHelpFormatter)
@@ -45,6 +48,7 @@ args = vars(parser.parse_args())
 logging.basicConfig(level=args["log_level"], stream=sys.stdout, format='time=%(asctime)s level=%(levelname)s msg=%(message)s')
 logging.Formatter.formatTime = (lambda self, record, datefmt=None: datetime.datetime.fromtimestamp(record.created, datetime.timezone.utc).astimezone().isoformat(sep="T",timespec="milliseconds"))
 
+
 root_paths = args["root_path"]
 root_url = args["api_url"]
 api_key = args["api_key"]
@@ -64,6 +68,8 @@ delete_confirm = args["delete_confirm"]
 if mode != SCRIPT_MODE_CREATE:
     unattended = False
 
+is_docker = os.environ.get(ENV_IS_DOCKER, False)
+
 logging.debug("root_path = %s", root_paths)
 logging.debug("root_url = %s", root_url)
 logging.debug("api_key = %s", api_key)
@@ -77,6 +83,7 @@ logging.debug("insecure = %s", insecure)
 logging.debug("ignore = %s", ignore_albums)
 logging.debug("mode = %s", mode)
 logging.debug("delete_confirm = %s", delete_confirm)
+logging.debug("is_docker = %s", is_docker)
 
 # Verify album levels
 if is_integer(album_levels) and album_levels == 0:
@@ -357,8 +364,12 @@ if mode == SCRIPT_MODE_DELETE_ALL:
         album_names = []
         for album in albums:
             album_names.append(album['albumName'])
-        print("Would delete the following albums (ALL albums!). Call with --delete-confirm to actually delete albums!")
+        print("Would delete the following albums (ALL albums!):")
         print(album_names)
+        if is_docker:
+            print("Run the container with environment variable DELETE_CONFIRM set to 1 to actually delete these albums!")
+        else:
+            print("Call with --delete-confirm to actually delete albums!")
         exit(0)
     cpt = 0
     for album in albums:
@@ -412,8 +423,12 @@ logging.info("%d albums identified", len(album_to_assets))
 logging.info("Album list: %s", list(album_to_assets.keys()))
 
 if not unattended and mode == SCRIPT_MODE_CREATE:
-    print("Press enter to create these albums, Ctrl+C to abort")
-    input()
+    if is_docker:
+        print("Check that this is the list of albums you want to create. Run the container with environment variable UNATTENDED set to 1 to actually create these albums.")
+        exit(0)
+    else:
+        print("Press enter to create these albums, Ctrl+C to abort")
+        input()
 
 album_to_id = {}
 
@@ -427,8 +442,12 @@ logging.info("%d existing albums identified", len(albums))
 if mode == SCRIPT_MODE_CLEANUP:
     # Delete Confirm check
     if not delete_confirm:
-        print("Would delete the following albums. Call with --delete-confirm to actually delete albums!")
+        print("Would delete the following albums:")
         print(list(album_to_id.keys()))
+        if is_docker:
+            print("Run the container with environment variable DELETE_CONFIRM set to 1 to actually delete these albums!")
+        else:
+            print(" Call with --delete-confirm to actually delete albums!")
         exit(0)
     
     cpt = 0
