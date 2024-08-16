@@ -15,7 +15,11 @@ for path in ${ROOT_PATH}; do
     additional_root_paths="-r \"$path\" $additional_root_paths"
   fi
 done
+IFS=$oldIFS
 
+# parse semicolon separated root paths and wrap in quotes
+oldIFS=$IFS
+IFS=':'
 # parse  SHARE_WITH CSV
 share_with_list=""
 for share_user in ${SHARE_WITH}; do

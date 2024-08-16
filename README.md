@@ -100,7 +100,7 @@ The environment variables are analoguous to the script's command line arguments.
 | INSECURE           | no | A string containing a list of folders, sub-folder sequences or file names separated by ':' that will be ignored. |
 | MODE               | no | Mode for the script to run with. <br> __CREATE__ = Create albums based on folder names and provided arguments<br>__CLEANUP__ = Create album nmaes based on current images and script arguments, but delete albums if they exist <br> __DELETE_ALL__ = Delete all albums. <br> If the mode is anything but CREATE, `--unattended` does not have any effect. <br> (default: CREATE). <br>Refer to [Cleaning Up Albums](#cleaning-up-albums). |
 | DELETE_CONFIRM     | no | Confirm deletion of albums when running in mode CLEANUP or DELETE_ALL. If this flag is not set, these modes will perform a dry run only. Has no effect in mode CREATE (default: False). <br>Refer to [Cleaning Up Albums](#cleaning-up-albums).|
-| SHARE_WITH     | no | A single or a comma separated list of existing user names (or email addresses of existing users) to share newly created albums with. Sharing only happens if an album is actually created, not if new assets are added to it.|
+| SHARE_WITH     | no | A single or a colon (`:`) separated list of existing user names (or email addresses of existing users) to share newly created albums with. Sharing only happens if an album is actually created, not if new assets are added to it.|
 | SHARE_ROLE     | no | The role for users newly created albums are shared with. Only effective if `SHARE_WITH` is not empty. (default: viewer), allowed values: viewer, editor |
 
 #### Run the container with Docker
