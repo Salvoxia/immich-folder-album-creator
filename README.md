@@ -34,7 +34,7 @@ This script is mostly based on the following original script: [REDVM/immich_auto
     ```
 3. Run the script
     ```
-    usage: immich_auto_album.py [-h] [-r ROOT_PATH] [-u] [-a ALBUM_LEVELS] [-s ALBUM_SEPARATOR] [-c CHUNK_SIZE] [-C FETCH_CHUNK_SIZE] [-l {CRITICAL,ERROR,WARNING,INFO,DEBUG}] [-k] [-i IGNORE] [-m {CREATE,CLEANUP,DELETE_ALL}] [-d] root_path api_url api_key
+    usage: immich_auto_album.py [-h] [-r ROOT_PATH] [-u] [-a ALBUM_LEVELS] [-s ALBUM_SEPARATOR] [-c CHUNK_SIZE] [-C FETCH_CHUNK_SIZE] [-l {CRITICAL,ERROR,WARNING,INFO,DEBUG}] [-k] [-i IGNORE] [-m {CREATE,CLEANUP,DELETE_ALL}] [-d] [-x SHARE_WITH] [-o {viewer,editor}] root_path api_url api_key
 
     Create Immich Albums from an external library path based on the top level folders
 
@@ -49,8 +49,8 @@ This script is mostly based on the following original script: [REDVM/immich_auto
                             Additional external libarary root path in Immich; May be specified multiple times for multiple import paths or external libraries. (default: None)
       -u, --unattended      Do not ask for user confirmation after identifying albums. Set this flag to run script as a cronjob. (default: False)
       -a ALBUM_LEVELS, --album-levels ALBUM_LEVELS
-                            Number of sub-folders or range of sub-folder levels below the root path used for album name creation. Positive numbers start from top of the folder structure, negative numbers from the bottom. Cannot be 0. If a range should be set, the
-                            start level and end level must be separated by a comma like '<startLevel>,<endLevel>'. If negative levels are used in a range, <startLevel> must be less than or equal to <endLevel>. (default: 1)
+                            Number of sub-folders or range of sub-folder levels below the root path used for album name creation. Positive numbers start from top of the folder structure, negative numbers from the bottom. Cannot be 0. If a range should be set, the start level and end level must
+                            be separated by a comma like '<startLevel>,<endLevel>'. If negative levels are used in a range, <startLevel> must be less than or equal to <endLevel>. (default: 1)
       -s ALBUM_SEPARATOR, --album-separator ALBUM_SEPARATOR
                             Separator string to use for compound album names created from nested folders. Only effective if -a is set to a value > 1 (default: )
       -c CHUNK_SIZE, --chunk-size CHUNK_SIZE
@@ -63,9 +63,14 @@ This script is mostly based on the following original script: [REDVM/immich_auto
       -i IGNORE, --ignore IGNORE
                             A string containing a list of folders, sub-folder sequences or file names separated by ':' that will be ignored. (default: )
       -m {CREATE,CLEANUP,DELETE_ALL}, --mode {CREATE,CLEANUP,DELETE_ALL}
-                            Mode for the script to run with. CREATE = Create albums based on folder names and provided arguments; CLEANUP = Create album nmaes based on current images and script arguments, but delete albums if they exist; DELETE_ALL = Delete all
-                            albums. If the mode is anything but CREATE, --unattended does not have any effect. Only performs deletion if -d/--delete-confirm option is set, otherwise only performs a dry-run. (default: CREATE)
+                            Mode for the script to run with. CREATE = Create albums based on folder names and provided arguments; CLEANUP = Create album nmaes based on current images and script arguments, but delete albums if they exist; DELETE_ALL = Delete all albums. If the mode is anything
+                            but CREATE, --unattended does not have any effect. Only performs deletion if -d/--delete-confirm option is set, otherwise only performs a dry-run. (default: CREATE)
       -d, --delete-confirm  Confirm deletion of albums when running in mode CLEANUP or DELETE_ALL. If this flag is not set, these modes will perform a dry run only. Has no effect in mode CREATE (default: False)
+      -x SHARE_WITH, --share-with SHARE_WITH
+                            A user name (or email address of an existing user) to share newly created albums with. Sharing only happens if the album was actually created, not if new assets were added to an existing album. May be specified multiple times to share albums with more than one user.
+                            (default: None)
+      -o {viewer,editor}, --share-role {viewer,editor}
+                            The role for users newly created albums are shared with. Only effective if --share-with is specified at least once. (default: viewer)
     ```
 
 __Plain example without optional arguments:__
@@ -95,6 +100,8 @@ The environment variables are analoguous to the script's command line arguments.
 | INSECURE           | no | A string containing a list of folders, sub-folder sequences or file names separated by ':' that will be ignored. |
 | MODE               | no | Mode for the script to run with. <br> __CREATE__ = Create albums based on folder names and provided arguments<br>__CLEANUP__ = Create album nmaes based on current images and script arguments, but delete albums if they exist <br> __DELETE_ALL__ = Delete all albums. <br> If the mode is anything but CREATE, `--unattended` does not have any effect. <br> (default: CREATE). <br>Refer to [Cleaning Up Albums](#cleaning-up-albums). |
 | DELETE_CONFIRM     | no | Confirm deletion of albums when running in mode CLEANUP or DELETE_ALL. If this flag is not set, these modes will perform a dry run only. Has no effect in mode CREATE (default: False). <br>Refer to [Cleaning Up Albums](#cleaning-up-albums).|
+| SHARE_WITH     | no | A single or a comma separated list of existing user names (or email addresses of existing users) to share newly created albums with. Sharing only happens if an album is actually created, not if new assets are added to it.|
+| SHARE_ROLE     | no | The role for users newly created albums are shared with. Only effective if `SHARE_WITH` is not empty. (default: viewer), allowed values: viewer, editor |
 
 #### Run the container with Docker
 
