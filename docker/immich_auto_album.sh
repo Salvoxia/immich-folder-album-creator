@@ -1,16 +1,20 @@
 #!/usr/bin/env sh
 
-# parse comma separated root paths
-root_paths=$(echo "$ROOT_PATH" | tr "," "\n")
+# parse comma separated root paths and wrap in quotes
+oldIFS=$IFS
+IFS=','
+# disable globbing
+set -f          
 main_root_path=""
 additional_root_paths=""
-for path in ${root_paths}; do
+for path in ${ROOT_PATH}; do
   if [ -z "$main_root_path" ]; then
-    main_root_path="$path"
+    main_root_path="\"$path\""
   else
-    additional_root_paths="-r $path $additional_root_paths"
+    additional_root_paths="-r \"$path\" $additional_root_paths"
   fi
 done
+IFS=$oldIFS
 
 unattended=
 if [ ! -z "$UNATTENDED" ]; then

@@ -9,7 +9,7 @@ This is a python script designed to automatically create albums in [Immich](http
 This is useful for automatically creating and populating albums for external libraries.
 Using the provided docker image, the script can simply be added to the Immich compose stack and run along the rest of Immich's containers.
 
-__Current compatibility:__ Immich v1.111.x and below
+__Current compatibility:__ Immich v1.112.x and below
 
 ## Disclaimer
 This script is mostly based on the following original script: [REDVM/immich_auto_album.py](https://gist.github.com/REDVM/d8b3830b2802db881f5b59033cf35702)
@@ -221,7 +221,7 @@ Albums created for `root_path = /external_libs/photos/Birthdays`:
  
  ### Album Level Ranges
 
- It is possible to specify not just a nunmber for `album-levels`, but a range from level x to level y in the folder structure that should make up an album's name:  
+ It is possible to specify not just a number for `--album-levels`, but a range from level x to level y in the folder structure that should make up an album's name:  
  `--album-levels="2,3"`  
  The range is applied to the folder structure beneath `root_path` from the top for positive levels and from the bottom for negative levels.
  Suppose the following folder structure for an external library with the script's `root_path` set to `/external_libs/photos`:
@@ -236,13 +236,15 @@ Albums created for `root_path = /external_libs/photos/Birthdays`:
     - `2020 02 Feb`
     - `2020 08 Aug`
 
-⚠️ Note that with negative `album-levels` or album level ranges, images from different parent folders will be mixed in the same album if they reside in sub-folders with the same name (see `Vacation` in example above).
+⚠️ __Important:__ When passing negative ranges as album levels, you __must__ pass the argument in the form `--album-levels="-2,-2"`. Emphasis is on the equals sign `=` separating the option from the value. Otherwise, you might get an error `argument -a/--album-levels: expected one argument`!
+
+⚠️ __Attention:__ Note that with negative `album-levels` or album level ranges, images from different parent folders will be mixed in the same album if they reside in sub-folders with the same name (see `Vacation` in example above).
 
 Since Immich does not support real nested albums ([yet?](https://github.com/immich-app/immich/discussions/2073)), neither does this script.
 
 ## Cleaning Up Albums
 
-The script supports differnt run modes (option -m/--mode or env variable `MODE` for Docker). The default mode is `CREATE`, which is used to create albums.
+The script supports differnt run modes (option `-m`/`--mode` or env variable `MODE` for Docker). The default mode is `CREATE`, which is used to create albums.
 The other two modes are `CLEANUP` and `DELETE_ALL`:
   - `CLEANUP`: The script will generate album names using the script's arguments and the assets found in Immich, but instead of creating the albums, it will delete them (if they exist). This is useful if a large number of albums was created with no/the wrong `--album-separator` or `--album-levels` settings.
   - `DELETE_ALL`: ⚠️ As the name suggests, this mode blindly deletes ALL albums from Immich. Use with caution!
