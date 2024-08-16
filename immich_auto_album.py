@@ -43,6 +43,9 @@ parser.add_argument("-k", "--insecure", action="store_true", help="Set to true t
 parser.add_argument("-i", "--ignore", default="", type=str, help="A string containing a list of folders, sub-folder sequences or file names separated by ':' that will be ignored.")
 parser.add_argument("-m", "--mode", default=SCRIPT_MODE_CREATE, choices=[SCRIPT_MODE_CREATE, SCRIPT_MODE_CLEANUP, SCRIPT_MODE_DELETE_ALL], help="Mode for the script to run with. CREATE = Create albums based on folder names and provided arguments; CLEANUP = Create album nmaes based on current images and script arguments, but delete albums if they exist; DELETE_ALL = Delete all albums. If the mode is anything but CREATE, --unattended does not have any effect. Only performs deletion if -d/--delete-confirm option is set, otherwise only performs a dry-run.")
 parser.add_argument("-d", "--delete-confirm", action="store_true", help="Confirm deletion of albums when running in mode "+SCRIPT_MODE_CLEANUP+" or "+SCRIPT_MODE_DELETE_ALL+". If this flag is not set, these modes will perform a dry run only. Has no effect in mode "+SCRIPT_MODE_CREATE)
+parser.add_argument("-x", "--share-with", action="append", help="A user name (or email address of an existing user) to share newly created albums with. Sharing only happens if the album was actually created, not if new assets were added to an existing album. May be specified multiple times to share albums with more than one user.")
+parser.add_argument("-o", "--share-role", default="viewer", choices=['viewer', 'editor'], help="The role for users newly created albums are shared with. Only effective if --share-with is specified at least once.")
+
 args = vars(parser.parse_args())
 # set up logger to log in logfmt format
 logging.basicConfig(level=args["log_level"], stream=sys.stdout, format='time=%(asctime)s level=%(levelname)s msg=%(message)s')
@@ -63,6 +66,8 @@ insecure = args["insecure"]
 ignore_albums = args["ignore"]
 mode = args["mode"]
 delete_confirm = args["delete_confirm"]
+share_with = args["share_with"]
+share_role = args["share_role"]
 
 # Override unattended if we're running in destructive mode
 if mode != SCRIPT_MODE_CREATE:
@@ -84,6 +89,8 @@ logging.debug("ignore = %s", ignore_albums)
 logging.debug("mode = %s", mode)
 logging.debug("delete_confirm = %s", delete_confirm)
 logging.debug("is_docker = %s", is_docker)
+logging.debug("share_with = %s", share_with)
+logging.debug("share_role = %s", share_role)
 
 # Verify album levels
 if is_integer(album_levels) and album_levels == 0:
@@ -209,41 +216,9 @@ def fetchServerVersion():
     return version
 
 # Fetches assets from the Immich API
-# Takes different API versions into account for compatibility
-def fetchAssets():
-    if version['major'] == 1 and version['minor'] <= 105:
-        return fetchAssetsLegacy()
-    else:
-        return fetchAssetsMinorV106()
-
-
-# Fetches assets from the Immich API
-# Uses the legacy GET /asset call which only exists up to v1.105.x
-def fetchAssetsLegacy():
-    assets = []
-    # Initial API call, let's fetch our first chunk
-    r = requests.get(root_url+'asset?take='+str(number_of_assets_to_fetch_per_request), **requests_kwargs)
-    assert r.status_code == 200
-    logging.debug("Received %s assets with chunk 1", len(r.json()))
-    assets = assets + r.json()
-
-    # If we got a full chunk size back, let's perfrom subsequent calls until we get less than a full chunk size
-    skip = 0
-    while len(r.json()) == number_of_assets_to_fetch_per_request:
-        skip += number_of_assets_to_fetch_per_request
-        r = requests.get(root_url+'asset?take='+str(number_of_assets_to_fetch_per_request)+'&skip='+str(skip), **requests_kwargs)
-        if skip == number_of_assets_to_fetch_per_request and assets == r.json():
-            logging.info("Non-chunked Immich API detected, stopping fetching assets since we already got all in our first call")
-            break
-        assert r.status_code == 200
-        logging.debug("Received %s assets with chunk", len(r.json()))
-        assets = assets + r.json()
-    return assets
-
-# Fetches assets from the Immich API
 # Uses the /search/meta-data call. Much more efficient than the legacy method
 # since this call allows to filter for assets that are not in an album only.
-def fetchAssetsMinorV106():
+def fetchAssets():
     assets = []
     # prepare request body
     body = {}
@@ -279,23 +254,18 @@ def fetchAssetsMinorV106():
 
 
 # Fetches albums from the Immich API
-# Takes different API versions into account for compatibility
 def fetchAlbums():
     apiEndpoint = 'albums'
-    if version['major'] == 1 and version['minor'] <= 105:
-        apiEndpoint = 'album'
 
     r = requests.get(root_url+apiEndpoint, **requests_kwargs)
     r.raise_for_status()
     return r.json()
 
 # Deletes an album identified by album['id']
-# Takes different API versions into account for compatibility
 # Returns False if the album could not be deleted, otherwise True
 def deleteAlbum(album):
     apiEndpoint = 'albums'
-    if version['major'] == 1 and version['minor'] <= 105:
-        apiEndpoint = 'album'
+
     logging.debug("Album ID = %s, Album Name = %s", album['id'], album['albumName'])
     r = requests.delete(root_url+apiEndpoint+'/'+album['id'], **requests_kwargs)
     if r.status_code not in [200, 201]:
@@ -307,8 +277,7 @@ def deleteAlbum(album):
 # created album
 def createAlbum(albumName):
     apiEndpoint = 'albums'
-    if version['major'] == 1 and version['minor'] <= 105:
-        apiEndpoint = 'album'
+
     data = {
         'albumName': albumName,
         'description': albumName
@@ -320,8 +289,7 @@ def createAlbum(albumName):
 # Adds the provided assetIds to the provided albumId
 def addAssetsToAlbum(albumId, assets):
     apiEndpoint = 'albums'
-    if version['major'] == 1 and version['minor'] <= 105:
-        apiEndpoint = 'album'
+
     # Divide our assets into chunks of number_of_images_per_request,
     # So the API can cope
     assets_chunked = list(divide_chunks(assets, number_of_images_per_request))
@@ -346,6 +314,34 @@ def addAssetsToAlbum(albumId, assets):
         if cpt > 0:
             logging.info("%d new assets added to %s", cpt, album)
 
+# Queries and returns all users
+def fetchUsers():
+    apiEndpoint = 'users'
+
+    r = requests.get(root_url+apiEndpoint, **requests_kwargs)
+    assert r.status_code in [200, 201]
+    return r.json()
+
+# Shares the album with the provided album_id with all provided share_user_ids
+# using share_role as a role.
+def shareAlbumWithUserAndRole(album_id, share_user_ids, share_role):
+    apiEndpoint = 'albums/'+album_id+'/users'
+
+    # build payload
+    album_users = []
+    for share_user_id in share_user_ids:
+        share_info = dict()
+        share_info['role'] = share_role
+        share_info['userId'] = share_user_id
+        album_users.append(share_info)
+    
+    data = {
+        'albumUsers': album_users
+    }
+    r = requests.put(root_url+apiEndpoint, json=data, **requests_kwargs)
+    assert r.status_code in [200, 201]
+
+
 # append trailing slash to all root paths
 for i in range(len(root_paths)):
     if root_paths[i][-1] != '/':
@@ -355,6 +351,12 @@ if root_url[-1] != '/':
     root_url = root_url + '/'
 
 version = fetchServerVersion()
+# Check version
+if version['major'] == 1 and version ['minor'] < 106:
+    logging.fatal("This script only works with Immich Server v1.106.0 and newer! Update Immich Server or use script version 0.8.1!")
+    exit(1)
+
+
 # Special case: Run Mode DELETE_ALL albums
 if mode == SCRIPT_MODE_DELETE_ALL:
     albums = fetchAlbums()
@@ -465,14 +467,47 @@ if mode == SCRIPT_MODE_CLEANUP:
 
 # mode CREATE
 logging.info("Creating albums if needed")
-cpt = 0
+created_albums = dict()
 for album in album_to_assets:
     if album in album_to_id:
         continue
-    album_to_id[album] = createAlbum(album)
+    album_id = createAlbum(album)
+    album_to_id[album] = album_id
+    created_albums[album] = album_id
     logging.info('Album %s added!', album)
-    cpt += 1
-logging.info("%d albums created", cpt)
+logging.info("%d albums created", len(created_albums))
+
+# Share newly created albums with users
+if share_with is not None and len(created_albums) > 0:
+    logging.info("Sharing created albums with users")
+    users = fetchUsers()
+    logging.debug("Found users: %s", users)
+    share_user_ids = []
+    for share_user in share_with:
+        # search user ID by name or email
+        found_user = False
+        for user in users:
+            if user['name'] == share_user or user['email'] == share_user:
+                share_user_id = user['id']
+                logging.debug("User %s has ID %s", share_user, share_user_id)
+                share_user_ids.append(share_user_id)
+                found_user = True
+                break
+        if not found_user:
+            logging.warning("User %s to share albums with does not exist!", share_user)
+            
+    
+    shared_album_cnt = 0
+    # Only try sharing if we found at least one user ID to share with
+    if len(share_user_ids) > 0:    
+        for share_album in created_albums.keys():
+            try:
+                shareAlbumWithUserAndRole(created_albums[share_album], share_user_ids, share_role)
+                shared_album_cnt += 1
+                logging.debug("Album %s shared with users %s (IDs: %s) (role: %s)", share_album, share_with, share_user_ids, share_role)
+            except:
+                logging.warning("Error sharing album %s with user %s!", share_album, share_user)
+    logging.info("Successfully shared %d/%d albums shared", shared_album_cnt, len(created_albums))
 
 
 logging.info("Adding assets to albums")

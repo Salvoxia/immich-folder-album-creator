@@ -5,6 +5,7 @@ oldIFS=$IFS
 IFS=','
 # disable globbing
 set -f          
+# parse ROOT_PATH CSV
 main_root_path=""
 additional_root_paths=""
 for path in ${ROOT_PATH}; do
@@ -14,6 +15,13 @@ for path in ${ROOT_PATH}; do
     additional_root_paths="-r \"$path\" $additional_root_paths"
   fi
 done
+
+# parse  SHARE_WITH CSV
+share_with_list=""
+for share_user in ${SHARE_WITH}; do
+    share_with_list="-x \"$share_user\" $share_with_list"
+done
+# reset IFS
 IFS=$oldIFS
 
 unattended=
@@ -61,6 +69,14 @@ fi
 
 if [ ! -z "$DELETE_CONFIRM" ]; then
     args="-d $args"
+fi
+
+if [ ! -z "$share_with_list" ]; then
+    args="$share_with_list $args"
+fi
+
+if [ ! -z "$SHARE_ROLE" ]; then
+    args="-o $SHARE_ROLE $args"
 fi
 
 BASEDIR=$(dirname "$0")
