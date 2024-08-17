@@ -19,7 +19,8 @@ This script is mostly based on the following original script: [REDVM/immich_auto
 2. [Usage (Docker)](#docker)
 3. [Choosing the correct `root_path`](#choosing-the-correct-root_path)
 4. [How It Works (with Examples)](#how-it-works)
-5. [Cleaning Up Albums](#cleaning-up-albums)
+5. [Automatic Album Sharing](#automatic-album-sharing)
+6. [Cleaning Up Albums](#cleaning-up-albums)
 
 ## Usage
 ### Bare Python Script
@@ -67,10 +68,10 @@ This script is mostly based on the following original script: [REDVM/immich_auto
                             but CREATE, --unattended does not have any effect. Only performs deletion if -d/--delete-confirm option is set, otherwise only performs a dry-run. (default: CREATE)
       -d, --delete-confirm  Confirm deletion of albums when running in mode CLEANUP or DELETE_ALL. If this flag is not set, these modes will perform a dry run only. Has no effect in mode CREATE (default: False)
       -x SHARE_WITH, --share-with SHARE_WITH
-                            A user name (or email address of an existing user) to share newly created albums with. Sharing only happens if the album was actually created, not if new assets were added to an existing album. May be specified multiple times to share albums with more than one user.
-                            (default: None)
+                            A user name (or email address of an existing user) to share newly created albums with. Sharing only happens if the album was actually created, not if new assets were added to an existing album. If the the share role should be specified by user, the format
+                            <userName>=<shareRole> must be used, where <shareRole> must be one of 'viewer' or 'editor'. May be specified multiple times to share albums with more than one user. (default: None)
       -o {viewer,editor}, --share-role {viewer,editor}
-                            The role for users newly created albums are shared with. Only effective if --share-with is specified at least once. (default: viewer)
+                            The default share role for users newly created albums are shared with. Only effective if --share-with is specified at least once and the share role is not specified within --share-with. (default: viewer)
     ```
 
 __Plain example without optional arguments:__
@@ -100,8 +101,8 @@ The environment variables are analoguous to the script's command line arguments.
 | INSECURE           | no | A string containing a list of folders, sub-folder sequences or file names separated by ':' that will be ignored. |
 | MODE               | no | Mode for the script to run with. <br> __CREATE__ = Create albums based on folder names and provided arguments<br>__CLEANUP__ = Create album nmaes based on current images and script arguments, but delete albums if they exist <br> __DELETE_ALL__ = Delete all albums. <br> If the mode is anything but CREATE, `--unattended` does not have any effect. <br> (default: CREATE). <br>Refer to [Cleaning Up Albums](#cleaning-up-albums). |
 | DELETE_CONFIRM     | no | Confirm deletion of albums when running in mode CLEANUP or DELETE_ALL. If this flag is not set, these modes will perform a dry run only. Has no effect in mode CREATE (default: False). <br>Refer to [Cleaning Up Albums](#cleaning-up-albums).|
-| SHARE_WITH     | no | A single or a colon (`:`) separated list of existing user names (or email addresses of existing users) to share newly created albums with. Sharing only happens if an album is actually created, not if new assets are added to it.|
-| SHARE_ROLE     | no | The role for users newly created albums are shared with. Only effective if `SHARE_WITH` is not empty. (default: viewer), allowed values: viewer, editor |
+| SHARE_WITH     | no | A single or a colon (`:`) separated list of existing user names (or email addresses of existing users) to share newly created albums with. If the the share role should be specified by user, the format <userName>=<shareRole> must be used, where <shareRole> must be one of `viewer` or `editor`. May be specified multiple times to share albums with more than one user. (default: None) Sharing only happens if an album is actually created, not if new assets are added to it.  <br>Refer to [Automatic Album Sharing](#automatic-album-sharing).|
+| SHARE_ROLE     | no | The role for users newly created albums are shared with. Only effective if `SHARE_WITH` is not empty and no explicit share role was specified for at least one user. (default: viewer), allowed values: viewer, editor |
 
 #### Run the container with Docker
 
@@ -248,6 +249,52 @@ Albums created for `root_path = /external_libs/photos/Birthdays`:
 ⚠️ __Attention:__ Note that with negative `album-levels` or album level ranges, images from different parent folders will be mixed in the same album if they reside in sub-folders with the same name (see `Vacation` in example above).
 
 Since Immich does not support real nested albums ([yet?](https://github.com/immich-app/immich/discussions/2073)), neither does this script.
+
+## Automatic Album Sharing
+
+The scripts support sharing newly created albums with a list of existing users. The sharing role (`viewer` or `editor`) can be specified for all users at once or individually per user.
+
+### Album Sharing Examples (Bare Python Script)
+Two arguments control this feature:
+  - `-o / --share-role`: The default role for users an album is shared with. Allowed values are `viewer` or `editor`. This argument is optional and defaults to `viewer`.
+  - `-x / --share-with`: Specify once per user to share with. The value should be either the user name or the user's email address as specified in Immich. If the user name is used and it contains blanks ` `, it must be wrapped in double quotes `"`. To override the default share role and specify a role explicitly for this user, the format `<userName>=<shareRole>` must be used (refer to examples below).
+
+To share new albums with users `User A` and `User B` as `viewer`, use the following call:
+```bash
+python3 ./immich_auto_album.py --share-with "User A" --share-with "User B" /path/to/external/lib https://immich.mydomain.com/api thisIsMyApiKeyCopiedFromImmichWebGui
+```
+
+To share new albums with users `User A` and `User B` as `editor`, use the following call:
+```bash
+python3 ./immich_auto_album.py --share-with "User A" --share-with "User B" --share-role "editor" /path/to/external/lib https://immich.mydomain.com/api thisIsMyApiKeyCopiedFromImmichWebGui
+```
+
+To share new albums with users `User A` and a user with mail address `userB@mydomain.com`, but `User A` should be an editor, use the following call:
+```bash
+python3 ./immich_auto_album.py --share-with "User A=editor" --share-with "userB@mydomain.com" /path/to/external/lib https://immich.mydomain.com/api thisIs
+```
+
+
+### Album Sharing Examples (Docker)
+Two environment variables control this feature:
+  - `SHARE_ROLE`: The default role for users an album is shared with. Allowed values are `viewer` or `editor`. This argument is optional and defaults to `viewer`.
+  - `SHARE_WITH`: A colon `:` separated list of either names or email addresses (or a mix) of existing users. To override the default share role and specify a role explicitly for each user, the format `<userName>=<shareRole>` must be used (refer to examples below).
+
+To share new albums with users `User A` and `User B` as `viewer`, use the following call:
+```bash
+docker run -e SHARE_WITH="User A:User B" -e UNATTENDED="1" -e API_URL="https://immich.mydomain.com/api/" -e API_KEY="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" -e ROOT_PATH="/external_libs/photos" salvoxia/immich-folder-album-creator:latest /script/immich_auto_album.sh
+```
+
+To share new albums with users `User A` and `User B` as `editor`, use the following call:
+```bash
+docker run -e SHARE_WITH="User A:User B" -e SHARE_ROLE="editor" -e UNATTENDED="1" -e API_URL="https://immich.mydomain.com/api/" -e API_KEY="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" -e ROOT_PATH="/external_libs/photos" salvoxia/immich-folder-album-creator:latest /script/immich_auto_album.sh
+```
+
+To share new albums with users `User A` and a user with mail address `userB@mydomain.com`, but `User A` should be an editor, use the following call:
+```bash
+docker run -e SHARE_WITH="User A=editor:userB@mydomain.com" -e UNATTENDED="1" -e API_URL="https://immich.mydomain.com/api/" -e API_KEY="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" -e ROOT_PATH="/external_libs/photos" salvoxia/immich-folder-album-creator:latest /script/immich_auto_album.sh
+```
+
 
 ## Cleaning Up Albums
 
