@@ -26,6 +26,8 @@ SCRIPT_MODE_CLEANUP = "CLEANUP"
 SCRIPT_MODE_DELETE_ALL = "DELETE_ALL"
 # Environment variable to check if the script is running inside Docker
 ENV_IS_DOCKER = "IS_DOCKER"
+# List of allowed share user roles
+SHARE_ROLES = ["editor", "viewer"]
 
 
 parser = argparse.ArgumentParser(description="Create Immich Albums from an external library path based on the top level folders", formatter_class=argparse.ArgumentDefaultsHelpFormatter)
@@ -43,8 +45,8 @@ parser.add_argument("-k", "--insecure", action="store_true", help="Set to true t
 parser.add_argument("-i", "--ignore", default="", type=str, help="A string containing a list of folders, sub-folder sequences or file names separated by ':' that will be ignored.")
 parser.add_argument("-m", "--mode", default=SCRIPT_MODE_CREATE, choices=[SCRIPT_MODE_CREATE, SCRIPT_MODE_CLEANUP, SCRIPT_MODE_DELETE_ALL], help="Mode for the script to run with. CREATE = Create albums based on folder names and provided arguments; CLEANUP = Create album nmaes based on current images and script arguments, but delete albums if they exist; DELETE_ALL = Delete all albums. If the mode is anything but CREATE, --unattended does not have any effect. Only performs deletion if -d/--delete-confirm option is set, otherwise only performs a dry-run.")
 parser.add_argument("-d", "--delete-confirm", action="store_true", help="Confirm deletion of albums when running in mode "+SCRIPT_MODE_CLEANUP+" or "+SCRIPT_MODE_DELETE_ALL+". If this flag is not set, these modes will perform a dry run only. Has no effect in mode "+SCRIPT_MODE_CREATE)
-parser.add_argument("-x", "--share-with", action="append", help="A user name (or email address of an existing user) to share newly created albums with. Sharing only happens if the album was actually created, not if new assets were added to an existing album. May be specified multiple times to share albums with more than one user.")
-parser.add_argument("-o", "--share-role", default="viewer", choices=['viewer', 'editor'], help="The role for users newly created albums are shared with. Only effective if --share-with is specified at least once.")
+parser.add_argument("-x", "--share-with", action="append", help="A user name (or email address of an existing user) to share newly created albums with. Sharing only happens if the album was actually created, not if new assets were added to an existing album. If the the share role should be specified by user, the format <userName>=<shareRole> must be used, where <shareRole> must be one of 'viewer' or 'editor'. May be specified multiple times to share albums with more than one user.")
+parser.add_argument("-o", "--share-role", default="viewer", choices=['viewer', 'editor'], help="The default share role for users newly created albums are shared with. Only effective if --share-with is specified at least once and the share role is not specified within --share-with.")
 
 args = vars(parser.parse_args())
 # set up logger to log in logfmt format
@@ -152,7 +154,37 @@ def divide_chunks(l, n):
       
     # looping till length l 
     for i in range(0, len(l), n):  
-        yield l[i:i + n] 
+        yield l[i:i + n]
+
+def parseSeparatedString(s: str, seprator: str):
+    """
+    Parse a key, value pair, separated by the provided separator.
+    That's the reverse of ShellArgs.
+
+    On the command line (argparse) a declaration will typically look like:
+        foo=hello
+    or
+        foo="hello world"
+    """
+    items = s.split(seprator)
+    key = items[0].strip() # we remove blanks around keys, as is logical
+    value = None
+    if len(items) > 1:
+        # rejoin the rest:
+        value = seprator.join(items[1:])
+    return (key, value)
+
+
+def parseSeparatedStrings(items: list[str]) -> dict:
+    """
+    Parse a series of key-value pairs and return a dictionary
+    """
+    d = {}
+    if items:
+        for item in items:
+            key, value = parseSeparatedString(item, '=')
+            d[key] = value
+    return d
   
 # Create album names from provided path_chunks string array
 # based on supplied album_levels argument (either by level range or absolute album levels)
@@ -480,17 +512,37 @@ logging.info("%d albums created", len(created_albums))
 # Share newly created albums with users
 if share_with is not None and len(created_albums) > 0:
     logging.info("Sharing created albums with users")
+    share_user_roles = parseSeparatedStrings(share_with)
+    logging.debug("Share User Roles: %s", share_user_roles)
+    # Get all users
     users = fetchUsers()
     logging.debug("Found users: %s", users)
-    share_user_ids = []
-    for share_user in share_with:
+    
+    # Initialize dicitionary of share roles to user IDs to share with
+    roles_for_share_user_ids = dict()
+    for allowed_role in SHARE_ROLES:
+        roles_for_share_user_ids[allowed_role] = list()
+    
+    # Search user IDs of users to share with
+    for share_user in share_user_roles.keys():
+        role = share_user_roles[share_user]
         # search user ID by name or email
         found_user = False
+        if role == None:
+            role = share_role
+            logging.debug("No explicit share role passed for share user %s, using default role %s", share_user, share_role)
+        elif role not in SHARE_ROLES:
+            role = share_role
+            logging.warning("Passed share role %s for user %s is not allowed, defaulting to %s", role, share_user, share_role)
+        else:
+            logging.debug("Explicit share role %s passed for share user %s", role, share_user)
+        
         for user in users:
+            # Search by name or mail address
             if user['name'] == share_user or user['email'] == share_user:
                 share_user_id = user['id']
                 logging.debug("User %s has ID %s", share_user, share_user_id)
-                share_user_ids.append(share_user_id)
+                roles_for_share_user_ids[role].append(share_user_id)
                 found_user = True
                 break
         if not found_user:
@@ -499,15 +551,21 @@ if share_with is not None and len(created_albums) > 0:
     
     shared_album_cnt = 0
     # Only try sharing if we found at least one user ID to share with
-    if len(share_user_ids) > 0:    
-        for share_album in created_albums.keys():
-            try:
-                shareAlbumWithUserAndRole(created_albums[share_album], share_user_ids, share_role)
-                shared_album_cnt += 1
-                logging.debug("Album %s shared with users %s (IDs: %s) (role: %s)", share_album, share_with, share_user_ids, share_role)
-            except:
-                logging.warning("Error sharing album %s with user %s!", share_album, share_user)
-    logging.info("Successfully shared %d/%d albums shared", shared_album_cnt, len(created_albums))
+    for share_album in created_albums.keys():
+        album_shared_successfully = False
+        for role in roles_for_share_user_ids.keys():
+            share_user_ids = roles_for_share_user_ids[role]
+            if len(share_user_ids) > 0:   
+                try:
+                    shareAlbumWithUserAndRole(created_albums[share_album], share_user_ids, role)
+                    logging.debug("Album %s shared with users IDs %s in role: %s)", share_album, share_user_ids, role)
+                    album_shared_successfully = True
+                except:
+                    logging.warning("Error sharing album %s for users %s in role %s", share_album, share_user_ids, role)
+                    album_shared_successfully = False
+        if album_shared_successfully:
+            shared_album_cnt += 1
+    logging.info("Successfully shared %d/%d albums", shared_album_cnt, len(created_albums))
 
 
 logging.info("Adding assets to albums")
