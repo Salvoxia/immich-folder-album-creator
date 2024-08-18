@@ -478,7 +478,10 @@ def fetchLibraries():
     apiEndpoint = 'libraries'
 
     r = requests.get(root_url+apiEndpoint, **requests_kwargs)
-    assert r.status_code in [200, 201]
+    if r.status_code == 403:
+        logging.fatal("--sync-mode 2 requires an Admin User API key!")
+    else:
+        assert r.status_code in [200, 201]
     return r.json()
 
 def triggerOfflineAssetRemoval(libraryId: str):
@@ -497,7 +500,10 @@ def triggerOfflineAssetRemoval(libraryId: str):
     apiEndpoint = 'libraries/'+libraryId+'/removeOffline'
 
     r = requests.post(root_url+apiEndpoint, **requests_kwargs)
-    assert r.status_code == 204
+    if r.status_code == 403:
+        logging.fatal("--sync-mode 2 requires an Admin User API key!")
+    else:
+        assert r.status_code == 204
 
 
 # append trailing slash to all root paths
