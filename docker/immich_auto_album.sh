@@ -83,5 +83,9 @@ if [ ! -z "$SHARE_ROLE" ]; then
     args="-o $SHARE_ROLE $args"
 fi
 
+if [ ! -z "$SYNC_MODE" ]; then
+    args="-S $SYNC_MODE $args"
+fi
+
 BASEDIR=$(dirname "$0")
 echo $args | xargs python3 -u $BASEDIR/immich_auto_album.py

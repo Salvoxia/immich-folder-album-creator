@@ -25,8 +25,10 @@ SCRIPT_MODE_CREATE = "CREATE"
 SCRIPT_MODE_CLEANUP = "CLEANUP"
 # Delete ALL albums
 SCRIPT_MODE_DELETE_ALL = "DELETE_ALL"
+
 # Environment variable to check if the script is running inside Docker
 ENV_IS_DOCKER = "IS_DOCKER"
+
 # List of allowed share user roles
 SHARE_ROLES = ["editor", "viewer"]
 
@@ -48,6 +50,7 @@ parser.add_argument("-m", "--mode", default=SCRIPT_MODE_CREATE, choices=[SCRIPT_
 parser.add_argument("-d", "--delete-confirm", action="store_true", help="Confirm deletion of albums when running in mode "+SCRIPT_MODE_CLEANUP+" or "+SCRIPT_MODE_DELETE_ALL+". If this flag is not set, these modes will perform a dry run only. Has no effect in mode "+SCRIPT_MODE_CREATE)
 parser.add_argument("-x", "--share-with", action="append", help="A user name (or email address of an existing user) to share newly created albums with. Sharing only happens if the album was actually created, not if new assets were added to an existing album. If the the share role should be specified by user, the format <userName>=<shareRole> must be used, where <shareRole> must be one of 'viewer' or 'editor'. May be specified multiple times to share albums with more than one user.")
 parser.add_argument("-o", "--share-role", default="viewer", choices=['viewer', 'editor'], help="The default share role for users newly created albums are shared with. Only effective if --share-with is specified at least once and the share role is not specified within --share-with.")
+parser.add_argument("-S", "--sync-mode", default=0, type=int, choices=[0, 1, 2], help="Synchronization mode to use. Synchronization mode helps synchronizing changes in external libraries structures to Immich after albums have already been created. Possible Modes: 0 = do nothing; 1 = Delete any empty albums; 2 = Trigger offline asset removal (REQUIRES API KEY OF AN ADMIN USER!)")
 
 args = vars(parser.parse_args())
 # set up logger to log in logfmt format
@@ -71,6 +74,7 @@ mode = args["mode"]
 delete_confirm = args["delete_confirm"]
 share_with = args["share_with"]
 share_role = args["share_role"]
+sync_mode = args["sync_mode"]
 
 # Override unattended if we're running in destructive mode
 if mode != SCRIPT_MODE_CREATE:
@@ -94,6 +98,7 @@ logging.debug("delete_confirm = %s", delete_confirm)
 logging.debug("is_docker = %s", is_docker)
 logging.debug("share_with = %s", share_with)
 logging.debug("share_role = %s", share_role)
+logging.debug("sync_mode = %d", sync_mode)
 
 # Verify album levels
 if is_integer(album_levels) and album_levels == 0:
@@ -446,7 +451,7 @@ def shareAlbumWithUserAndRole(album_id: str, share_user_ids: list[str], share_ro
     Raises
     ----------
         Exception if share_role contains an invalid value  
-        Exception if the API call failed
+        Exception if the API call fails
     """ 
 
     apiEndpoint = 'albums/'+album_id+'/users'
@@ -466,6 +471,33 @@ def shareAlbumWithUserAndRole(album_id: str, share_user_ids: list[str], share_ro
     }
     r = requests.put(root_url+apiEndpoint, json=data, **requests_kwargs)
     assert r.status_code in [200, 201]
+
+def fetchLibraries():
+    """Queries and returns all libraries"""
+
+    apiEndpoint = 'libraries'
+
+    r = requests.get(root_url+apiEndpoint, **requests_kwargs)
+    assert r.status_code in [200, 201]
+    return r.json()
+
+def triggerOfflineAssetRemoval(libraryId: str):
+    """
+    Triggers removal of offline assets in the library identified by libraryId.
+
+    Parameters
+    ----------
+        libraryId : str
+            The ID of the library to trigger offline asset removal for
+    Raises
+    ----------
+        Exception if the API call fails
+    """
+
+    apiEndpoint = 'libraries/'+libraryId+'/removeOffline'
+
+    r = requests.post(root_url+apiEndpoint, **requests_kwargs)
+    assert r.status_code == 204
 
 
 # append trailing slash to all root paths
@@ -673,5 +705,29 @@ logging.info("Adding assets to albums")
 for album, assets in album_to_assets.items():
     id = album_to_id[album]
     addAssetsToAlbum(id, assets)
+
+# Perform sync mode action: Delete empty albums
+# Attention: Since Offline Asset Removal is an asynchronous job,
+# albums affected by it are most likely not empty yet! So this 
+# might only be effective in the next script run.
+if sync_mode == 1:
+    logging.info("Deleting all empty albums")
+    albums = fetchAlbums()
+    emptyAlbumCount = 0
+    deletedAlbumCount = 0
+    for album in albums:
+        if album['assetCount'] == 0:
+            emptyAlbumCount += 1
+            logging.info("Deleting empty album %s", album['albumName'])
+            if deleteAlbum(album):
+                deletedAlbumCount += 1
+    logging.info("Successfully deleted %d/%d empty albums!", deletedAlbumCount, emptyAlbumCount)
+
+# Perform sync mode action: Trigger offline asset removal
+if sync_mode == 2:
+    logging.info("Trigger offline asset removal")
+    libraries = fetchLibraries()
+    for library in libraries:
+        triggerOfflineAssetRemoval(library["id"])
 
 logging.info("Done!")
