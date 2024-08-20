@@ -51,6 +51,7 @@ parser.add_argument("-d", "--delete-confirm", action="store_true", help="Confirm
 parser.add_argument("-x", "--share-with", action="append", help="A user name (or email address of an existing user) to share newly created albums with. Sharing only happens if the album was actually created, not if new assets were added to an existing album. If the the share role should be specified by user, the format <userName>=<shareRole> must be used, where <shareRole> must be one of 'viewer' or 'editor'. May be specified multiple times to share albums with more than one user.")
 parser.add_argument("-o", "--share-role", default="viewer", choices=['viewer', 'editor'], help="The default share role for users newly created albums are shared with. Only effective if --share-with is specified at least once and the share role is not specified within --share-with.")
 parser.add_argument("-S", "--sync-mode", default=0, type=int, choices=[0, 1, 2], help="Synchronization mode to use. Synchronization mode helps synchronizing changes in external libraries structures to Immich after albums have already been created. Possible Modes: 0 = do nothing; 1 = Delete any empty albums; 2 = Trigger offline asset removal (REQUIRES API KEY OF AN ADMIN USER!)")
+parser.add_argument("-O", "--album-order", default=False, type=str, choices=[False, 'asc', 'desc'], help="Set album sorting to newest or oldes file first, immich defaults to newest file first")
 
 args = vars(parser.parse_args())
 # set up logger to log in logfmt format
@@ -68,6 +69,7 @@ album_levels = args["album_levels"]
 # Album Levels Range handling
 album_levels_range_arr = ()
 album_level_separator = args["album_separator"]
+album_order = args["album_order"]
 insecure = args["insecure"]
 ignore_albums = args["ignore"]
 mode = args["mode"]
@@ -91,6 +93,7 @@ logging.debug("unattended = %s", unattended)
 logging.debug("album_levels = %s", album_levels)
 #logging.debug("album_levels_range = %s", album_levels_range)
 logging.debug("album_level_separator = %s", album_level_separator)
+logging.debug("album_order = %s", album_order)
 logging.debug("insecure = %s", insecure)
 logging.debug("ignore = %s", ignore_albums)
 logging.debug("mode = %s", mode)
@@ -191,6 +194,7 @@ def parseSeparatedStrings(items: list[str]) -> dict:
     return d
   
 def create_album_name(path_chunks: list[str], album_separator: str) -> str:
+
     """
     Create album names from provided path_chunks string array.
 
@@ -353,7 +357,7 @@ def deleteAlbum(album: dict):
     return True
     
 
-def createAlbum(albumName: str) -> str:
+def createAlbum(albumName: str, albumOrder: str) -> str:
     """
     Creates an album with the provided name and returns the ID of the created album
     
@@ -362,6 +366,8 @@ def createAlbum(albumName: str) -> str:
     ----------
         albumName : str
             Name of the album to create
+        albumOrder : str
+            False or order [asc|desc]
 
     Returns
     ---------
@@ -380,7 +386,16 @@ def createAlbum(albumName: str) -> str:
     }
     r = requests.post(root_url+apiEndpoint, json=data, **requests_kwargs)
     assert r.status_code in [200, 201]
-    return r.json()['id']
+
+    albumId = r.json()['id']
+
+    if albumOrder:
+        data = {
+            'order': 'asc',
+        }
+        r = requests.patch(root_url+apiEndpoint+f'/{albumId}', json=data, **requests_kwargs)
+        assert r.status_code in [200, 201]
+    return albumId
 
 
 def addAssetsToAlbum(albumId: str, assets: list[str]):
@@ -640,7 +655,7 @@ created_albums = dict()
 for album in album_to_assets:
     if album in album_to_id:
         continue
-    album_id = createAlbum(album)
+    album_id = createAlbum(album, album_order)
     album_to_id[album] = album_id
     created_albums[album] = album_id
     logging.info('Album %s added!', album)
