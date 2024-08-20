@@ -194,7 +194,6 @@ def parseSeparatedStrings(items: list[str]) -> dict:
     return d
   
 def create_album_name(path_chunks: list[str], album_separator: str) -> str:
-
     """
     Create album names from provided path_chunks string array.
 
