@@ -390,7 +390,7 @@ def createAlbum(albumName: str, albumOrder: str) -> str:
 
     if albumOrder:
         data = {
-            'order': 'asc',
+            'order': albumOrder
         }
         r = requests.patch(root_url+apiEndpoint+f'/{albumId}', json=data, **requests_kwargs)
         assert r.status_code in [200, 201]
