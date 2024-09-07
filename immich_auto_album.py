@@ -267,8 +267,12 @@ def fetchServerVersion() -> dict:
     if r.status_code == 200:
         version = r.json()
         logging.info("Detected Immich server version %s.%s.%s", version['major'], version['minor'], version['patch'])
-    else:
+    # Since the API call did not exist prior to 1.106.1, we assume that 404 means we found an old version.
+    elif r.status_code == 404:
         logging.info("Detected Immich server version %s.%s.%s or older", version['major'], version['minor'], version['patch'])
+    # Any other errors mean communication error with API
+    else:
+        r.raise_for_status()
     return version
 
 
