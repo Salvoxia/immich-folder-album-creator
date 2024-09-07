@@ -21,7 +21,8 @@ This script is mostly based on the following original script: [REDVM/immich_auto
 4. [How It Works (with Examples)](#how-it-works)
 5. [Automatic Album Sharing](#automatic-album-sharing)
 6. [Cleaning Up Albums](#cleaning-up-albums)
-7. [Dealing with External Library Changes](#dealing-with-external-library-changes)
+7. [Assets in Multiple Albums](#assets-in-multiple-albums)
+8. [Dealing with External Library Changes](#dealing-with-external-library-changes)
 
 ## Usage
 ### Bare Python Script
@@ -37,7 +38,7 @@ This script is mostly based on the following original script: [REDVM/immich_auto
 3. Run the script
     ```
     usage: immich_auto_album.py [-h] [-r ROOT_PATH] [-u] [-a ALBUM_LEVELS] [-s ALBUM_SEPARATOR] [-c CHUNK_SIZE] [-C FETCH_CHUNK_SIZE] [-l {CRITICAL,ERROR,WARNING,INFO,DEBUG}] [-k] [-i IGNORE] [-m {CREATE,CLEANUP,DELETE_ALL}] [-d] [-x SHARE_WITH] [-o {viewer,editor}]
-                            [-S {0,1,2}] [-O {False,asc,desc}]
+                            [-S {0,1,2}] [-O {False,asc,desc}] [-A]
                             root_path api_url api_key
 
     Create Immich Albums from an external library path based on the top level folders
@@ -80,6 +81,8 @@ This script is mostly based on the following original script: [REDVM/immich_auto
                             offline asset removal (REQUIRES API KEY OF AN ADMIN USER!) (default: 0)
       -O {False,asc,desc}, --album-order {False,asc,desc}
                             Set sorting order for newly created albums to newest or oldest file first, Immich defaults to newest file first (default: False)
+      -A, --find-assets-in-albums
+                            By default, the script only finds assets that are not assigned to any album yet. Set this option to make the script discover assets that are already part of an album and handle them as usual. (default: False)
     ```
 
 __Plain example without optional arguments:__
@@ -113,6 +116,7 @@ The environment variables are analoguous to the script's command line arguments.
 | SHARE_ROLE     | no | The role for users newly created albums are shared with. Only effective if `SHARE_WITH` is not empty and no explicit share role was specified for at least one user. (default: viewer), allowed values: `viewer`, `editor` |
 | SYNC_MODE     | no | Synchronization mode to use. Synchronization mode helps synchronizing changes in external libraries structures to Immich after albums have already been created. Possible Modes: <br>`0` = do nothing<br>`1` = Delete any empty albums<br>`2` = Trigger offline asset removal (REQUIRES API KEY OF AN ADMIN USER!)<br>(default: `0`)<br>Refer to [Dealing with External Library Changes](#dealing-with-external-library-changes). |
 | ALBUM_ORDER     | no | Set sorting order for newly created albums to newest (`desc`) or oldest (`asc`) file first, Immich defaults to newest file first, allowed values: `asc`, `desc` |
+| FIND_ASSETS_IN_ALBUMS     | no | By default, the script only finds assets that are not assigned to any album yet. Set this option to make the script discover assets that are already part of an album and handle them as usual. (default: `False`)<br>Refer to [Assets in Multiple Albums](#assets-in-multiple-albums). |
 
 #### Run the container with Docker
 
@@ -188,13 +192,16 @@ Suppose you provide an external library to Immich under the path `/external_libs
 The folder structure of `photos` might look like this:
 
 ```
-/external_libs/photos/2020
-/external_libs/photos/2020/02 Feb
-/external_libs/photos/2020/02 Feb/Vacation
-/external_libs/photos/2020/08 Aug/Vacation
-/external_libs/photos/Birthdays/John
-/external_libs/photos/Birthdays/Jane
-/external_libs/photos/Skiing 2023
+/external_libs/photos/
+├── 2020/
+│   ├── 02 Feb/
+│   │   └── Vacation/
+│   ├── 08 Aug/
+│   │   └── Vacation/
+├── Birthdays/
+│   ├── John/
+│   └── Jane/
+└── Skiing 2023/
 ```
 
 Albums created for `root_path = /external_libs/photos` (`--album-levels` is implicitly set to `1`):
@@ -322,6 +329,12 @@ The script will generate album names using the script's arguments and the assets
 ### `DELETE_ALL`
 > [!CAUTION]  
 > As the name suggests, this mode blindly deletes **ALL** albums from Immich. Use with caution!
+
+
+## Assets in Multiple Albums
+
+By default, the script only fetches assets from Immich that are not assigned to any album yet. This makes querying assets in large libraries very fast. However, if assets should be part of either manually created albums as well as albums based on the folder structure, or if multiple script passes with different album level settings should create differently named albums with overlapping contents, the option `--find-assets-in-albums` (bare Python) or environment variable `FIND_ASSETS_IN_ALBUMS` (Docker) may be set.  
+In that case, the script will request all assets from Immich and add them to their corresponding folders, even if the also are part of other albums.
 
 
 ## Dealing with External Library Changes
