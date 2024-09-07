@@ -52,6 +52,7 @@ parser.add_argument("-x", "--share-with", action="append", help="A user name (or
 parser.add_argument("-o", "--share-role", default="viewer", choices=['viewer', 'editor'], help="The default share role for users newly created albums are shared with. Only effective if --share-with is specified at least once and the share role is not specified within --share-with.")
 parser.add_argument("-S", "--sync-mode", default=0, type=int, choices=[0, 1, 2], help="Synchronization mode to use. Synchronization mode helps synchronizing changes in external libraries structures to Immich after albums have already been created. Possible Modes: 0 = do nothing; 1 = Delete any empty albums; 2 = Trigger offline asset removal (REQUIRES API KEY OF AN ADMIN USER!)")
 parser.add_argument("-O", "--album-order", default=False, type=str, choices=[False, 'asc', 'desc'], help="Set sorting order for newly created albums to newest or oldest file first, Immich defaults to newest file first")
+parser.add_argument("-A", "--find-assets-in-albums", action="store_true", help="By default, the script only finds assets that are not assigned to any album yet. Set this option to make the script discover assets that are already part of an album and handle them as usual.")
 
 args = vars(parser.parse_args())
 # set up logger to log in logfmt format
@@ -77,6 +78,7 @@ delete_confirm = args["delete_confirm"]
 share_with = args["share_with"]
 share_role = args["share_role"]
 sync_mode = args["sync_mode"]
+find_assets_in_albums = args["find_assets_in_albums"]
 
 # Override unattended if we're running in destructive mode
 if mode != SCRIPT_MODE_CREATE:
@@ -102,6 +104,7 @@ logging.debug("is_docker = %s", is_docker)
 logging.debug("share_with = %s", share_with)
 logging.debug("share_role = %s", share_role)
 logging.debug("sync_mode = %d", sync_mode)
+logging.debug("find_assets_in_albums = %s", find_assets_in_albums)
 
 # Verify album levels
 if is_integer(album_levels) and album_levels == 0:
@@ -566,7 +569,7 @@ if mode == SCRIPT_MODE_DELETE_ALL:
 logging.info("Requesting all assets")
 # only request images that are not in any album if we are running in CREATE mode,
 # otherwise we need all images, even if they are part of an album
-if mode == SCRIPT_MODE_CREATE:
+if mode == SCRIPT_MODE_CREATE and not find_assets_in_albums:
     assets = fetchAssets(True)
 else:
     assets = fetchAssets(False)
