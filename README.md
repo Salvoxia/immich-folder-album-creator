@@ -252,9 +252,11 @@ Albums created for `root_path = /external_libs/photos/Birthdays`:
     - `2020 02 Feb`
     - `2020 08 Aug`
 
-⚠️ __Important:__ When passing negative ranges as album levels, you __must__ pass the argument in the form `--album-levels="-2,-2"`. Emphasis is on the equals sign `=` separating the option from the value. Otherwise, you might get an error `argument -a/--album-levels: expected one argument`!
+> [!IMPORTANT]  
+> When passing negative ranges as album levels, you __must__ pass the argument in the form `--album-levels="-2,-2"`. Emphasis is on the equals sign `=` separating the option from the value. Otherwise, you might get an error `argument -a/--album-levels: expected one argument`!
 
-⚠️ __Attention:__ Note that with negative `album-levels` or album level ranges, images from different parent folders will be mixed in the same album if they reside in sub-folders with the same name (see `Vacation` in example above).
+> [!WARNING]  
+> Note that with negative `album-levels` or album level ranges, images from different parent folders will be mixed in the same album if they reside in sub-folders with the same name (see `Vacation` in example above).
 
 Since Immich does not support real nested albums ([yet?](https://github.com/immich-app/immich/discussions/2073)), neither does this script.
 
@@ -307,15 +309,20 @@ docker run -e SHARE_WITH="User A=editor:userB@mydomain.com" -e UNATTENDED="1" -e
 ## Cleaning Up Albums
 
 The script supports differnt run modes (option `-m`/`--mode` or env variable `MODE` for Docker). The default mode is `CREATE`, which is used to create albums.
-The other two modes are `CLEANUP` and `DELETE_ALL`:
-  - `CLEANUP`: The script will generate album names using the script's arguments and the assets found in Immich, but instead of creating the albums, it will delete them (if they exist). This is useful if a large number of albums was created with no/the wrong `--album-separator` or `--album-levels` settings.
-  - `DELETE_ALL`: ⚠️ As the name suggests, this mode blindly deletes ALL albums from Immich. Use with caution!
+The other two modes are `CLEANUP` and `DELETE_ALL`.
+> [!CAUTION]  
+> Regardless of the mode you are using, deleting albums cannot be undone! The only option is to let the script run again and create new albums base on the passed arguments and current assets in Immich.
 
 To prevent accidental deletions, setting the mode to `CLEANUP` or `DELETE_ALL` alone will not actually delete any albums, but only perform a dry run. The dry run prints a list of albums that the script __would__ delete.  
 To actually delete albums, the option `-d/--delete-confirm` (or env variable `DELETE_CONFIRM` for Docker) must be set.
 
-__WARNING ⚠️__  
-Deleting albums cannot be undone! The only option is to let the script run again and create new albums base on the passed arguments and current assets in Immich.
+### `CLEANUP`
+The script will generate album names using the script's arguments and the assets found in Immich, but instead of creating the albums, it will delete them (if they exist). This is useful if a large number of albums was created with no/the wrong `--album-separator` or `--album-levels` settings.
+
+### `DELETE_ALL`
+> [!CAUTION]  
+> As the name suggests, this mode blindly deletes **ALL** albums from Immich. Use with caution!
+
 
 ## Dealing with External Library Changes
 
@@ -328,7 +335,10 @@ To clean up this mess this script offers an option called `Sync Mode`. It is an 
 The following behaviors wil be triggered by the different values:
   - `0`: No syncing (default)
   - `1`: Delete all empty albums at the end of a run
-  - `2`: Trigger offline asset removal for all libraires (⚠️ This function requires the API key of an Admin User!)
+  - `2`: Trigger offline asset removal for all libraires 
+  
+> [!IMPORTANT]  
+> Sync Mode 2 / Triggering offline asset removal requires the API key of an Admin User!
 
 The complete syncing process consists of two stages:
 1. Trigger Offline Asset Removal
@@ -337,7 +347,9 @@ Offline Asset Removal can only be triggered by Administrators, so the API Key us
 
 2. Delete Empty Albums
 Step 1 might leave behind empty albums for a different user. The script is capable of removing empty albums at the end of a run to clean up after Offline Asset Removal.
-⚠️ It is __not__ possible for the script to distinguish between an album that was left behind empty after Offline Asset Removal and a manually created album with no images added to it! All empty albums of that user will be deleted!
+
+> [!CAUTION]  
+> It is __not__ possible for the script to distinguish between an album that was left behind empty after Offline Asset Removal and a manually created album with no images added to it! All empty albums of that user will be deleted!
 
 It is up to you whether you want to use the full capabilities Sync Mode offers, parts of it or none.  
 An example for the Immich `docker-compose.yml` stack when using full Sync Mode might look like this:
