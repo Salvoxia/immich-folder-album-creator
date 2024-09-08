@@ -6,9 +6,10 @@ import logging
 import sys
 import os
 import datetime
-from collections import defaultdict
+from collections import defaultdict, OrderedDict as ordered_dict
+import re
 import urllib3
-import fnmatch
+
 
 # Trying to deal with python's isnumeric() function
 # not recognizing negative numbers
@@ -18,6 +19,30 @@ def is_integer(str):
         return True
     except ValueError:
         return False
+
+# Translation of GLOB-style patterns to Regex
+# Source: https://stackoverflow.com/a/63212852
+# FIXME: Replace with glob.translate() introduced with Python 3.13
+escaped_glob_tokens_to_re = ordered_dict((
+    # Order of ``**/`` and ``/**`` in RE tokenization pattern doesn't matter because ``**/`` will be caught first no matter what, making ``/**`` the only option later on.
+    # W/o leading or trailing ``/`` two consecutive asterisks will be treated as literals.
+    ('/\*\*', '(?:/.+?)*'), # Edge-case #1. Catches recursive globs in the middle of path. Requires edge case #2 handled after this case.
+    ('\*\*/', '(?:^.+?/)*'), # Edge-case #2. Catches recursive globs at the start of path. Requires edge case #1 handled before this case. ``^`` is used to ensure proper location for ``**/``.
+    ('\*', '[^/]*'), # ``[^/]*`` is used to ensure that ``*`` won't match subdirs, as with naive ``.*?`` solution.
+    ('\?', '.'),
+    ('\[\*\]', '\*'), # Escaped special glob character.
+    ('\[\?\]', '\?'), # Escaped special glob character.
+    ('\[!', '[^'), # Requires ordered dict, so that ``\[!`` preceded ``\[`` in RE pattern. Needed mostly to differentiate between ``!`` used within character class ``[]`` and outside of it, to avoid faulty conversion.
+    ('\[', '['),
+    ('\]', ']'),
+))
+
+escaped_glob_replacement = re.compile('(%s)' % '|'.join(escaped_glob_tokens_to_re).replace('\\', '\\\\\\'))
+
+def glob_to_re(pattern):
+    return escaped_glob_replacement.sub(lambda match: escaped_glob_tokens_to_re[match.group(0)], re.escape(pattern))
+
+
 
 # Constants holding script run modes
 # Creat albums based on folder names and script arguments
@@ -154,14 +179,16 @@ if not ignore_albums == "":
 else:
     ignore_albums = False
 
+path_filter_regex = False
 if path_filter == "":
     path_filter = False
 else:
-    # Check if last porition of glob pattern contains a dot '.'
-    path_filter_parsed = path_filter.split('/')
-    if not '.' in path_filter_parsed[len(path_filter_parsed)-1]:
-        # Include all files
-        path_filter += "/*.*"
+#    # Check if last porition of glob pattern contains a dot '.'
+#    path_filter_parsed = path_filter.split('/')
+#    if not '.' in path_filter_parsed[len(path_filter_parsed)-1]:
+#        # Include all files
+#        path_filter += "/*.*"
+    path_filter_regex = glob_to_re(path_filter)
 
 # Request arguments for API calls
 requests_kwargs = {
@@ -540,6 +567,7 @@ def triggerOfflineAssetRemoval(libraryId: str):
         assert r.status_code == 204
 
 
+
 # append trailing slash to all root paths
 for i in range(len(root_paths)):
     if root_paths[i][-1] != '/':
@@ -600,7 +628,7 @@ for asset in assets:
 
         # First apply filter, if any
         if path_filter:
-            if not fnmatch.fnmatchcase(asset_path.replace(root_path, ''), path_filter):
+            if not re.fullmatch(path_filter_regex, asset_path.replace(root_path, '')):
                 logging.debug("Ignoring asset %s due to path_filter setting!", asset_path)
                 continue
         # Check ignore_albums
