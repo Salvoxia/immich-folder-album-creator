@@ -8,6 +8,7 @@ import os
 import datetime
 from collections import defaultdict
 import urllib3
+import fnmatch
 
 # Trying to deal with python's isnumeric() function
 # not recognizing negative numbers
@@ -53,6 +54,7 @@ parser.add_argument("-o", "--share-role", default="viewer", choices=['viewer', '
 parser.add_argument("-S", "--sync-mode", default=0, type=int, choices=[0, 1, 2], help="Synchronization mode to use. Synchronization mode helps synchronizing changes in external libraries structures to Immich after albums have already been created. Possible Modes: 0 = do nothing; 1 = Delete any empty albums; 2 = Trigger offline asset removal (REQUIRES API KEY OF AN ADMIN USER!)")
 parser.add_argument("-O", "--album-order", default=False, type=str, choices=[False, 'asc', 'desc'], help="Set sorting order for newly created albums to newest or oldest file first, Immich defaults to newest file first")
 parser.add_argument("-A", "--find-assets-in-albums", action="store_true", help="By default, the script only finds assets that are not assigned to any album yet. Set this option to make the script discover assets that are already part of an album and handle them as usual.")
+parser.add_argument("-f", "--path-filter", default="", type=str, help="Use glob-like patterns to filter assets before album name creation. This filter is evaluated before any values passed with --ignore.")
 
 args = vars(parser.parse_args())
 # set up logger to log in logfmt format
@@ -79,6 +81,7 @@ share_with = args["share_with"]
 share_role = args["share_role"]
 sync_mode = args["sync_mode"]
 find_assets_in_albums = args["find_assets_in_albums"]
+path_filter = args["path_filter"]
 
 # Override unattended if we're running in destructive mode
 if mode != SCRIPT_MODE_CREATE:
@@ -105,6 +108,7 @@ logging.debug("share_with = %s", share_with)
 logging.debug("share_role = %s", share_role)
 logging.debug("sync_mode = %d", sync_mode)
 logging.debug("find_assets_in_albums = %s", find_assets_in_albums)
+logging.debug("path_filter = %s", path_filter)
 
 # Verify album levels
 if is_integer(album_levels) and album_levels == 0:
@@ -149,6 +153,15 @@ if not ignore_albums == "":
     ignore_albums = ignore_albums.split(":")
 else:
     ignore_albums = False
+
+if path_filter == "":
+    path_filter = False
+else:
+    # Check if last porition of glob pattern contains a dot '.'
+    path_filter_parsed = path_filter.split('/')
+    if not '.' in path_filter_parsed[len(path_filter_parsed)-1]:
+        # Include all files
+        path_filter += "/*.*"
 
 # Request arguments for API calls
 requests_kwargs = {
@@ -584,6 +597,12 @@ for asset in assets:
     for root_path in root_paths:
         if root_path not in asset_path:
             continue
+
+        # First apply filter, if any
+        if path_filter:
+            if not fnmatch.fnmatchcase(asset_path.replace(root_path, ''), path_filter):
+                logging.debug("Ignoring asset %s due to path_filter setting!", asset_path)
+                continue
         # Check ignore_albums
         ignore = False
         if ignore_albums:
