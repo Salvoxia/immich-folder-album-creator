@@ -19,10 +19,11 @@ This script is mostly based on the following original script: [REDVM/immich_auto
 2. [Usage (Docker)](#docker)
 3. [Choosing the correct `root_path`](#choosing-the-correct-root_path)
 4. [How It Works (with Examples)](#how-it-works)
-5. [Automatic Album Sharing](#automatic-album-sharing)
-6. [Cleaning Up Albums](#cleaning-up-albums)
-7. [Assets in Multiple Albums](#assets-in-multiple-albums)
-8. [Dealing with External Library Changes](#dealing-with-external-library-changes)
+5. [Filtering](#filtering)
+6. [Automatic Album Sharing](#automatic-album-sharing)
+7. [Cleaning Up Albums](#cleaning-up-albums)
+8. [Assets in Multiple Albums](#assets-in-multiple-albums)
+9. [Dealing with External Library Changes](#dealing-with-external-library-changes)
 
 ## Usage
 ### Bare Python Script
@@ -37,8 +38,8 @@ This script is mostly based on the following original script: [REDVM/immich_auto
     ```
 3. Run the script
     ```
-    usage: immich_auto_album.py [-h] [-r ROOT_PATH] [-u] [-a ALBUM_LEVELS] [-s ALBUM_SEPARATOR] [-c CHUNK_SIZE] [-C FETCH_CHUNK_SIZE] [-l {CRITICAL,ERROR,WARNING,INFO,DEBUG}] [-k] [-i IGNORE] [-m {CREATE,CLEANUP,DELETE_ALL}] [-d] [-x SHARE_WITH] [-o {viewer,editor}]
-                            [-S {0,1,2}] [-O {False,asc,desc}] [-A]
+    usage: immich_auto_album.py [-h] [-r ROOT_PATH] [-u] [-a ALBUM_LEVELS] [-s ALBUM_SEPARATOR] [-c CHUNK_SIZE] [-C FETCH_CHUNK_SIZE] [-l {CRITICAL,ERROR,WARNING,INFO,DEBUG}] [-k] [-i IGNORE] [-m {CREATE,CLEANUP,DELETE_ALL}] [-d]
+                            [-x SHARE_WITH] [-o {viewer,editor}] [-S {0,1,2}] [-O {False,asc,desc}] [-A] [-f PATH_FILTER]
                             root_path api_url api_key
 
     Create Immich Albums from an external library path based on the top level folders
@@ -54,8 +55,9 @@ This script is mostly based on the following original script: [REDVM/immich_auto
                             Additional external libarary root path in Immich; May be specified multiple times for multiple import paths or external libraries. (default: None)
       -u, --unattended      Do not ask for user confirmation after identifying albums. Set this flag to run script as a cronjob. (default: False)
       -a ALBUM_LEVELS, --album-levels ALBUM_LEVELS
-                            Number of sub-folders or range of sub-folder levels below the root path used for album name creation. Positive numbers start from top of the folder structure, negative numbers from the bottom. Cannot be 0. If a range should be set, the
-                            start level and end level must be separated by a comma like '<startLevel>,<endLevel>'. If negative levels are used in a range, <startLevel> must be less than or equal to <endLevel>. (default: 1)
+                            Number of sub-folders or range of sub-folder levels below the root path used for album name creation. Positive numbers start from top of the folder structure, negative numbers from the bottom. Cannot be
+                            0. If a range should be set, the start level and end level must be separated by a comma like '<startLevel>,<endLevel>'. If negative levels are used in a range, <startLevel> must be less than or equal to
+                            <endLevel>. (default: 1)
       -s ALBUM_SEPARATOR, --album-separator ALBUM_SEPARATOR
                             Separator string to use for compound album names created from nested folders. Only effective if -a is set to a value > 1 (default: )
       -c CHUNK_SIZE, --chunk-size CHUNK_SIZE
@@ -68,21 +70,27 @@ This script is mostly based on the following original script: [REDVM/immich_auto
       -i IGNORE, --ignore IGNORE
                             A string containing a list of folders, sub-folder sequences or file names separated by ':' that will be ignored. (default: )
       -m {CREATE,CLEANUP,DELETE_ALL}, --mode {CREATE,CLEANUP,DELETE_ALL}
-                            Mode for the script to run with. CREATE = Create albums based on folder names and provided arguments; CLEANUP = Create album nmaes based on current images and script arguments, but delete albums if they exist; DELETE_ALL = Delete all
-                            albums. If the mode is anything but CREATE, --unattended does not have any effect. Only performs deletion if -d/--delete-confirm option is set, otherwise only performs a dry-run. (default: CREATE)
+                            Mode for the script to run with. CREATE = Create albums based on folder names and provided arguments; CLEANUP = Create album nmaes based on current images and script arguments, but delete albums if they
+                            exist; DELETE_ALL = Delete all albums. If the mode is anything but CREATE, --unattended does not have any effect. Only performs deletion if -d/--delete-confirm option is set, otherwise only performs a
+                            dry-run. (default: CREATE)
       -d, --delete-confirm  Confirm deletion of albums when running in mode CLEANUP or DELETE_ALL. If this flag is not set, these modes will perform a dry run only. Has no effect in mode CREATE (default: False)
       -x SHARE_WITH, --share-with SHARE_WITH
-                            A user name (or email address of an existing user) to share newly created albums with. Sharing only happens if the album was actually created, not if new assets were added to an existing album. If the the share role should be specified by
-                            user, the format <userName>=<shareRole> must be used, where <shareRole> must be one of 'viewer' or 'editor'. May be specified multiple times to share albums with more than one user. (default: None)
+                            A user name (or email address of an existing user) to share newly created albums with. Sharing only happens if the album was actually created, not if new assets were added to an existing album. If the
+                            the share role should be specified by user, the format <userName>=<shareRole> must be used, where <shareRole> must be one of 'viewer' or 'editor'. May be specified multiple times to share albums with
+                            more than one user. (default: None)
       -o {viewer,editor}, --share-role {viewer,editor}
-                            The default share role for users newly created albums are shared with. Only effective if --share-with is specified at least once and the share role is not specified within --share-with. (default: viewer)
+                            The default share role for users newly created albums are shared with. Only effective if --share-with is specified at least once and the share role is not specified within --share-with. (default:
+                            viewer)
       -S {0,1,2}, --sync-mode {0,1,2}
-                            Synchronization mode to use. Synchronization mode helps synchronizing changes in external libraries structures to Immich after albums have already been created. Possible Modes: 0 = do nothing; 1 = Delete any empty albums; 2 = Trigger
-                            offline asset removal (REQUIRES API KEY OF AN ADMIN USER!) (default: 0)
+                            Synchronization mode to use. Synchronization mode helps synchronizing changes in external libraries structures to Immich after albums have already been created. Possible Modes: 0 = do nothing; 1 =
+                            Delete any empty albums; 2 = Trigger offline asset removal (REQUIRES API KEY OF AN ADMIN USER!) (default: 0)
       -O {False,asc,desc}, --album-order {False,asc,desc}
                             Set sorting order for newly created albums to newest or oldest file first, Immich defaults to newest file first (default: False)
       -A, --find-assets-in-albums
-                            By default, the script only finds assets that are not assigned to any album yet. Set this option to make the script discover assets that are already part of an album and handle them as usual. (default: False)
+                            By default, the script only finds assets that are not assigned to any album yet. Set this option to make the script discover assets that are already part of an album and handle them as usual. (default:
+                            False)
+      -f PATH_FILTER, --path-filter PATH_FILTER
+                            Use glob-like patterns to filter assets before album name creation. This filter is evaluated before any values passed with --ignore. (default: )
     ```
 
 __Plain example without optional arguments:__
@@ -117,6 +125,7 @@ The environment variables are analoguous to the script's command line arguments.
 | SYNC_MODE     | no | Synchronization mode to use. Synchronization mode helps synchronizing changes in external libraries structures to Immich after albums have already been created. Possible Modes: <br>`0` = do nothing<br>`1` = Delete any empty albums<br>`2` = Trigger offline asset removal (REQUIRES API KEY OF AN ADMIN USER!)<br>(default: `0`)<br>Refer to [Dealing with External Library Changes](#dealing-with-external-library-changes). |
 | ALBUM_ORDER     | no | Set sorting order for newly created albums to newest (`desc`) or oldest (`asc`) file first, Immich defaults to newest file first, allowed values: `asc`, `desc` |
 | FIND_ASSETS_IN_ALBUMS     | no | By default, the script only finds assets that are not assigned to any album yet. Set this option to make the script discover assets that are already part of an album and handle them as usual. (default: `False`)<br>Refer to [Assets in Multiple Albums](#assets-in-multiple-albums). |
+| PATH_FILTER     | no | Use glob-like patterns to filter assets before album name creation. This filter is evaluated before any values passed with --ignore. (default: ``)<br>Refer to [Filtering](#filtering). |
 
 #### Run the container with Docker
 
@@ -267,6 +276,62 @@ Albums created for `root_path = /external_libs/photos/Birthdays`:
 
 Since Immich does not support real nested albums ([yet?](https://github.com/immich-app/immich/discussions/2073)), neither does this script.
 
+## Filtering
+
+It is possible filter images by either specifying path patterns to include or keywords which will ignore an image if its path contains any. Two options control this behavior.
+
+### Ignoring Assets
+The option `-i / --ignore` or Docker environment variable `IGNORE` accepts a semicolon-separated `:` list of keywords. If an image's path contains that keyword, it will be ignored.  
+
+**Example:**  
+`--ignore "Vacation:Birthday"` will not include any images for which the path **below the root path** contains either `Vacation` or `Birthday`. Albums will not be created for these images and they will not be added to albums.
+
+### Filtering for Assets
+The option `-f / ---path-filter` or Docker environment variable `PATH_FILTER` accepts a glob-style pattern to filter for images for which the path **below the root path** matches the provided pattern. **Only** these images will be considered for album creation.  
+The following wild-cards are supported:  
+| Pattern | Meaning                                                                                     |
+|---------|---------------------------------------------------------------------------------------------|
+|`*`      | Matches everything (even nothing) within one folder level                                   |
+|`?`      | Matches any single character                                                                |
+|`[]`     | Matches one character in the brackets, e.g. `[a]` literally matches `a`                     |
+|`[!]`    | Matches one character *not* in the brackets, e.h. `[!a]` matches any character **but** `a`  |
+
+> [!TIP]  
+> When working with path filters, consider setting the `-A / --find-assets-in-albums` option or Docker environment variable `FIND_ASSETS_IN_ALBUMS` for the script to discover assets that are already part of an album. That way, assets can be added to multiple albums by the script. Refer to the [Assets in Multiple Albums](#assets-in-multiple-albums) section for more information.
+
+**Examples:**  
+Consider the following folder structure:  
+```
+/external_libs/photos/
+├── 2020/
+│   ├── 02 Feb/
+│   │   └── Vacation/
+│   ├── 08 Aug/
+│   │   └── Vacation/
+├── Birthdays/
+│   ├── John/
+│   └── Jane/
+└── Skiing 2023/
+```
+
+- To only create a `Birthdays` album with all images directly in `Birthdays` or in any subfolder on any level, run the script with the following options:  
+  - `root_path=/external_libs/photos`
+  - `--album-level=1`
+  - `--path-filter Birthdays/**`
+- To only create albums for the 2020s (all 202x years), but with the album names like `2020 02 Feb`, run the script with the following options:
+  - `root_path=/external_libs/photos`
+  - `--album-level=2`
+  - `--path-filter=202?/**`
+- To only create albums for 2020s (all 202x years) with the album names like `2020 02 Feb`, but only with images in folders **one level** below `2020` and **not** any of the `Vacation` images, run the script with the following options:
+  - `root_path=/external_libs/photos`
+  - `--album-level=2`
+  - `--path-filter=202?/*/*`
+- To create a `Vacation` album with all vacation images, run the script with the following options:
+  - `root_path=/external_libs/photos`
+  - `--album-level=-1`
+  - `--path-filter=**/Vacation/*`
+
+
 ## Automatic Album Sharing
 
 The scripts support sharing newly created albums with a list of existing users. The sharing role (`viewer` or `editor`) can be specified for all users at once or individually per user.
@@ -335,6 +400,8 @@ The script will generate album names using the script's arguments and the assets
 
 By default, the script only fetches assets from Immich that are not assigned to any album yet. This makes querying assets in large libraries very fast. However, if assets should be part of either manually created albums as well as albums based on the folder structure, or if multiple script passes with different album level settings should create differently named albums with overlapping contents, the option `--find-assets-in-albums` (bare Python) or environment variable `FIND_ASSETS_IN_ALBUMS` (Docker) may be set.  
 In that case, the script will request all assets from Immich and add them to their corresponding folders, even if the also are part of other albums.
+> [!TIP]  
+> This option can be especially useful when [Filtering for Assets](#filtering-for-assets).
 
 
 ## Dealing with External Library Changes

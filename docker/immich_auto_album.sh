@@ -95,5 +95,9 @@ if [ ! -z "$FIND_ASSETS_IN_ALBUMS" ]; then
     args="-A $args"
 fi
 
+if [ ! -z "$PATH_FILTER" ]; then
+    args="-f \"$PATH_FILTER\" $args"
+fi
+
 BASEDIR=$(dirname "$0")
 echo $args | xargs python3 -u $BASEDIR/immich_auto_album.py
