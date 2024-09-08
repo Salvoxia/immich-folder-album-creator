@@ -6,7 +6,7 @@ import logging
 import sys
 import os
 import datetime
-from collections import defaultdict, OrderedDict as ordered_dict
+from collections import defaultdict, OrderedDict
 import re
 import urllib3
 
@@ -23,18 +23,18 @@ def is_integer(str):
 # Translation of GLOB-style patterns to Regex
 # Source: https://stackoverflow.com/a/63212852
 # FIXME: Replace with glob.translate() introduced with Python 3.13
-escaped_glob_tokens_to_re = ordered_dict((
+escaped_glob_tokens_to_re = OrderedDict((
     # Order of ``**/`` and ``/**`` in RE tokenization pattern doesn't matter because ``**/`` will be caught first no matter what, making ``/**`` the only option later on.
     # W/o leading or trailing ``/`` two consecutive asterisks will be treated as literals.
-    ('/\*\*', '(?:/.+?)*'), # Edge-case #1. Catches recursive globs in the middle of path. Requires edge case #2 handled after this case.
-    ('\*\*/', '(?:^.+?/)*'), # Edge-case #2. Catches recursive globs at the start of path. Requires edge case #1 handled before this case. ``^`` is used to ensure proper location for ``**/``.
-    ('\*', '[^/]*'), # ``[^/]*`` is used to ensure that ``*`` won't match subdirs, as with naive ``.*?`` solution.
-    ('\?', '.'),
-    ('\[\*\]', '\*'), # Escaped special glob character.
-    ('\[\?\]', '\?'), # Escaped special glob character.
-    ('\[!', '[^'), # Requires ordered dict, so that ``\[!`` preceded ``\[`` in RE pattern. Needed mostly to differentiate between ``!`` used within character class ``[]`` and outside of it, to avoid faulty conversion.
-    ('\[', '['),
-    ('\]', ']'),
+    ('/\\*\\*', '(?:/.+?)*'), # Edge-case #1. Catches recursive globs in the middle of path. Requires edge case #2 handled after this case.
+    ('\\*\\*/', '(?:^.+?/)*'), # Edge-case #2. Catches recursive globs at the start of path. Requires edge case #1 handled before this case. ``^`` is used to ensure proper location for ``**/``.
+    ('\\*', '[^/]*'), # ``[^/]*`` is used to ensure that ``*`` won't match subdirs, as with naive ``.*?`` solution.
+    ('\\?', '.'),
+    ('\\[\\*\\]', '\\*'), # Escaped special glob character.
+    ('\\[\\?\\]', '\\?'), # Escaped special glob character.
+    ('\\[!', '[^'), # Requires ordered dict, so that ``\\[!`` preceded ``\\[`` in RE pattern. Needed mostly to differentiate between ``!`` used within character class ``[]`` and outside of it, to avoid faulty conversion.
+    ('\\[', '['),
+    ('\\]', ']'),
 ))
 
 escaped_glob_replacement = re.compile('(%s)' % '|'.join(escaped_glob_tokens_to_re).replace('\\', '\\\\\\'))
