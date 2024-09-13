@@ -9,7 +9,7 @@ import datetime
 from collections import defaultdict, OrderedDict
 import re
 import urllib3
-
+import random
 
 # Trying to deal with python's isnumeric() function
 # not recognizing negative numbers
@@ -80,6 +80,8 @@ parser.add_argument("-S", "--sync-mode", default=0, type=int, choices=[0, 1, 2],
 parser.add_argument("-O", "--album-order", default=False, type=str, choices=[False, 'asc', 'desc'], help="Set sorting order for newly created albums to newest or oldest file first, Immich defaults to newest file first")
 parser.add_argument("-A", "--find-assets-in-albums", action="store_true", help="By default, the script only finds assets that are not assigned to any album yet. Set this option to make the script discover assets that are already part of an album and handle them as usual.")
 parser.add_argument("-f", "--path-filter", default="", type=str, help="Use glob-like patterns to filter assets before album name creation. This filter is evaluated before any values passed with --ignore.")
+parser.add_argument("--set-album-thumbnail", choices=["first", "last", "random"], help="Set first/last/random image as thumbnail for album")
+
 
 args = vars(parser.parse_args())
 # set up logger to log in logfmt format
@@ -376,6 +378,23 @@ def fetchAlbums():
     r.raise_for_status()
     return r.json()
 
+def fetchAlbumAssets(albumId: str):
+    """
+    Fetches assets of a specifc album
+
+    Parameters
+    ----------
+        albumId : str
+            The ID of the album for which to fetch the assets
+
+    """
+
+    apiEndpoint = f'albums/{albumId}'
+
+    r = requests.get(root_url+apiEndpoint, **requests_kwargs)
+    r.raise_for_status()
+    return r.json()["assets"]
+
 def deleteAlbum(album: dict):
     """
     Deletes an album identified by album['id']
@@ -566,6 +585,25 @@ def triggerOfflineAssetRemoval(libraryId: str):
     else:
         assert r.status_code == 204
 
+def setAlbumThumbnail(albumId: str, assetId: str):
+    """
+    Sets asset as thumbnail of album
+
+    Parameters
+    ----------
+        albumId : str
+            The ID of the album for which to set the thumbnail
+        assetId : str
+            The ID of the asset to be set as thumbnail
+
+    """
+    apiEndpoint = f'albums/{albumId}'
+
+    data = {"albumThumbnailAssetId": assetId}
+
+    r = requests.patch(root_url+apiEndpoint, json=data, **requests_kwargs)
+
+    assert r.status_code == 200
 
 
 # append trailing slash to all root paths
@@ -803,5 +841,27 @@ if sync_mode == 2:
     libraries = fetchLibraries()
     for library in libraries:
         triggerOfflineAssetRemoval(library["id"])
+
+if args["set_album_thumbnail"]:
+    # fetch albums again to get newest state
+    albums = fetchAlbums()
+
+    for album in albums:
+        # get assets for album and sort them by file creation date
+        assets = fetchAlbumAssets(album['id'])
+        assets.sort(key=lambda x: x['fileCreatedAt'])
+
+        index_choice = {
+            "first": 0,
+            "last": -1,
+            "random": random.randint(0, len(assets)-1)
+        }
+
+        index = index_choice[args["set_album_thumbnail"]]
+
+        logging.info(f"Using asset with index {index} as thumbnail for album {album['albumName']}")
+
+        setAlbumThumbnail(album['id'], assets[index]['id'])
+
 
 logging.info("Done!")
