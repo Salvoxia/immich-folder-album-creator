@@ -58,6 +58,14 @@ ENV_IS_DOCKER = "IS_DOCKER"
 # List of allowed share user roles
 SHARE_ROLES = ["editor", "viewer"]
 
+# Constants for album thumbnail setting
+ALBUM_THUMBNAIL_RANDOM_ALL = "random-all"
+ALBUM_THUMBNAIL_RANDOM_FILTERED = "random-filtered"
+ALBUM_THUMBNAIL_SETTINGS = ["first", "last", "random", ALBUM_THUMBNAIL_RANDOM_ALL, ALBUM_THUMBNAIL_RANDOM_FILTERED]
+ALBUM_THUMBNAIL_STATIC_INDICES = {
+    "first": 0,
+    "last": -1,
+}
 
 parser = argparse.ArgumentParser(description="Create Immich Albums from an external library path based on the top level folders", formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 parser.add_argument("root_path", action='append', help="The external libarary's root path in Immich")
@@ -80,7 +88,7 @@ parser.add_argument("-S", "--sync-mode", default=0, type=int, choices=[0, 1, 2],
 parser.add_argument("-O", "--album-order", default=False, type=str, choices=[False, 'asc', 'desc'], help="Set sorting order for newly created albums to newest or oldest file first, Immich defaults to newest file first")
 parser.add_argument("-A", "--find-assets-in-albums", action="store_true", help="By default, the script only finds assets that are not assigned to any album yet. Set this option to make the script discover assets that are already part of an album and handle them as usual.")
 parser.add_argument("-f", "--path-filter", default="", type=str, help="Use glob-like patterns to filter assets before album name creation. This filter is evaluated before any values passed with --ignore.")
-parser.add_argument("--set-album-thumbnail", choices=["first", "last", "random"], help="Set first/last/random image as thumbnail for album")
+parser.add_argument("--set-album-thumbnail", choices=ALBUM_THUMBNAIL_SETTINGS, help="Set first/last/random image as thumbnail for newly created albums or albums assets have been added to. If set to "+ALBUM_THUMBNAIL_RANDOM_FILTERED+", thumbnails are shuffled for all albums whose assets would not be filtered out or ignored by the ignore or path-filter options, even if no assets were added during the run. If set to "+ALBUM_THUMBNAIL_RANDOM_ALL+", the thumbnails for ALL albums will be shuffled on every run.")
 
 
 args = vars(parser.parse_args())
@@ -109,6 +117,7 @@ share_role = args["share_role"]
 sync_mode = args["sync_mode"]
 find_assets_in_albums = args["find_assets_in_albums"]
 path_filter = args["path_filter"]
+set_album_thumbnail = args["set_album_thumbnail"]
 
 # Override unattended if we're running in destructive mode
 if mode != SCRIPT_MODE_CREATE:
@@ -136,6 +145,7 @@ logging.debug("share_role = %s", share_role)
 logging.debug("sync_mode = %d", sync_mode)
 logging.debug("find_assets_in_albums = %s", find_assets_in_albums)
 logging.debug("path_filter = %s", path_filter)
+logging.debug("set_album_thumbnail = %s", set_album_thumbnail)
 
 # Verify album levels
 if is_integer(album_levels) and album_levels == 0:
@@ -459,7 +469,44 @@ def createAlbum(albumName: str, albumOrder: str) -> str:
     return albumId
 
 
-def addAssetsToAlbum(albumId: str, assets: list[str]):
+def is_asset_ignored(asset: dict) -> bool:
+    """
+    Determines if the asset should be ignored for the purpose of this script
+    based in its originalPath and global ignore and path_filter options.
+
+    Parameters
+    ----------
+        asset : dict
+            The asset to check if it must be ignored or not. Must have the key 'originalPath'.
+    Returns 
+    ----------
+        True if the asset must be ignored, otherwise False
+    """
+    is_asset_ignored = False
+    asset_path = asset['originalPath']
+    for root_path in root_paths:
+        if root_path not in asset_path:
+            is_asset_ignored = True
+
+        # First apply filter, if any
+        if path_filter:
+            if not re.fullmatch(path_filter_regex, asset_path.replace(root_path, '')):
+                logging.debug("Ignoring asset %s due to path_filter setting!", asset_path)
+                is_asset_ignored = True
+        # Check ignore_albums
+        ignore = False
+        if ignore_albums:
+            for ignore_entry in ignore_albums:
+                if ignore_entry in asset_path:
+                    ignore = True
+                    break
+            if ignore:
+                logging.debug("Ignoring asset %s due to ignore_albums setting!", asset_path)
+                is_asset_ignored = True
+    return is_asset_ignored
+
+
+def addAssetsToAlbum(albumId: str, assets: list[str]) -> int:
     """
     Adds the assets IDs provided in assets to the provided albumId.
 
@@ -467,6 +514,7 @@ def addAssetsToAlbum(albumId: str, assets: list[str]):
     and one API call is performed per chunk.
     Only logs errors and successes.
 
+    Returns 
 
     Parameters
     ----------
@@ -474,12 +522,17 @@ def addAssetsToAlbum(albumId: str, assets: list[str]):
             The ID of the album to add assets to
         assets: list[str]
             A list of asset IDs to add to the album
+
+    Returns
+    ---------
+        The number of assets that were actually added to the album (excluding duplicates).
     """
     apiEndpoint = 'albums'
 
     # Divide our assets into chunks of number_of_images_per_request,
     # So the API can cope
     assets_chunked = list(divide_chunks(assets, number_of_images_per_request))
+    assets_added = 0
     for assets_chunk in assets_chunked:
         data = {'ids':assets_chunk}
         r = requests.put(root_url+apiEndpoint+f'/{albumId}/assets', json=data, **requests_kwargs)
@@ -500,6 +553,9 @@ def addAssetsToAlbum(albumId: str, assets: list[str]):
                 cpt += 1
         if cpt > 0:
             logging.info("%d new assets added to %s", cpt, album)
+            assets_added += cpt
+
+    return assets_added
 
 def fetchUsers():
     """Queries and returns all users"""
@@ -656,26 +712,14 @@ logging.info("Sorting assets to corresponding albums using folder name")
 album_to_assets = defaultdict(list)
 for asset in assets:
     asset_path = asset['originalPath']
+    # This method will log the ignore reason, so no need to log anyhting again.
+    if is_asset_ignored(asset):
+        continue
+   
     for root_path in root_paths:
         if root_path not in asset_path:
             continue
 
-        # First apply filter, if any
-        if path_filter:
-            if not re.fullmatch(path_filter_regex, asset_path.replace(root_path, '')):
-                logging.debug("Ignoring asset %s due to path_filter setting!", asset_path)
-                continue
-        # Check ignore_albums
-        ignore = False
-        if ignore_albums:
-            for ignore_entry in ignore_albums:
-                if ignore_entry in asset_path:
-                    ignore = True
-                    break
-            if ignore:
-                logging.debug("Ignoring asset %s due to ignore_albums setting!", asset_path)
-                continue
-            
         # Chunks of the asset's path below root_path
         path_chunks = asset_path.replace(root_path, '').split('/') 
         # A single chunk means it's just the image file in no sub folder, ignore
@@ -810,9 +854,43 @@ if share_with is not None and len(created_albums) > 0:
 logging.info("Adding assets to albums")
 # Note: Immich manages duplicates without problem, 
 # so we can each time ad all assets to same album, no photo will be duplicated 
+albums_with_assets_added = list()
 for album, assets in album_to_assets.items():
     id = album_to_id[album]
-    addAssetsToAlbum(id, assets)
+    number_of_assets_added = addAssetsToAlbum(id, assets)
+    if number_of_assets_added > 0:
+        album_with_asset_added = dict()
+        album_with_asset_added['id'] = id
+        album_with_asset_added['albumName'] = album
+        albums_with_assets_added.append(album_with_asset_added)
+
+
+if set_album_thumbnail:
+    logging.info("Updating album thumbnails")
+    if set_album_thumbnail in [ALBUM_THUMBNAIL_RANDOM_ALL, ALBUM_THUMBNAIL_RANDOM_FILTERED]:
+        # fetch albums again to get newest state
+        albums = fetchAlbums()
+    else:
+        albums = albums_with_assets_added
+
+    for album in albums:
+        # get assets for album and sort them by file creation date
+        assets = fetchAlbumAssets(album['id'])
+        # apply filtering to assets
+        if set_album_thumbnail == ALBUM_THUMBNAIL_RANDOM_FILTERED:
+            assets[:] = [asset for asset in assets if not is_asset_ignored(asset)]        
+
+        if(len(assets) > 0):
+            assets.sort(key=lambda x: x['fileCreatedAt'])
+
+            if set_album_thumbnail not in ALBUM_THUMBNAIL_STATIC_INDICES.keys():
+                index = random.randint(0, len(assets)-1)
+            else:
+                index = ALBUM_THUMBNAIL_STATIC_INDICES[set_album_thumbnail]
+
+            logging.info("Using asset with index %d as thumbnail for album %s", index, album['albumName'])
+            setAlbumThumbnail(album['id'], assets[index]['id'])
+        
 
 # Perform sync mode action: Delete empty albums
 # Attention: Since Offline Asset Removal is an asynchronous job,
@@ -837,27 +915,6 @@ if sync_mode == 2:
     libraries = fetchLibraries()
     for library in libraries:
         triggerOfflineAssetRemoval(library["id"])
-
-if args["set_album_thumbnail"]:
-    # fetch albums again to get newest state
-    albums = fetchAlbums()
-
-    for album in albums:
-        # get assets for album and sort them by file creation date
-        assets = fetchAlbumAssets(album['id'])
-        assets.sort(key=lambda x: x['fileCreatedAt'])
-
-        index_choice = {
-            "first": 0,
-            "last": -1,
-            "random": random.randint(0, len(assets)-1)
-        }
-
-        index = index_choice[args["set_album_thumbnail"]]
-
-        logging.info(f"Using asset with index {index} as thumbnail for album {album['albumName']}")
-
-        setAlbumThumbnail(album['id'], assets[index]['id'])
 
 
 logging.info("Done!")
