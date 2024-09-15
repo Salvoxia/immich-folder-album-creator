@@ -99,5 +99,9 @@ if [ ! -z "$PATH_FILTER" ]; then
     args="-f \"$PATH_FILTER\" $args"
 fi
 
+if [ ! -z "$SET_ALBUM_THUMBNAIL" ]; then
+    args="--set-album-thumbnail \"$SET_ALBUM_THUMBNAIL\" $args"
+fi
+
 BASEDIR=$(dirname "$0")
 echo $args | xargs python3 -u $BASEDIR/immich_auto_album.py
