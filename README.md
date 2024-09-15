@@ -23,7 +23,8 @@ This script is mostly based on the following original script: [REDVM/immich_auto
 6. [Automatic Album Sharing](#automatic-album-sharing)
 7. [Cleaning Up Albums](#cleaning-up-albums)
 8. [Assets in Multiple Albums](#assets-in-multiple-albums)
-9. [Dealing with External Library Changes](#dealing-with-external-library-changes)
+9. [Setting Album Thumbnails](#setting-album-thumbnails)
+10. [Dealing with External Library Changes](#dealing-with-external-library-changes)
 
 ## Usage
 ### Bare Python Script
@@ -91,6 +92,9 @@ This script is mostly based on the following original script: [REDVM/immich_auto
                             False)
       -f PATH_FILTER, --path-filter PATH_FILTER
                             Use glob-like patterns to filter assets before album name creation. This filter is evaluated before any values passed with --ignore. (default: )
+      --set-album-thumbnail {first,last,random,random-all,random-filtered}
+                        Set first/last/random image as thumbnail for newly created albums or albums assets have been added to. If set to random-filtered, thumbnails are shuffled for all albums whose assets would not be filtered out or ignored by the ignore or path-filter options, even if no assets were added during
+                        the run. If set to random-all, the thumbnails for ALL albums will be shuffled on every run. (default: None)
     ```
 
 __Plain example without optional arguments:__
@@ -126,6 +130,8 @@ The environment variables are analoguous to the script's command line arguments.
 | ALBUM_ORDER     | no | Set sorting order for newly created albums to newest (`desc`) or oldest (`asc`) file first, Immich defaults to newest file first, allowed values: `asc`, `desc` |
 | FIND_ASSETS_IN_ALBUMS     | no | By default, the script only finds assets that are not assigned to any album yet. Set this option to make the script discover assets that are already part of an album and handle them as usual. (default: `False`)<br>Refer to [Assets in Multiple Albums](#assets-in-multiple-albums). |
 | PATH_FILTER     | no | Use glob-like patterns to filter assets before album name creation. This filter is evaluated before any values passed with --ignore. (default: ``)<br>Refer to [Filtering](#filtering). |
+| SET_ALBUM_THUMBNAIL | no | Set first/last/random image as thumbnail (based on image creation timestamp) for newly created albums or albums assets have been added to.<br> Allowed values: `first`,`last`,`random`,`random-filtered`,`random-all`<br>If set to `random-filtered`, thumbnails are shuffled for all albums whose assets would not be filtered out or ignored by the `IGNORE` or `PATH_FILTER` options, even if no assets were added during
+                        the run. If set to random-all, the thumbnails for ALL albums will be shuffled on every run. (default: `None`)<br>Refer to [Setting Album Thumbnails](#setting-album-thumbnails). |
 
 #### Run the container with Docker
 
@@ -403,6 +409,22 @@ In that case, the script will request all assets from Immich and add them to the
 > [!TIP]  
 > This option can be especially useful when [Filtering for Assets](#filtering-for-assets).
 
+
+## Setting Album Thumbnails
+
+The script supports automatically setting album thumbnails by specifying the `--set-album-thumbnail` option (bare Python) or `SET_ALBUM_THUMBNAIL` environment variable (Docker). There are several options to choose from for thumbnail selection:
+  - `first`: Sets the first image as thumbnail based on image creation timestamps
+  - `last`: Sets the last image as thumbnail based on image creation timestamps
+  - `random`: Sets the thumbnail to a random image
+
+When using one of the values above, the thumbnail of an album will be updated whenever assets are added.
+
+Furthermore, the script supports two additional modes that are applied  __even if no assets were added to the album__:
+  - `random-all`: In this mode the thumbnail for __all albums__ will be shuffled every time the script runs, ignoring any `root_path`, `--ignore` or `--path-filter` values.
+  - `random-filtered`: Using this mode, the thumbnail for an albums will be shuffled every run if the album is not ignored by `root_path` or due to usage of the `--ignore` or `--path-filter` options.
+  
+> [!CAUTION]  
+> Updating album thumbnails cannot be reverted!
 
 ## Dealing with External Library Changes
 
