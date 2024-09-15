@@ -291,8 +291,8 @@ def fetchServerVersion() -> dict:
     """
     Fetches the API version from the immich server.
 
-    If the API endpoint does not yet exist, returns the latest version
-    before that API endpoint was introduced: 1.105.1
+    If the API endpoint for getting the server version cannot be reached,
+    raises HTTPError
     
     Returns
     -------
@@ -304,17 +304,13 @@ def fetchServerVersion() -> dict:
     # This API call was only introduced with version 1.106.1, so it will fail
     # for older versions.
     # Initialize the version with the latest version without this API call
-    version = {'major': 1, 'minor': 105, "patch": 1}
     r = requests.get(root_url+'server-info/version', **requests_kwargs)
-    assert r.status_code == 200 or r.status_code == 404
     if r.status_code == 200:
         version = r.json()
         logging.info("Detected Immich server version %s.%s.%s", version['major'], version['minor'], version['patch'])
-    # Since the API call did not exist prior to 1.106.1, we assume that 404 means we found an old version.
-    elif r.status_code == 404:
-        logging.info("Detected Immich server version %s.%s.%s or older", version['major'], version['minor'], version['patch'])
     # Any other errors mean communication error with API
     else:
+        logging.error("Communication with Immich API failed! Make sure the passed API URL is correct!")
         r.raise_for_status()
     return version
 
