@@ -483,14 +483,17 @@ def is_asset_ignored(asset: dict) -> bool:
         True if the asset must be ignored, otherwise False
     """
     is_asset_ignored = False
+    asset_root_path = None
     asset_path = asset['originalPath']
     for root_path in root_paths:
-        if root_path not in asset_path:
-            is_asset_ignored = True
-
+        if root_path in asset_path:
+            asset_root_path = root_path
+            break
+    logging.debug("Identified root_path for asset %s = %s", asset_path, asset_root_path)
+    if asset_root_path:
         # First apply filter, if any
         if path_filter:
-            if not re.fullmatch(path_filter_regex, asset_path.replace(root_path, '')):
+            if not re.fullmatch(path_filter_regex, asset_path.replace(asset_root_path, '')):
                 logging.debug("Ignoring asset %s due to path_filter setting!", asset_path)
                 is_asset_ignored = True
         # Check ignore_albums
