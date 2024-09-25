@@ -8,7 +8,7 @@ on:
     - main
     - dev
     tags:
-    - '[0-9]+.*'
+    - '[0-9]+\.[0-9]+\.[0-9]+'
     
 jobs:
   docker:
@@ -32,12 +32,14 @@ jobs:
             ${{ steps.image_name.outputs.image_name }}
           # generate Docker tags based on the following events/attributes
           tags: |
-            # set latest tag for default branch
-            type=raw,value=latest,enable={{is_default_branch}}
-            # set edge tag for dev branch
-            type=edge,enable=true,branch=dev
+            # set edge tag for default branch
+            type=edge,enable={{is_default_branch}}
+            # set dev tag for dev branch
+            type=raw,value=dev,enable=true,branch=dev
             # Tags for non SemVer tag names
             type=match,pattern=([0-9]+.*),group=1
+            # latest tag for any tags
+            type=raw,value=latest,event=tag
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
