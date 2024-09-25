@@ -22,9 +22,28 @@ oldIFS=$IFS
 IFS=':'
 # parse  SHARE_WITH CSV
 share_with_list=""
-for share_user in ${SHARE_WITH}; do
-    share_with_list="--share-with \"$share_user\" $share_with_list"
-done
+if [ ! -z "$SHARE_WITH" ]; then
+    for share_user in ${SHARE_WITH}; do
+        share_with_list="--share-with \"$share_user\" $share_with_list"
+    done
+fi
+
+# parse PATH_FILTER CSV
+path_filter_list=""
+if [ ! -z "$PATH_FILTER" ]; then
+    for path_filter_entry in ${PATH_FILTER}; do
+        path_filter_list="--path-filter \"$path_filter_entry\" $path_filter_list"
+    done
+fi
+
+# parse IGNORE CSV
+ignore_list=""
+if [ ! -z "$IGNORE" ]; then
+    for ignore_entry in ${IGNORE}; do
+        ignore_list="--ignore \"$ignore_entry\" $ignore_list"
+    done
+fi
+
 # reset IFS
 IFS=$oldIFS
 
@@ -63,8 +82,8 @@ if [ "$INSECURE" = "true" ]; then
     args="--insecure $args"
 fi
 
-if [ ! -z "$IGNORE" ]; then
-    args="--ignore \"$IGNORE\" $args"
+if [ ! -z "$ignore_list" ]; then
+    args="$ignore_list $args"
 fi
 
 if [ ! -z "$MODE" ]; then
@@ -95,8 +114,8 @@ if [ ! -z "$FIND_ASSETS_IN_ALBUMS" ]; then
     args="--find-assets-in-albums $args"
 fi
 
-if [ ! -z "$PATH_FILTER" ]; then
-    args="--path-filter \"$PATH_FILTER\" $args"
+if [ ! -z "$path_filter_list" ]; then
+    args="$path_filter_list $args"
 fi
 
 if [ ! -z "$SET_ALBUM_THUMBNAIL" ]; then
@@ -104,4 +123,5 @@ if [ ! -z "$SET_ALBUM_THUMBNAIL" ]; then
 fi
 
 BASEDIR=$(dirname "$0")
+echo $args
 echo $args | xargs python3 -u $BASEDIR/immich_auto_album.py
