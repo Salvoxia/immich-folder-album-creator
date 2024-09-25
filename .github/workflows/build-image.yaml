@@ -35,11 +35,11 @@ jobs:
             # set edge tag for default branch
             type=edge,enable={{is_default_branch}}
             # set dev tag for dev branch
-            type=raw,value=dev,enable=true,branch=dev
+            type=raw,value=dev,enable=${{ github.ref == format('refs/heads/{0}', 'dev') }},branch=dev
             # Tags for non SemVer tag names
             type=match,pattern=([0-9]+.*),group=1
             # latest tag for any tags
-            type=raw,value=latest,event=tag
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/') }},event=tag
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
