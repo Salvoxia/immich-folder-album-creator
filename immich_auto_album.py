@@ -177,7 +177,7 @@ def expand_to_glob(expr: str) -> str:
     Returns
     ---------
         The original expression if it contained a slash or an asterisk,
-        otherwise \*\*/\*\<expr>\*\/\*\*
+        otherwise \\*\\*/\\*\\<expr\\>\\*/\\*\\*
     """
     if not '/' in expr and not '*' in expr:
         glob_expr = f'**/*{expr}*/**'
