@@ -79,7 +79,7 @@ parser.add_argument("-c", "--chunk-size", default=2000, type=int, help="Maximum 
 parser.add_argument("-C", "--fetch-chunk-size", default=5000, type=int, help="Maximum number of assets to fetch with a single API call")
 parser.add_argument("-l", "--log-level", default="INFO", choices=['CRITICAL', 'ERROR', 'WARNING', 'INFO', 'DEBUG'], help="Log level to use")
 parser.add_argument("-k", "--insecure", action="store_true", help="Set to true to ignore SSL verification")
-parser.add_argument("-i", "--ignore", default="", type=str, help="A string containing a list of folders, sub-folder sequences or file names separated by ':' that will be ignored.")
+parser.add_argument("-i", "--ignore", action="append", help="Use either literals or glob-like patterns to ignore assets for album name creation. This filter is evaluated after any values passed with --path-filter. May be specified multiple times.")
 parser.add_argument("-m", "--mode", default=SCRIPT_MODE_CREATE, choices=[SCRIPT_MODE_CREATE, SCRIPT_MODE_CLEANUP, SCRIPT_MODE_DELETE_ALL], help="Mode for the script to run with. CREATE = Create albums based on folder names and provided arguments; CLEANUP = Create album nmaes based on current images and script arguments, but delete albums if they exist; DELETE_ALL = Delete all albums. If the mode is anything but CREATE, --unattended does not have any effect. Only performs deletion if -d/--delete-confirm option is set, otherwise only performs a dry-run.")
 parser.add_argument("-d", "--delete-confirm", action="store_true", help="Confirm deletion of albums when running in mode "+SCRIPT_MODE_CLEANUP+" or "+SCRIPT_MODE_DELETE_ALL+". If this flag is not set, these modes will perform a dry run only. Has no effect in mode "+SCRIPT_MODE_CREATE)
 parser.add_argument("-x", "--share-with", action="append", help="A user name (or email address of an existing user) to share newly created albums with. Sharing only happens if the album was actually created, not if new assets were added to an existing album. If the the share role should be specified by user, the format <userName>=<shareRole> must be used, where <shareRole> must be one of 'viewer' or 'editor'. May be specified multiple times to share albums with more than one user.")
@@ -87,7 +87,7 @@ parser.add_argument("-o", "--share-role", default="viewer", choices=['viewer', '
 parser.add_argument("-S", "--sync-mode", default=0, type=int, choices=[0, 1, 2], help="Synchronization mode to use. Synchronization mode helps synchronizing changes in external libraries structures to Immich after albums have already been created. Possible Modes: 0 = do nothing; 1 = Delete any empty albums; 2 = Trigger offline asset removal (REQUIRES API KEY OF AN ADMIN USER!)")
 parser.add_argument("-O", "--album-order", default=False, type=str, choices=[False, 'asc', 'desc'], help="Set sorting order for newly created albums to newest or oldest file first, Immich defaults to newest file first")
 parser.add_argument("-A", "--find-assets-in-albums", action="store_true", help="By default, the script only finds assets that are not assigned to any album yet. Set this option to make the script discover assets that are already part of an album and handle them as usual.")
-parser.add_argument("-f", "--path-filter", default="", type=str, help="Use glob-like patterns to filter assets before album name creation. This filter is evaluated before any values passed with --ignore.")
+parser.add_argument("-f", "--path-filter", action="append", help="Use either literals or glob-like patterns to filter assets before album name creation. This filter is evaluated before any values passed with --ignore. May be specified multiple times.")
 parser.add_argument("--set-album-thumbnail", choices=ALBUM_THUMBNAIL_SETTINGS, help="Set first/last/random image as thumbnail for newly created albums or albums assets have been added to. If set to "+ALBUM_THUMBNAIL_RANDOM_FILTERED+", thumbnails are shuffled for all albums whose assets would not be filtered out or ignored by the ignore or path-filter options, even if no assets were added during the run. If set to "+ALBUM_THUMBNAIL_RANDOM_ALL+", the thumbnails for ALL albums will be shuffled on every run.")
 
 
@@ -152,56 +152,6 @@ if is_integer(album_levels) and album_levels == 0:
     parser.print_help()
     exit(1)
 
-if insecure:
-    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-
-# Verify album levels range
-if not is_integer(album_levels):
-    album_levels_range_split = album_levels.split(",")
-    if (len(album_levels_range_split) != 2 
-            or not is_integer(album_levels_range_split[0]) 
-            or not is_integer(album_levels_range_split[1]) 
-            or int(album_levels_range_split[0]) == 0
-            or int(album_levels_range_split[1]) == 0
-            or (int(album_levels_range_split[0]) >= 0 and int(album_levels_range_split[1]) < 0) 
-            or (int(album_levels_range_split[0]) < 0 and int(album_levels_range_split[1]) >= 0)
-            or (int(album_levels_range_split[0]) < 0 and int(album_levels_range_split[1]) < 0) and int(album_levels_range_split[0]) > int(album_levels_range_split[1])):
-        logging.error("Invalid album_levels range format! If a range should be set, the start level and end level must be separated by a comma like '<startLevel>,<endLevel>'. If negative levels are used in a range, <startLevel> must be less than or equal to <endLevel>.")
-        exit(1)
-    album_levels_range_arr = album_levels_range_split
-    # Convert to int
-    album_levels_range_arr[0] = int(album_levels_range_split[0])
-    album_levels_range_arr[1] = int(album_levels_range_split[1])
-    # Special case: both levels are negative and end level is -1, which is equivalent to just negative album level of start level
-    if(album_levels_range_arr[0] < 0 and album_levels_range_arr[1] == -1):
-        album_levels = album_levels_range_arr[0]
-        album_levels_range_arr = ()
-        logging.debug("album_levels is a range with negative start level and end level of -1, converted to album_levels = %d", album_levels)
-    else:
-        logging.debug("valid album_levels range argument supplied")
-        logging.debug("album_levels_start_level = %d", album_levels_range_arr[0])
-        logging.debug("album_levels_end_level = %d", album_levels_range_arr[1])
-        # Deduct 1 from album start levels, since album levels start at 1 for user convenience, but arrays start at index 0
-        if album_levels_range_arr[0] > 0:
-            album_levels_range_arr[0] -= 1
-            album_levels_range_arr[1] -= 1
-
-if not ignore_albums == "":
-    ignore_albums = ignore_albums.split(":")
-else:
-    ignore_albums = False
-
-path_filter_regex = False
-if path_filter == "":
-    path_filter = False
-else:
-#    # Check if last porition of glob pattern contains a dot '.'
-#    path_filter_parsed = path_filter.split('/')
-#    if not '.' in path_filter_parsed[len(path_filter_parsed)-1]:
-#        # Include all files
-#        path_filter += "/*.*"
-    path_filter_regex = glob_to_re(path_filter)
-
 # Request arguments for API calls
 requests_kwargs = {
     'headers' : {
@@ -211,6 +161,30 @@ requests_kwargs = {
     },
     'verify' : not insecure
 }
+
+def expand_to_glob(expr: str) -> str:
+    """ 
+    Expands the passed expression to a glob-style
+    expression if it doesn't contain neither a slash nor an asterisk.
+    The resulting glob-style expression matches any path that contains the 
+    original expression anywhere.
+
+    Parameters
+    ----------
+        expr : str
+            Expression to expand to a GLOB-style expression if not already
+            one
+    Returns
+    ---------
+        The original expression if it contained a slash or an asterisk,
+        otherwise \*\*/\*\<expr>\*\/\*\*
+    """
+    if not '/' in expr and not '*' in expr:
+        glob_expr = f'**/*{expr}*/**'
+        logging.debug("expanding %s to %s", expr, glob_expr)
+        return glob_expr
+    else:
+        return expr
 
 def divide_chunks(l: list, n: int): 
     """Yield successive n-sized chunks from l. """
@@ -492,20 +466,22 @@ def is_asset_ignored(asset: dict) -> bool:
     logging.debug("Identified root_path for asset %s = %s", asset_path, asset_root_path)
     if asset_root_path:
         # First apply filter, if any
-        if path_filter:
-            if not re.fullmatch(path_filter_regex, asset_path.replace(asset_root_path, '')):
+        if len(path_filter_regex) > 0:
+            any_match = False
+            for path_filter_regex_entry in path_filter_regex:
+                if re.fullmatch(path_filter_regex_entry, asset_path.replace(asset_root_path, '')):
+                    any_match = True
+            if not any_match:
                 logging.debug("Ignoring asset %s due to path_filter setting!", asset_path)
                 is_asset_ignored = True
-        # Check ignore_albums
-        ignore = False
-        if ignore_albums:
-            for ignore_entry in ignore_albums:
-                if ignore_entry in asset_path:
-                    ignore = True
+        # If the asset "survived" the path filter, check if it is in the ignore_albums argument
+        if not is_asset_ignored and len(ignore_albums_regex) > 0:
+            for ignore_albums_regex_entry in ignore_albums_regex:
+                if re.fullmatch(ignore_albums_regex_entry, asset_path.replace(asset_root_path, '')):
+                    is_asset_ignored = True
+                    logging.debug("Ignoring asset %s due to ignore_albums setting!", asset_path)
                     break
-            if ignore:
-                logging.debug("Ignoring asset %s due to ignore_albums setting!", asset_path)
-                is_asset_ignored = True
+
     return is_asset_ignored
 
 
@@ -660,6 +636,52 @@ def setAlbumThumbnail(albumId: str, assetId: str):
 
     assert r.status_code == 200
 
+
+if insecure:
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+# Verify album levels range
+if not is_integer(album_levels):
+    album_levels_range_split = album_levels.split(",")
+    if (len(album_levels_range_split) != 2 
+            or not is_integer(album_levels_range_split[0]) 
+            or not is_integer(album_levels_range_split[1]) 
+            or int(album_levels_range_split[0]) == 0
+            or int(album_levels_range_split[1]) == 0
+            or (int(album_levels_range_split[0]) >= 0 and int(album_levels_range_split[1]) < 0) 
+            or (int(album_levels_range_split[0]) < 0 and int(album_levels_range_split[1]) >= 0)
+            or (int(album_levels_range_split[0]) < 0 and int(album_levels_range_split[1]) < 0) and int(album_levels_range_split[0]) > int(album_levels_range_split[1])):
+        logging.error("Invalid album_levels range format! If a range should be set, the start level and end level must be separated by a comma like '<startLevel>,<endLevel>'. If negative levels are used in a range, <startLevel> must be less than or equal to <endLevel>.")
+        exit(1)
+    album_levels_range_arr = album_levels_range_split
+    # Convert to int
+    album_levels_range_arr[0] = int(album_levels_range_split[0])
+    album_levels_range_arr[1] = int(album_levels_range_split[1])
+    # Special case: both levels are negative and end level is -1, which is equivalent to just negative album level of start level
+    if(album_levels_range_arr[0] < 0 and album_levels_range_arr[1] == -1):
+        album_levels = album_levels_range_arr[0]
+        album_levels_range_arr = ()
+        logging.debug("album_levels is a range with negative start level and end level of -1, converted to album_levels = %d", album_levels)
+    else:
+        logging.debug("valid album_levels range argument supplied")
+        logging.debug("album_levels_start_level = %d", album_levels_range_arr[0])
+        logging.debug("album_levels_end_level = %d", album_levels_range_arr[1])
+        # Deduct 1 from album start levels, since album levels start at 1 for user convenience, but arrays start at index 0
+        if album_levels_range_arr[0] > 0:
+            album_levels_range_arr[0] -= 1
+            album_levels_range_arr[1] -= 1
+
+# Create ignore regular expressions
+ignore_albums_regex = []
+if ignore_albums:
+    for ignore_albums_entry in ignore_albums:
+        ignore_albums_regex.append(glob_to_re(expand_to_glob(ignore_albums_entry)))
+
+# Create path filter regular expressions
+path_filter_regex = []
+if path_filter:
+    for path_filter_entry in path_filter:
+        path_filter_regex.append(glob_to_re(expand_to_glob(path_filter_entry)))
 
 # append trailing slash to all root paths
 for i in range(len(root_paths)):
