@@ -12,7 +12,7 @@ for path in ${ROOT_PATH}; do
   if [ -z "$main_root_path" ]; then
     main_root_path="\"$path\""
   else
-    additional_root_paths="-r \"$path\" $additional_root_paths"
+    additional_root_paths="--root-path \"$path\" $additional_root_paths"
   fi
 done
 IFS=$oldIFS
@@ -23,14 +23,14 @@ IFS=':'
 # parse  SHARE_WITH CSV
 share_with_list=""
 for share_user in ${SHARE_WITH}; do
-    share_with_list="-x \"$share_user\" $share_with_list"
+    share_with_list="--share-with \"$share_user\" $share_with_list"
 done
 # reset IFS
 IFS=$oldIFS
 
 unattended=
 if [ ! -z "$UNATTENDED" ]; then
-    unattended="-u"
+    unattended="--unattended"
 fi
 
 args="$unattended $main_root_path $API_URL $API_KEY"
@@ -40,39 +40,39 @@ if [ ! -z "$additional_root_paths" ]; then
 fi
 
 if [ ! -z "$ALBUM_LEVELS" ]; then
-    args="-a $ALBUM_LEVELS $args"
+    args="--album-levels $ALBUM_LEVELS $args"
 fi
 
 if [ ! -z "$ALBUM_SEPARATOR" ]; then
-    args="-s \"$ALBUM_SEPARATOR\" $args"
+    args="--album-separator \"$ALBUM_SEPARATOR\" $args"
 fi
 
 if [ ! -z "$FETCH_CHUNK_SIZE" ]; then
-    args="-C $FETCH_CHUNK_SIZE $args"
+    args="--fetch-chunk-size $FETCH_CHUNK_SIZE $args"
 fi
 
 if [ ! -z "$CHUNK_SIZE" ]; then
-    args="-c $CHUNK_SIZE $args"
+    args="--chunk-size $CHUNK_SIZE $args"
 fi
 
 if [ ! -z "$LOG_LEVEL" ]; then
-    args="-l $LOG_LEVEL $args"
+    args="--log-level $LOG_LEVEL $args"
 fi
 
 if [ "$INSECURE" = "true" ]; then
-    args="-k $args"
+    args="--insecure $args"
 fi
 
 if [ ! -z "$IGNORE" ]; then
-    args="-i \"$IGNORE\" $args"
+    args="--ignore \"$IGNORE\" $args"
 fi
 
 if [ ! -z "$MODE" ]; then
-    args="-m \"$MODE\" $args"
+    args="--mode \"$MODE\" $args"
 fi
 
 if [ ! -z "$DELETE_CONFIRM" ]; then
-    args="-d $args"
+    args="--delete-confirm $args"
 fi
 
 if [ ! -z "$share_with_list" ]; then
@@ -80,23 +80,23 @@ if [ ! -z "$share_with_list" ]; then
 fi
 
 if [ ! -z "$SHARE_ROLE" ]; then
-    args="-o $SHARE_ROLE $args"
+    args="--share-role $SHARE_ROLE $args"
 fi
 
 if [ ! -z "$SYNC_MODE" ]; then
-    args="-S $SYNC_MODE $args"
+    args="--sync-mode $SYNC_MODE $args"
 fi
 
 if [ ! -z "$ALBUM_ORDER" ]; then
-    args="-O $ALBUM_ORDER $args"
+    args="--album-order $ALBUM_ORDER $args"
 fi
 
 if [ ! -z "$FIND_ASSETS_IN_ALBUMS" ]; then
-    args="-A $args"
+    args="--find-assets-in-albums $args"
 fi
 
 if [ ! -z "$PATH_FILTER" ]; then
-    args="-f \"$PATH_FILTER\" $args"
+    args="--path-filter \"$PATH_FILTER\" $args"
 fi
 
 if [ ! -z "$SET_ALBUM_THUMBNAIL" ]; then
