@@ -781,28 +781,32 @@ album_to_id = {album['albumName']:album['id'] for album in albums }
 logging.info("%d existing albums identified", len(albums))
 
 # mode CLEANUP
-if mode == SCRIPT_MODE_CLEANUP:
-    # Delete Confirm check
-    if not delete_confirm:
-        print("Would delete the following albums:")
-        print(list(album_to_id.keys()))
-        if is_docker:
-            print("Run the container with environment variable DELETE_CONFIRM set to 1 to actually delete these albums!")
-        else:
-            print(" Call with --delete-confirm to actually delete albums!")
-        exit(0)
-    
-    cpt = 0
+if mode == SCRIPT_MODE_CLEANUP:  
+    albums_to_delete = list()
     for album in album_to_assets:
         if album in album_to_id:
             album_to_delete = dict()
             album_to_delete['id'] = album_to_id[album]
             album_to_delete['albumName'] = album
+            albums_to_delete.append(album_to_delete)
+    
+    # Delete Confirm check
+    if not delete_confirm:
+        print("Would delete the following albums:")
+        print([a['albumName'] for a in albums_to_delete])
+        if is_docker:
+            print("Run the container with environment variable DELETE_CONFIRM set to 1 to actually delete these albums!")
+        else:
+            print(" Call with --delete-confirm to actually delete albums!")
+        exit(0)
+    else:
+        cpt = 0
+        for album_to_delete in albums_to_delete:
             if deleteAlbum(album_to_delete):
                 logging.info("Deleted album %s", album_to_delete['albumName'])
                 cpt += 1
-    logging.info("Deleted %d/%d albums", cpt, len(album_to_assets))
-    exit(0)
+        logging.info("Deleted %d/%d albums", cpt, len(album_to_assets))
+        exit(0)
 
 
 # mode CREATE
