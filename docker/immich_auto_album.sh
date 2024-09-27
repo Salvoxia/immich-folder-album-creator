@@ -114,6 +114,10 @@ if [ ! -z "$FIND_ASSETS_IN_ALBUMS" ]; then
     args="--find-assets-in-albums $args"
 fi
 
+if [ ! -z "$FIND_ARCHIVED_ASSETS" ]; then
+    args="--find-archived-assets $args"
+fi
+
 if [ ! -z "$path_filter_list" ]; then
     args="$path_filter_list $args"
 fi
@@ -122,6 +126,9 @@ if [ ! -z "$SET_ALBUM_THUMBNAIL" ]; then
     args="--set-album-thumbnail \"$SET_ALBUM_THUMBNAIL\" $args"
 fi
 
+if [ ! -z "$ARCHIVE" ]; then
+    args="--archive $args"
+fi
+
 BASEDIR=$(dirname "$0")
-echo $args
 echo $args | xargs python3 -u $BASEDIR/immich_auto_album.py
