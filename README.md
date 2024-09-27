@@ -23,7 +23,7 @@ This script is mostly based on the following original script: [REDVM/immich_auto
 6. [Automatic Album Sharing](#automatic-album-sharing)
 7. [Cleaning Up Albums](#cleaning-up-albums)
 8. [Assets in Multiple Albums](#assets-in-multiple-albums)
-9. [Setting Album Thumbnails](#setting-album-thumbnails)#
+9. [Setting Album Thumbnails](#setting-album-thumbnails)
 10. [Automatic Archiving](#automatic-archiving)
 11. [Dealing with External Library Changes](#dealing-with-external-library-changes)
 
