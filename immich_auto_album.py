@@ -86,10 +86,11 @@ parser.add_argument("-x", "--share-with", action="append", help="A user name (or
 parser.add_argument("-o", "--share-role", default="viewer", choices=['viewer', 'editor'], help="The default share role for users newly created albums are shared with. Only effective if --share-with is specified at least once and the share role is not specified within --share-with.")
 parser.add_argument("-S", "--sync-mode", default=0, type=int, choices=[0, 1, 2], help="Synchronization mode to use. Synchronization mode helps synchronizing changes in external libraries structures to Immich after albums have already been created. Possible Modes: 0 = do nothing; 1 = Delete any empty albums; 2 = Trigger offline asset removal (REQUIRES API KEY OF AN ADMIN USER!)")
 parser.add_argument("-O", "--album-order", default=False, type=str, choices=[False, 'asc', 'desc'], help="Set sorting order for newly created albums to newest or oldest file first, Immich defaults to newest file first")
-parser.add_argument("-A", "--find-assets-in-albums", action="store_true", help="By default, the script only finds assets that are not assigned to any album yet. Set this option to make the script discover assets that are already part of an album and handle them as usual.")
+parser.add_argument("-A", "--find-assets-in-albums", action="store_true", help="By default, the script only finds assets that are not assigned to any album yet. Set this option to make the script discover assets that are already part of an album and handle them as usual. If --find-archived-assets is set as well, both options apply.")
 parser.add_argument("-f", "--path-filter", action="append", help="Use either literals or glob-like patterns to filter assets before album name creation. This filter is evaluated before any values passed with --ignore. May be specified multiple times.")
 parser.add_argument("--set-album-thumbnail", choices=ALBUM_THUMBNAIL_SETTINGS, help="Set first/last/random image as thumbnail for newly created albums or albums assets have been added to. If set to "+ALBUM_THUMBNAIL_RANDOM_FILTERED+", thumbnails are shuffled for all albums whose assets would not be filtered out or ignored by the ignore or path-filter options, even if no assets were added during the run. If set to "+ALBUM_THUMBNAIL_RANDOM_ALL+", the thumbnails for ALL albums will be shuffled on every run.")
 parser.add_argument("-v", "--archive", action="store_true", help="Set this option to automatically archive all assets that were newly added to albums. Archiving hides the assets from Immich's timeline.")
+parser.add_argument("--find-archived-assets", action="store_true", help="By default, the script only finds assets that are not archived in Immich. Set this option to make the script discover assets that are already archived. If -A/--find-assets-in-albums is set as well, both options apply.")
 
 
 args = vars(parser.parse_args())
@@ -120,6 +121,7 @@ find_assets_in_albums = args["find_assets_in_albums"]
 path_filter = args["path_filter"]
 set_album_thumbnail = args["set_album_thumbnail"]
 archive = args["archive"]
+find_archived_assets = args["find_archived_assets"]
 
 # Override unattended if we're running in destructive mode
 if mode != SCRIPT_MODE_CREATE:
@@ -149,6 +151,7 @@ logging.debug("find_assets_in_albums = %s", find_assets_in_albums)
 logging.debug("path_filter = %s", path_filter)
 logging.debug("set_album_thumbnail = %s", set_album_thumbnail)
 logging.debug("archive = %s", archive)
+logging.debug("find_archived_assets = %s", find_archived_assets)
 
 # Verify album levels
 if is_integer(album_levels) and album_levels == 0:
@@ -304,7 +307,7 @@ def fetchServerVersion() -> dict:
     return version
 
 
-def fetchAssets(isNotInAlbum: bool) -> list:
+def fetchAssets(isNotInAlbum: bool, findArchived: bool) -> list:
     """
     Fetches assets from the Immich API.
 
@@ -315,16 +318,37 @@ def fetchAssets(isNotInAlbum: bool) -> list:
     ----------
         isNotInAlbum : bool
             Flag indicating whether to fetch only assets that are not part
-            of an album or not.
+            of an album or not. If set to False, will find images in albums and 
+            not part of albums
+        findArchived : bool
+            Flag indicating whether to only fetch assets that are archived. If set to False,
+            will find archived and unarchived images
     Returns
     ---------
         An array of asset objects
     """
 
+    assets = fetchAssetsWithOptions({'isNotInAlbum': isNotInAlbum})
+    if findArchived:
+        assets += fetchAssetsWithOptions({'isNotInAlbum': isNotInAlbum, 'isArchived': findArchived})
+    return assets
+
+def fetchAssetsWithOptions(searchOptions: dict) -> list:
+    """
+    Fetches assets from the Immich API using specific search options.
+    The search options directly correspond to the body used for the search API request.
+    
+    Parameters
+    ----------
+        searchOptions: dict
+            Dictionary containing options to pass to the search/metadata API endpoint
+    Returns
+    ---------
+        An array of asset objects
+    """
+    body = searchOptions
     assets = []
     # prepare request body
-    body = {}
-    body['isNotInAlbum'] = isNotInAlbum
 
     # This API call allows a maximum page size of 1000
     number_of_assets_to_fetch_per_request_search = min(1000, number_of_assets_to_fetch_per_request)
@@ -753,10 +777,10 @@ if mode == SCRIPT_MODE_DELETE_ALL:
 logging.info("Requesting all assets")
 # only request images that are not in any album if we are running in CREATE mode,
 # otherwise we need all images, even if they are part of an album
-if mode == SCRIPT_MODE_CREATE and not find_assets_in_albums:
-    assets = fetchAssets(True)
+if mode == SCRIPT_MODE_CREATE:
+    assets = fetchAssets(not find_assets_in_albums, find_archived_assets)
 else:
-    assets = fetchAssets(False)
+    assets = fetchAssets(False, True)
 logging.info("%d photos found", len(assets))
 
 
