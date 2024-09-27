@@ -89,6 +89,7 @@ parser.add_argument("-O", "--album-order", default=False, type=str, choices=[Fal
 parser.add_argument("-A", "--find-assets-in-albums", action="store_true", help="By default, the script only finds assets that are not assigned to any album yet. Set this option to make the script discover assets that are already part of an album and handle them as usual.")
 parser.add_argument("-f", "--path-filter", action="append", help="Use either literals or glob-like patterns to filter assets before album name creation. This filter is evaluated before any values passed with --ignore. May be specified multiple times.")
 parser.add_argument("--set-album-thumbnail", choices=ALBUM_THUMBNAIL_SETTINGS, help="Set first/last/random image as thumbnail for newly created albums or albums assets have been added to. If set to "+ALBUM_THUMBNAIL_RANDOM_FILTERED+", thumbnails are shuffled for all albums whose assets would not be filtered out or ignored by the ignore or path-filter options, even if no assets were added during the run. If set to "+ALBUM_THUMBNAIL_RANDOM_ALL+", the thumbnails for ALL albums will be shuffled on every run.")
+parser.add_argument("-v", "--archive", action="store_true", help="Set this option to automatically archive all assets that were newly added to albums. Archiving hides the assets from Immich's timeline.")
 
 
 args = vars(parser.parse_args())
@@ -118,6 +119,7 @@ sync_mode = args["sync_mode"]
 find_assets_in_albums = args["find_assets_in_albums"]
 path_filter = args["path_filter"]
 set_album_thumbnail = args["set_album_thumbnail"]
+archive = args["archive"]
 
 # Override unattended if we're running in destructive mode
 if mode != SCRIPT_MODE_CREATE:
@@ -146,6 +148,7 @@ logging.debug("sync_mode = %d", sync_mode)
 logging.debug("find_assets_in_albums = %s", find_assets_in_albums)
 logging.debug("path_filter = %s", path_filter)
 logging.debug("set_album_thumbnail = %s", set_album_thumbnail)
+logging.debug("archive = %s", archive)
 
 # Verify album levels
 if is_integer(album_levels) and album_levels == 0:
@@ -485,7 +488,7 @@ def is_asset_ignored(asset: dict) -> bool:
     return is_asset_ignored
 
 
-def addAssetsToAlbum(albumId: str, assets: list[str]) -> int:
+def addAssetsToAlbum(albumId: str, assets: list[str]) -> list[str]:
     """
     Adds the assets IDs provided in assets to the provided albumId.
 
@@ -504,14 +507,14 @@ def addAssetsToAlbum(albumId: str, assets: list[str]) -> int:
 
     Returns
     ---------
-        The number of assets that were actually added to the album (excluding duplicates).
+        The asset UUIDs that were actually added to the album (not respecting assets that were already part of the album)
     """
     apiEndpoint = 'albums'
 
     # Divide our assets into chunks of number_of_images_per_request,
     # So the API can cope
     assets_chunked = list(divide_chunks(assets, number_of_images_per_request))
-    assets_added = 0
+    assets_added = list()
     for assets_chunk in assets_chunked:
         data = {'ids':assets_chunk}
         r = requests.put(root_url+apiEndpoint+f'/{albumId}/assets', json=data, **requests_kwargs)
@@ -530,9 +533,9 @@ def addAssetsToAlbum(albumId: str, assets: list[str]) -> int:
                     logging.warning("Error adding an asset to an album: %s", res['error'])
             else:
                 cpt += 1
+                assets_added.append(res['id'])
         if cpt > 0:
             logging.info("%d new assets added to %s", cpt, album)
-            assets_added += cpt
 
     return assets_added
 
@@ -626,15 +629,40 @@ def setAlbumThumbnail(albumId: str, assetId: str):
             The ID of the album for which to set the thumbnail
         assetId : str
             The ID of the asset to be set as thumbnail
-
+            
+    Raises
+    ----------
+        Exception if the API call fails
     """
     apiEndpoint = f'albums/{albumId}'
 
     data = {"albumThumbnailAssetId": assetId}
 
     r = requests.patch(root_url+apiEndpoint, json=data, **requests_kwargs)
+    r.raise_for_status()
 
-    assert r.status_code == 200
+def archiveAssets(assetIds: list[str]):
+    """
+    Archives the assets identified by the passed list of UUIDs.
+
+    Parameters
+    ----------
+        assetIds : list
+            A list of asset IDs to archive
+   
+    Raises
+    ----------
+        Exception if the API call fails
+    """
+    apiEndpoint = f'assets'
+
+    data = {
+        "ids": assetIds,
+        "isArchived": True
+    }
+
+    r = requests.put(root_url+apiEndpoint, json=data, **requests_kwargs)
+    r.raise_for_status()
 
 
 if insecure:
@@ -884,14 +912,21 @@ logging.info("Adding assets to albums")
 # Note: Immich manages duplicates without problem, 
 # so we can each time ad all assets to same album, no photo will be duplicated 
 albums_with_assets_added = list()
+asset_uuids_added = list()
 for album, assets in album_to_assets.items():
     id = album_to_id[album]
-    number_of_assets_added = addAssetsToAlbum(id, assets)
-    if number_of_assets_added > 0:
+    assets_added = addAssetsToAlbum(id, assets)
+    if len(assets_added) > 0:
         album_with_asset_added = dict()
         album_with_asset_added['id'] = id
         album_with_asset_added['albumName'] = album
         albums_with_assets_added.append(album_with_asset_added)
+        asset_uuids_added += assets_added
+
+# Archive assets
+if archive and len(asset_uuids_added) > 0:
+    archiveAssets(asset_uuids_added)
+    logging.info("Archived %d assets", len(asset_uuids_added))
 
 
 if set_album_thumbnail:
