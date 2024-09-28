@@ -303,7 +303,7 @@ def fetchServerVersion() -> dict:
     # Any other errors mean communication error with API
     else:
         logging.error("Communication with Immich API failed! Make sure the passed API URL is correct!")
-        r.raise_for_status()
+        checkApiResponse(r)
     return version
 
 
@@ -368,7 +368,7 @@ def fetchAssetsWithOptions(searchOptions: dict) -> list:
         page += 1
         body['page'] = page
         r = requests.post(root_url+'search/metadata', json=body, **requests_kwargs)
-        assert r.status_code == 200
+        checkApiResponse(r)
         responseJson = r.json()
         assetsReceived = responseJson['assets']['items']
         logging.debug("Received %s assets with chunk %s", len(assetsReceived), page)
@@ -382,7 +382,7 @@ def fetchAlbums():
     apiEndpoint = 'albums'
 
     r = requests.get(root_url+apiEndpoint, **requests_kwargs)
-    r.raise_for_status()
+    checkApiResponse(r)
     return r.json()
 
 def fetchAlbumAssets(albumId: str):
@@ -399,7 +399,7 @@ def fetchAlbumAssets(albumId: str):
     apiEndpoint = f'albums/{albumId}'
 
     r = requests.get(root_url+apiEndpoint, **requests_kwargs)
-    r.raise_for_status()
+    checkApiResponse(r)
     return r.json()["assets"]
 
 def deleteAlbum(album: dict):
@@ -423,11 +423,12 @@ def deleteAlbum(album: dict):
 
     logging.debug("Album ID = %s, Album Name = %s", album['id'], album['albumName'])
     r = requests.delete(root_url+apiEndpoint+'/'+album['id'], **requests_kwargs)
-    if r.status_code not in [200, 201]:
+    try:
+        checkApiResponse(r)
+        return True
+    except:
         logging.error("Error deleting album %s: %s", album['albumName'], r.reason)
-        return False
-    return True
-    
+        return False    
 
 def createAlbum(albumName: str, albumOrder: str) -> str:
     """
@@ -457,7 +458,7 @@ def createAlbum(albumName: str, albumOrder: str) -> str:
         'description': albumName
     }
     r = requests.post(root_url+apiEndpoint, json=data, **requests_kwargs)
-    assert r.status_code in [200, 201]
+    checkApiResponse(r)
 
     albumId = r.json()['id']
 
@@ -466,7 +467,7 @@ def createAlbum(albumName: str, albumOrder: str) -> str:
             'order': albumOrder
         }
         r = requests.patch(root_url+apiEndpoint+f'/{albumId}', json=data, **requests_kwargs)
-        assert r.status_code in [200, 201]
+        checkApiResponse(r)
     return albumId
 
 
@@ -542,12 +543,7 @@ def addAssetsToAlbum(albumId: str, assets: list[str]) -> list[str]:
     for assets_chunk in assets_chunked:
         data = {'ids':assets_chunk}
         r = requests.put(root_url+apiEndpoint+f'/{albumId}/assets', json=data, **requests_kwargs)
-        if r.status_code not in [200, 201]:
-            print(album)
-            print(r.json())
-            print(data)
-            continue
-        assert r.status_code in [200, 201]
+        checkApiResponse(r)
         response = r.json()
 
         cpt = 0
@@ -569,7 +565,7 @@ def fetchUsers():
     apiEndpoint = 'users'
 
     r = requests.get(root_url+apiEndpoint, **requests_kwargs)
-    assert r.status_code in [200, 201]
+    checkApiResponse(r)
     return r.json()
 
 def shareAlbumWithUserAndRole(album_id: str, share_user_ids: list[str], share_role: str):
@@ -608,7 +604,7 @@ def shareAlbumWithUserAndRole(album_id: str, share_user_ids: list[str], share_ro
         'albumUsers': album_users
     }
     r = requests.put(root_url+apiEndpoint, json=data, **requests_kwargs)
-    assert r.status_code in [200, 201]
+    checkApiResponse(r)
 
 def fetchLibraries():
     """Queries and returns all libraries"""
@@ -616,10 +612,7 @@ def fetchLibraries():
     apiEndpoint = 'libraries'
 
     r = requests.get(root_url+apiEndpoint, **requests_kwargs)
-    if r.status_code == 403:
-        logging.fatal("--sync-mode 2 requires an Admin User API key!")
-    else:
-        assert r.status_code in [200, 201]
+    checkApiResponse(r)
     return r.json()
 
 def triggerOfflineAssetRemoval(libraryId: str):
@@ -641,7 +634,7 @@ def triggerOfflineAssetRemoval(libraryId: str):
     if r.status_code == 403:
         logging.fatal("--sync-mode 2 requires an Admin User API key!")
     else:
-        assert r.status_code == 204
+        checkApiResponse(r)
 
 def setAlbumThumbnail(albumId: str, assetId: str):
     """
@@ -663,7 +656,7 @@ def setAlbumThumbnail(albumId: str, assetId: str):
     data = {"albumThumbnailAssetId": assetId}
 
     r = requests.patch(root_url+apiEndpoint, json=data, **requests_kwargs)
-    r.raise_for_status()
+    checkApiResponse(r)
 
 def setAssetsArchived(assetIds: list[str], isArchived: bool):
     """
@@ -688,9 +681,32 @@ def setAssetsArchived(assetIds: list[str], isArchived: bool):
     }
 
     r = requests.put(root_url+apiEndpoint, json=data, **requests_kwargs)
-    if r.status_code != 204:
-        logging.error("Error setting assets archived: %s", r.json())
-        r.raise_for_status()
+    checkApiResponse(r)
+
+def checkApiResponse(response: requests.Response):
+    """
+    Checks the HTTP return code for the privided response and
+    logs any errors before raising an HTTPException
+
+    Parameters
+    ----------
+        respsone : requests.Response
+            A list of asset IDs to archive
+        isArchived : bool
+            Flag indicating whether to archive or unarchive the passed assets
+   
+    Raises
+    ----------
+        HTTPException if the API call fails
+    """
+    try:
+        response.raise_for_status()
+    except:
+        if response.json():
+            logging.error("Error in API call: %s", response.json())
+        else:
+            logging.error("API respsonse did not contain a payload")
+    response.raise_for_status()
 
 
 if insecure:
