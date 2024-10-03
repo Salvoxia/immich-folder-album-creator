@@ -328,9 +328,7 @@ def fetchAssets(isNotInAlbum: bool, findArchived: bool) -> list:
         An array of asset objects
     """
 
-    assets = fetchAssetsWithOptions({'isNotInAlbum': isNotInAlbum})
-    if findArchived:
-        assets += fetchAssetsWithOptions({'isNotInAlbum': isNotInAlbum, 'isArchived': findArchived})
+    assets = fetchAssetsWithOptions({'isNotInAlbum': isNotInAlbum, 'findArchived': findArchived})
     return assets
 
 def fetchAssetsWithOptions(searchOptions: dict) -> list:
@@ -606,8 +604,104 @@ def shareAlbumWithUserAndRole(album_id: str, share_user_ids: list[str], share_ro
     r = requests.put(root_url+apiEndpoint, json=data, **requests_kwargs)
     checkApiResponse(r)
 
-def fetchLibraries():
-    """Queries and returns all libraries"""
+def triggerOfflineAssetRemoval():
+    """
+    Removes offline assets.
+
+    Takes into account API changes happening between v1.115.0 and v1.116.0.
+
+    Before v1.116.0, offline asset removal was an asynchronuous job that could only be
+    triggered by an Administrator for a specific library.
+
+    Since v1.116.0, offline assets are no longer displayed in the main timeline but shown in the trash. They automatically
+    come back from the trash when they are no longer offline. The only way to delete them is either by emptying the trash
+    (along with everything else) or by selectively deleting all offline assets. This is option the script now uses.
+
+    Raises
+    ----------
+        HTTPException if any API call fails
+    """
+    if version['major'] == 1 and version ['minor'] < 116:
+        triggerOfflineAssetRemovalPreMinorVersion116()
+    else:
+        triggerOfflineAssetRemovalSinceMinorVersion116()
+
+def triggerOfflineAssetRemovalSinceMinorVersion116():
+    """
+    Synchronuously deletes offline assets.
+
+    Uses the searchMetadata endpoint to find all assets marked as offline, then
+    issues a delete call for these asset UUIDs.
+
+    Raises
+    ----------
+        HTTPException if any API call fails
+    """
+    # Workaround for a bug where isOffline option is not respected:
+    # Search all trashed assets and manually filter for offline assets.
+    trashed_assets = fetchAssetsWithOptions({'trashedAfter': '1970-01-01T00:00:00.000Z'})
+    #logging.debug("search results: %s", offline_assets)
+    
+    offline_assets = [asset for asset in trashed_assets if asset['isOffline']]
+
+    logging.debug("Deleting the following offline assets (count: %d): %s", len(offline_assets), {asset['originalPath'] for asset in offline_assets})
+    if len(offline_assets) > 0:
+        deleteAssets(offline_assets, True)
+
+
+def deleteAssets(assets_to_delete: list, force: bool):
+    """
+    Deletes the provided assets from Immich.
+
+    Parameters
+    ----------
+        assets_to_delete : list
+            A list of asset objects with key 'id'.
+        force: bool
+            Force flag to pass to the API call
+
+    Raises
+    ----------
+        HTTPException if the API call fails
+    """
+
+    apiEndpoint = 'assets'
+    assetIdsToDelete = [asset['id'] for asset in assets_to_delete]
+    data = {
+        'force': force,
+        'ids': assetIdsToDelete
+    }
+
+    r = requests.delete(root_url+apiEndpoint, json=data, **requests_kwargs)
+    checkApiResponse(r)
+
+
+
+def triggerOfflineAssetRemovalPreMinorVersion116():
+    """
+    Triggers Offline Asset Removal Job.
+    Only supported in Immich prior v1.116.0.
+    Requires the script to run with an Administrator level API key.
+    
+    Works by fetching all libraries and triggering the Offline Asset Removal job
+    one by one.
+    
+    Raises
+    ----------
+        HTTPException if the API call fails
+    """
+    libraries = fetchLibraries()
+    for library in libraries:
+        triggerOfflineAssetRemovalAsync(library['id'])
+
+def fetchLibraries() -> list[dict]:
+    """
+    Queries and returns all libraries
+    
+    Raises
+    ----------
+        Exception if any API call fails
+    """
 
     apiEndpoint = 'libraries'
 
@@ -615,7 +709,7 @@ def fetchLibraries():
     checkApiResponse(r)
     return r.json()
 
-def triggerOfflineAssetRemoval(libraryId: str):
+def triggerOfflineAssetRemovalAsync(libraryId: str):
     """
     Triggers removal of offline assets in the library identified by libraryId.
 
@@ -625,10 +719,10 @@ def triggerOfflineAssetRemoval(libraryId: str):
             The ID of the library to trigger offline asset removal for
     Raises
     ----------
-        Exception if the API call fails
+        Exception if any API call fails
     """
 
-    apiEndpoint = 'libraries/'+libraryId+'/removeOffline'
+    apiEndpoint = f'libraries/{libraryId}/removeOffline'
 
     r = requests.post(root_url+apiEndpoint, **requests_kwargs)
     if r.status_code == 403:
@@ -1015,12 +1109,18 @@ if set_album_thumbnail:
             logging.info("Using asset with index %d as thumbnail for album %s", index, album['albumName'])
             setAlbumThumbnail(album['id'], assets[index]['id'])
         
+# Perform sync mode action: Trigger offline asset removal
+if sync_mode == 2:
+    logging.info("Trigger offline asset removal")
+    triggerOfflineAssetRemoval()
 
 # Perform sync mode action: Delete empty albums
+#
+# For Immich versions prior to v1.116.0:
 # Attention: Since Offline Asset Removal is an asynchronous job,
 # albums affected by it are most likely not empty yet! So this 
 # might only be effective in the next script run.
-if sync_mode == 1:
+if sync_mode >= 1:
     logging.info("Deleting all empty albums")
     albums = fetchAlbums()
     emptyAlbumCount = 0
@@ -1032,13 +1132,5 @@ if sync_mode == 1:
             if deleteAlbum(album):
                 deletedAlbumCount += 1
     logging.info("Successfully deleted %d/%d empty albums!", deletedAlbumCount, emptyAlbumCount)
-
-# Perform sync mode action: Trigger offline asset removal
-if sync_mode == 2:
-    logging.info("Trigger offline asset removal")
-    libraries = fetchLibraries()
-    for library in libraries:
-        triggerOfflineAssetRemoval(library["id"])
-
 
 logging.info("Done!")
