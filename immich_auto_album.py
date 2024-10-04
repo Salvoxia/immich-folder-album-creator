@@ -84,7 +84,7 @@ parser.add_argument("-m", "--mode", default=SCRIPT_MODE_CREATE, choices=[SCRIPT_
 parser.add_argument("-d", "--delete-confirm", action="store_true", help="Confirm deletion of albums when running in mode "+SCRIPT_MODE_CLEANUP+" or "+SCRIPT_MODE_DELETE_ALL+". If this flag is not set, these modes will perform a dry run only. Has no effect in mode "+SCRIPT_MODE_CREATE)
 parser.add_argument("-x", "--share-with", action="append", help="A user name (or email address of an existing user) to share newly created albums with. Sharing only happens if the album was actually created, not if new assets were added to an existing album. If the the share role should be specified by user, the format <userName>=<shareRole> must be used, where <shareRole> must be one of 'viewer' or 'editor'. May be specified multiple times to share albums with more than one user.")
 parser.add_argument("-o", "--share-role", default="viewer", choices=['viewer', 'editor'], help="The default share role for users newly created albums are shared with. Only effective if --share-with is specified at least once and the share role is not specified within --share-with.")
-parser.add_argument("-S", "--sync-mode", default=0, type=int, choices=[0, 1, 2], help="Synchronization mode to use. Synchronization mode helps synchronizing changes in external libraries structures to Immich after albums have already been created. Possible Modes: 0 = do nothing; 1 = Delete any empty albums; 2 = Trigger offline asset removal (REQUIRES API KEY OF AN ADMIN USER!)")
+parser.add_argument("-S", "--sync-mode", default=0, type=int, choices=[0, 1, 2], help="Synchronization mode to use. Synchronization mode helps synchronizing changes in external libraries structures to Immich after albums have already been created. Possible Modes: 0 = do nothing; 1 = Delete any empty albums; 2 = Delete offline assets AND any empty albums")
 parser.add_argument("-O", "--album-order", default=False, type=str, choices=[False, 'asc', 'desc'], help="Set sorting order for newly created albums to newest or oldest file first, Immich defaults to newest file first")
 parser.add_argument("-A", "--find-assets-in-albums", action="store_true", help="By default, the script only finds assets that are not assigned to any album yet. Set this option to make the script discover assets that are already part of an album and handle them as usual. If --find-archived-assets is set as well, both options apply.")
 parser.add_argument("-f", "--path-filter", action="append", help="Use either literals or glob-like patterns to filter assets before album name creation. This filter is evaluated before any values passed with --ignore. May be specified multiple times.")
@@ -639,14 +639,20 @@ def triggerOfflineAssetRemovalSinceMinorVersion116():
     """
     # Workaround for a bug where isOffline option is not respected:
     # Search all trashed assets and manually filter for offline assets.
+    # WARNING! This workaround must NOT be removed to keep compatibility with Immich v1.116.x to at
+    # least v1.117.x (reported issue for v1.117.0, might be fixed with v1.118.0)!
+    # If removed the assets for users of v1.116.0 - v1.117.x might be deleted completely!!!
     trashed_assets = fetchAssetsWithOptions({'trashedAfter': '1970-01-01T00:00:00.000Z'})
     #logging.debug("search results: %s", offline_assets)
     
     offline_assets = [asset for asset in trashed_assets if asset['isOffline']]
 
-    logging.debug("Deleting the following offline assets (count: %d): %s", len(offline_assets), {asset['originalPath'] for asset in offline_assets})
+    
     if len(offline_assets) > 0:
+        logging.debug("Deleting the following offline assets (count: %d): %s", len(offline_assets), [asset['originalPath'] for asset in offline_assets])
         deleteAssets(offline_assets, True)
+    else:
+        logging.info("No offline assets found!")
 
 
 def deleteAssets(assets_to_delete: list, force: bool):
@@ -1131,6 +1137,9 @@ if sync_mode >= 1:
             logging.info("Deleting empty album %s", album['albumName'])
             if deleteAlbum(album):
                 deletedAlbumCount += 1
-    logging.info("Successfully deleted %d/%d empty albums!", deletedAlbumCount, emptyAlbumCount)
+    if emptyAlbumCount > 0:
+        logging.info("Successfully deleted %d/%d empty albums!", deletedAlbumCount, emptyAlbumCount)
+    else:
+        logging.info("No empty albums found!")
 
 logging.info("Done!")
