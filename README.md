@@ -40,8 +40,8 @@ This script is mostly based on the following original script: [REDVM/immich_auto
     ```
 3. Run the script
     ```
-    usage: immich_auto_album.py [-h] [-r ROOT_PATH] [-u] [-a ALBUM_LEVELS] [-s ALBUM_SEPARATOR] [-c CHUNK_SIZE] [-C FETCH_CHUNK_SIZE] [-l {CRITICAL,ERROR,WARNING,INFO,DEBUG}] [-k] [-i IGNORE] [-m {CREATE,CLEANUP,DELETE_ALL}] [-d] [-x SHARE_WITH] [-o {viewer,editor}]
-                            [-S {0,1,2}] [-O {False,asc,desc}] [-A] [-f PATH_FILTER] [--set-album-thumbnail {first,last,random,random-all,random-filtered}] [-v] [--find-archived-assets]
+    usage: immich_auto_album.py [-h] [-r ROOT_PATH] [-u] [-a ALBUM_LEVELS] [-s ALBUM_SEPARATOR] [-c CHUNK_SIZE] [-C FETCH_CHUNK_SIZE] [-l {CRITICAL,ERROR,WARNING,INFO,DEBUG}] [-k] [-i IGNORE] [-m {CREATE,CLEANUP,DELETE_ALL}] [-d] [-x SHARE_WITH] [-o {viewer,editor}] [-S {0,1,2}]
+                            [-O {False,asc,desc}] [-A] [-f PATH_FILTER] [--set-album-thumbnail {first,last,random,random-all,random-filtered}] [-v] [--find-archived-assets]
                             root_path api_url api_key
 
     Create Immich Albums from an external library path based on the top level folders
@@ -57,8 +57,8 @@ This script is mostly based on the following original script: [REDVM/immich_auto
                             Additional external libarary root path in Immich; May be specified multiple times for multiple import paths or external libraries. (default: None)
       -u, --unattended      Do not ask for user confirmation after identifying albums. Set this flag to run script as a cronjob. (default: False)
       -a ALBUM_LEVELS, --album-levels ALBUM_LEVELS
-                            Number of sub-folders or range of sub-folder levels below the root path used for album name creation. Positive numbers start from top of the folder structure, negative numbers from the bottom. Cannot be 0. If a range should be set, the start level
-                            and end level must be separated by a comma like '<startLevel>,<endLevel>'. If negative levels are used in a range, <startLevel> must be less than or equal to <endLevel>. (default: 1)
+                            Number of sub-folders or range of sub-folder levels below the root path used for album name creation. Positive numbers start from top of the folder structure, negative numbers from the bottom. Cannot be 0. If a range should be set, the start level and end level
+                            must be separated by a comma like '<startLevel>,<endLevel>'. If negative levels are used in a range, <startLevel> must be less than or equal to <endLevel>. (default: 1)
       -s ALBUM_SEPARATOR, --album-separator ALBUM_SEPARATOR
                             Separator string to use for compound album names created from nested folders. Only effective if -a is set to a value > 1 (default: )
       -c CHUNK_SIZE, --chunk-size CHUNK_SIZE
@@ -71,28 +71,26 @@ This script is mostly based on the following original script: [REDVM/immich_auto
       -i IGNORE, --ignore IGNORE
                             Use either literals or glob-like patterns to ignore assets for album name creation. This filter is evaluated after any values passed with --path-filter. May be specified multiple times. (default: None)
       -m {CREATE,CLEANUP,DELETE_ALL}, --mode {CREATE,CLEANUP,DELETE_ALL}
-                            Mode for the script to run with. CREATE = Create albums based on folder names and provided arguments; CLEANUP = Create album nmaes based on current images and script arguments, but delete albums if they exist; DELETE_ALL = Delete all albums. If the
-                            mode is anything but CREATE, --unattended does not have any effect. Only performs deletion if -d/--delete-confirm option is set, otherwise only performs a dry-run. (default: CREATE)
+                            Mode for the script to run with. CREATE = Create albums based on folder names and provided arguments; CLEANUP = Create album nmaes based on current images and script arguments, but delete albums if they exist; DELETE_ALL = Delete all albums. If the mode is anything but CREATE, --unattended does not have any effect. Only performs deletion if -d/--delete-confirm option is set, otherwise only performs a dry-run. (default: CREATE)
       -d, --delete-confirm  Confirm deletion of albums when running in mode CLEANUP or DELETE_ALL. If this flag is not set, these modes will perform a dry run only. Has no effect in mode CREATE (default: False)
       -x SHARE_WITH, --share-with SHARE_WITH
-                            A user name (or email address of an existing user) to share newly created albums with. Sharing only happens if the album was actually created, not if new assets were added to an existing album. If the the share role should be specified by user, the
-                            format <userName>=<shareRole> must be used, where <shareRole> must be one of 'viewer' or 'editor'. May be specified multiple times to share albums with more than one user. (default: None)
+                            A user name (or email address of an existing user) to share newly created albums with. Sharing only happens if the album was actually created, not if new assets were added to an existing album. If the the share role should be specified by user, the format
+                            <userName>=<shareRole> must be used, where <shareRole> must be one of 'viewer' or 'editor'. May be specified multiple times to share albums with more than one user. (default: None)
       -o {viewer,editor}, --share-role {viewer,editor}
                             The default share role for users newly created albums are shared with. Only effective if --share-with is specified at least once and the share role is not specified within --share-with. (default: viewer)
       -S {0,1,2}, --sync-mode {0,1,2}
-                            Synchronization mode to use. Synchronization mode helps synchronizing changes in external libraries structures to Immich after albums have already been created. Possible Modes: 0 = do nothing; 1 = Delete any empty albums; 2 = Trigger offline asset
-                            removal (REQUIRES API KEY OF AN ADMIN USER!) (default: 0)
+                            Synchronization mode to use. Synchronization mode helps synchronizing changes in external libraries structures to Immich after albums have already been created. Possible Modes: 0 = do nothing; 1 = Delete any empty albums; 2 = Delete offline assets AND any empty albums (default: 0)
       -O {False,asc,desc}, --album-order {False,asc,desc}
                             Set sorting order for newly created albums to newest or oldest file first, Immich defaults to newest file first (default: False)
       -A, --find-assets-in-albums
-                            By default, the script only finds assets that are not assigned to any album yet. Set this option to make the script discover assets that are already part of an album and handle them as usual. If --find-archived-assets is set as well, both options
-                            apply. (default: False)
+                            By default, the script only finds assets that are not assigned to any album yet. Set this option to make the script discover assets that are already part of an album and handle them as usual. If --find-archived-assets is set as well, both options apply. (default:
+                            False)
       -f PATH_FILTER, --path-filter PATH_FILTER
                             Use either literals or glob-like patterns to filter assets before album name creation. This filter is evaluated before any values passed with --ignore. May be specified multiple times. (default: None)
       --set-album-thumbnail {first,last,random,random-all,random-filtered}
-                            Set first/last/random image as thumbnail for newly created albums or albums assets have been added to. If set to random-filtered, thumbnails are shuffled for all albums whose assets would not be filtered out or ignored by the ignore or path-filter
-                            options, even if no assets were added during the run. If set to random-all, the thumbnails for ALL albums will be shuffled on every run. (default: None)
-      -v, --archive         Set this option to automatically archive all assets that were newly added to albums. If this option is set in combination with --mode = CLEANUP or DELETE_ALL, archived images of deleted albums will be unarchived. Archiving hides the assets from Immich's timeline. (default: False)
+                            Set first/last/random image as thumbnail for newly created albums or albums assets have been added to. If set to random-filtered, thumbnails are shuffled for all albums whose assets would not be filtered out or ignored by the ignore or path-filter options, even if no assets were added during the run. If set to random-all, the thumbnails for ALL albums will be shuffled on every run. (default: None)
+      -v, --archive         Set this option to automatically archive all assets that were newly added to albums. If this option is set in combination with --mode = CLEANUP or DELETE_ALL, archived images of deleted albums will be unarchived. Archiving hides the assets from Immich's timeline.
+                            (default: False)
       --find-archived-assets
                             By default, the script only finds assets that are not archived in Immich. Set this option to make the script discover assets that are already archived. If -A/--find-assets-in-albums is set as well, both options apply. (default: False)
     ```
@@ -126,7 +124,7 @@ The environment variables are analoguous to the script's command line arguments.
 | DELETE_CONFIRM     | no | Confirm deletion of albums when running in mode `CLEANUP` or `DELETE_ALL`. If this flag is not set, these modes will perform a dry run only. Has no effect in mode `CREATE` (default: `False`). <br>Refer to [Cleaning Up Albums](#cleaning-up-albums).|
 | SHARE_WITH     | no | A single or a colon (`:`) separated list of existing user names (or email addresses of existing users) to share newly created albums with. If the the share role should be specified by user, the format <userName>=<shareRole> must be used, where <shareRole> must be one of `viewer` or `editor`. May be specified multiple times to share albums with more than one user. (default: None) Sharing only happens if an album is actually created, not if new assets are added to it.  <br>Refer to [Automatic Album Sharing](#automatic-album-sharing).|
 | SHARE_ROLE     | no | The role for users newly created albums are shared with. Only effective if `SHARE_WITH` is not empty and no explicit share role was specified for at least one user. (default: viewer), allowed values: `viewer`, `editor` |
-| SYNC_MODE     | no | Synchronization mode to use. Synchronization mode helps synchronizing changes in external libraries structures to Immich after albums have already been created. Possible Modes: <br>`0` = do nothing<br>`1` = Delete any empty albums<br>`2` = Trigger offline asset removal (REQUIRES API KEY OF AN ADMIN USER!)<br>(default: `0`)<br>Refer to [Dealing with External Library Changes](#dealing-with-external-library-changes). |
+| SYNC_MODE     | no | Synchronization mode to use. Synchronization mode helps synchronizing changes in external libraries structures to Immich after albums have already been created. Possible Modes: <br>`0` = do nothing<br>`1` = Delete any empty albums<br>`2` =  Delete offline assets AND any empty albums<br>(default: `0`)<br>Refer to [Dealing with External Library Changes](#dealing-with-external-library-changes). |
 | ALBUM_ORDER     | no | Set sorting order for newly created albums to newest (`desc`) or oldest (`asc`) file first, Immich defaults to newest file first, allowed values: `asc`, `desc` |
 | FIND_ASSETS_IN_ALBUMS     | no | By default, the script only finds assets that are not assigned to any album yet. Set this option to make the script discover assets that are already part of an album and handle them as usual. If --find-archived-assets is set as well, both options apply. (default: `False`)<br>Refer to [Assets in Multiple Albums](#assets-in-multiple-albums). |
 | PATH_FILTER     | no | A colon `:` separated list of literals or glob-style patterns to filter assets before album name creation. (default: ``)<br>Refer to [Filtering](#filtering). |
@@ -446,24 +444,19 @@ To make the script find also archived images, run the script with the option `--
 Due to their nature, external libraries may be changed by the user without Immich having any say in it.  
 Two examples of this are the user deleting or renaming folders in their external libraries after the script has created albums, or the user moving single files from one folder to another. The script would create new albums from renamed folders or add images to their new album after they have been moved.  
 Immich itself deals with this by marking images/videos it no longer sees in their original location as "offline". This can lead to albums being completely populated by "offline" files only (if the folder was renamed or deleted) while they exist normally in a new album or with single images being offline in one album, while existing normally in their new albums.  
-There is an administrative option to trigger deletion of "offline assets" from libraries in the Immich Admin Interface. However, in the first example this might leave behind empty albums if the album only contained offline files.
+As of version 1.116.0, Immich no longer shows "offline" assets in the main timeline, but only in the Trash, together with deleted assets. If the trash is emptied, Immich forgets about these "offline" assets. If the asset is available again, it is removed from the trash and shows up as normal in the main timeline.
 
-To clean up this mess this script offers an option called `Sync Mode`. It is an optional argument / environment variable that may have values from 0 to 2.
+This script offers two levels of synchronization options to deal with these issues with an option called `Sync Mode`. It is an optional argument / environment variable that may have values from 0 to 2.
 The following behaviors wil be triggered by the different values:
   - `0`: No syncing (default)
   - `1`: Delete all empty albums at the end of a run
-  - `2`: Trigger offline asset removal for all libraires 
-  
+  - `2`: Delete ("forget") all offline assets, then delete all empty albums
+
+Option `1` leaves it up to the user to clear up "offline" assets by emptying the trash or restoring access to the files. Only if after any of these actions empty albums are left behind, they are automatically removed.  
+Option `2` will first delete all "offline" assets automatically, then do the same with any empty albums left.  
+
 > [!IMPORTANT]  
-> Sync Mode 2 / Triggering offline asset removal requires the API key of an Admin User!
-
-The complete syncing process consists of two stages:
-1. Trigger Offline Asset Removal
-This will start a background job for each library to find and delete files from Immich's database that are marked as 'offline'. It is asynchronous and might take some time (depending on the size of the databases and the numver of offline files).
-Offline Asset Removal can only be triggered by Administrators, so the API Key used for this sync mode must be one of an Administrator. This might not be the same you use for creating albums!
-
-2. Delete Empty Albums
-Step 1 might leave behind empty albums for a different user. The script is capable of removing empty albums at the end of a run to clean up after Offline Asset Removal.
+> If your library is on a network share or external drive that might be prone to not being available all the time, avoid using `Sync Mode = 2`.
 
 > [!CAUTION]  
 > It is __not__ possible for the script to distinguish between an album that was left behind empty after Offline Asset Removal and a manually created album with no images added to it! All empty albums of that user will be deleted!
@@ -487,19 +480,6 @@ services:
     volumes:
      - /path/to/my/photos:/external_libs/photos
   ...
-  immich-folder-album-creator-offline-asset-removal:
-    container_name: immich_folder_album_creator
-    image: salvoxia/immich-folder-album-creator:latest
-    restart: unless-stopped
-    environment:
-      API_URL: http://immich_server:3001/api
-      # Admin User API Key
-      API_KEY: yyyyyyyyyyyyyyyyyy
-      ROOT_PATH: /thisIsADummyPathThatDoesNotExist
-      CRON_EXPRESSION: "0 * * * *"
-      TZ: Europe/Berlin
-      # Regularly trigger offline asset removal
-      SYNC_MODE: "2"
   immich-folder-album-creator:
     container_name: immich_folder_album_creator
     image: salvoxia/immich-folder-album-creator:latest
@@ -508,12 +488,8 @@ services:
       API_URL: http://immich_server:3001/api
       API_KEY: xxxxxxxxxxxxxxxxx
       ROOT_PATH: /external_libs/photos
-      # Run 10 minutes past the hour to give Offline Asset Removal time to work
-      CRON_EXPRESSION: "10 * * * *"
+      CRON_EXPRESSION: "0 * * * *"
       TZ: Europe/Berlin
-      # Delete empty albums after each run
-      SYNC_MODE: "1"
+      # Remove offline assets and delete empty albums after each run
+      SYNC_MODE: "2"
 ```
-
-The `immich-folder-album-creator-offline-asset-removal` service has the one and only purpose of triggering Offline Asset Removal, since we do not want to create albums for the Admin User. Thus, a dummy `ROOT_PATH` is passed so that the script will never find any assets to create albums from. `SYNC_MODE` is set to `2` to regularly trigger Offline Asset Removal.  
-The `immich-folder-album-creator` service is the normal service for creating albums from an external library. The cron job triggers 10 minutes past the hour, whereas Offline Asset Removal is trigger at the full hour. This gives the job 10 minutes of time to run before any empty albums are deleted at the end of the run due to `SYNC_MODE` being set to `1`.
