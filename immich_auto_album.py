@@ -84,7 +84,7 @@ parser.add_argument("-m", "--mode", default=SCRIPT_MODE_CREATE, choices=[SCRIPT_
 parser.add_argument("-d", "--delete-confirm", action="store_true", help="Confirm deletion of albums when running in mode "+SCRIPT_MODE_CLEANUP+" or "+SCRIPT_MODE_DELETE_ALL+". If this flag is not set, these modes will perform a dry run only. Has no effect in mode "+SCRIPT_MODE_CREATE)
 parser.add_argument("-x", "--share-with", action="append", help="A user name (or email address of an existing user) to share newly created albums with. Sharing only happens if the album was actually created, not if new assets were added to an existing album. If the the share role should be specified by user, the format <userName>=<shareRole> must be used, where <shareRole> must be one of 'viewer' or 'editor'. May be specified multiple times to share albums with more than one user.")
 parser.add_argument("-o", "--share-role", default="viewer", choices=['viewer', 'editor'], help="The default share role for users newly created albums are shared with. Only effective if --share-with is specified at least once and the share role is not specified within --share-with.")
-parser.add_argument("-S", "--sync-mode", default=0, type=int, choices=[0, 1, 2], help="Synchronization mode to use. Synchronization mode helps synchronizing changes in external libraries structures to Immich after albums have already been created. Possible Modes: 0 = do nothing; 1 = Delete any empty albums; 2 = Trigger offline asset removal (REQUIRES API KEY OF AN ADMIN USER!)")
+parser.add_argument("-S", "--sync-mode", default=0, type=int, choices=[0, 1, 2], help="Synchronization mode to use. Synchronization mode helps synchronizing changes in external libraries structures to Immich after albums have already been created. Possible Modes: 0 = do nothing; 1 = Delete any empty albums; 2 = Delete offline assets AND any empty albums")
 parser.add_argument("-O", "--album-order", default=False, type=str, choices=[False, 'asc', 'desc'], help="Set sorting order for newly created albums to newest or oldest file first, Immich defaults to newest file first")
 parser.add_argument("-A", "--find-assets-in-albums", action="store_true", help="By default, the script only finds assets that are not assigned to any album yet. Set this option to make the script discover assets that are already part of an album and handle them as usual. If --find-archived-assets is set as well, both options apply.")
 parser.add_argument("-f", "--path-filter", action="append", help="Use either literals or glob-like patterns to filter assets before album name creation. This filter is evaluated before any values passed with --ignore. May be specified multiple times.")
@@ -328,9 +328,7 @@ def fetchAssets(isNotInAlbum: bool, findArchived: bool) -> list:
         An array of asset objects
     """
 
-    assets = fetchAssetsWithOptions({'isNotInAlbum': isNotInAlbum})
-    if findArchived:
-        assets += fetchAssetsWithOptions({'isNotInAlbum': isNotInAlbum, 'isArchived': findArchived})
+    assets = fetchAssetsWithOptions({'isNotInAlbum': isNotInAlbum, 'findArchived': findArchived})
     return assets
 
 def fetchAssetsWithOptions(searchOptions: dict) -> list:
@@ -606,8 +604,110 @@ def shareAlbumWithUserAndRole(album_id: str, share_user_ids: list[str], share_ro
     r = requests.put(root_url+apiEndpoint, json=data, **requests_kwargs)
     checkApiResponse(r)
 
-def fetchLibraries():
-    """Queries and returns all libraries"""
+def triggerOfflineAssetRemoval():
+    """
+    Removes offline assets.
+
+    Takes into account API changes happening between v1.115.0 and v1.116.0.
+
+    Before v1.116.0, offline asset removal was an asynchronuous job that could only be
+    triggered by an Administrator for a specific library.
+
+    Since v1.116.0, offline assets are no longer displayed in the main timeline but shown in the trash. They automatically
+    come back from the trash when they are no longer offline. The only way to delete them is either by emptying the trash
+    (along with everything else) or by selectively deleting all offline assets. This is option the script now uses.
+
+    Raises
+    ----------
+        HTTPException if any API call fails
+    """
+    if version['major'] == 1 and version ['minor'] < 116:
+        triggerOfflineAssetRemovalPreMinorVersion116()
+    else:
+        triggerOfflineAssetRemovalSinceMinorVersion116()
+
+def triggerOfflineAssetRemovalSinceMinorVersion116():
+    """
+    Synchronuously deletes offline assets.
+
+    Uses the searchMetadata endpoint to find all assets marked as offline, then
+    issues a delete call for these asset UUIDs.
+
+    Raises
+    ----------
+        HTTPException if any API call fails
+    """
+    # Workaround for a bug where isOffline option is not respected:
+    # Search all trashed assets and manually filter for offline assets.
+    # WARNING! This workaround must NOT be removed to keep compatibility with Immich v1.116.x to at
+    # least v1.117.x (reported issue for v1.117.0, might be fixed with v1.118.0)!
+    # If removed the assets for users of v1.116.0 - v1.117.x might be deleted completely!!!
+    trashed_assets = fetchAssetsWithOptions({'trashedAfter': '1970-01-01T00:00:00.000Z'})
+    #logging.debug("search results: %s", offline_assets)
+    
+    offline_assets = [asset for asset in trashed_assets if asset['isOffline']]
+
+    
+    if len(offline_assets) > 0:
+        logging.debug("Deleting the following offline assets (count: %d): %s", len(offline_assets), [asset['originalPath'] for asset in offline_assets])
+        deleteAssets(offline_assets, True)
+    else:
+        logging.info("No offline assets found!")
+
+
+def deleteAssets(assets_to_delete: list, force: bool):
+    """
+    Deletes the provided assets from Immich.
+
+    Parameters
+    ----------
+        assets_to_delete : list
+            A list of asset objects with key 'id'.
+        force: bool
+            Force flag to pass to the API call
+
+    Raises
+    ----------
+        HTTPException if the API call fails
+    """
+
+    apiEndpoint = 'assets'
+    assetIdsToDelete = [asset['id'] for asset in assets_to_delete]
+    data = {
+        'force': force,
+        'ids': assetIdsToDelete
+    }
+
+    r = requests.delete(root_url+apiEndpoint, json=data, **requests_kwargs)
+    checkApiResponse(r)
+
+
+
+def triggerOfflineAssetRemovalPreMinorVersion116():
+    """
+    Triggers Offline Asset Removal Job.
+    Only supported in Immich prior v1.116.0.
+    Requires the script to run with an Administrator level API key.
+    
+    Works by fetching all libraries and triggering the Offline Asset Removal job
+    one by one.
+    
+    Raises
+    ----------
+        HTTPException if the API call fails
+    """
+    libraries = fetchLibraries()
+    for library in libraries:
+        triggerOfflineAssetRemovalAsync(library['id'])
+
+def fetchLibraries() -> list[dict]:
+    """
+    Queries and returns all libraries
+    
+    Raises
+    ----------
+        Exception if any API call fails
+    """
 
     apiEndpoint = 'libraries'
 
@@ -615,7 +715,7 @@ def fetchLibraries():
     checkApiResponse(r)
     return r.json()
 
-def triggerOfflineAssetRemoval(libraryId: str):
+def triggerOfflineAssetRemovalAsync(libraryId: str):
     """
     Triggers removal of offline assets in the library identified by libraryId.
 
@@ -625,10 +725,10 @@ def triggerOfflineAssetRemoval(libraryId: str):
             The ID of the library to trigger offline asset removal for
     Raises
     ----------
-        Exception if the API call fails
+        Exception if any API call fails
     """
 
-    apiEndpoint = 'libraries/'+libraryId+'/removeOffline'
+    apiEndpoint = f'libraries/{libraryId}/removeOffline'
 
     r = requests.post(root_url+apiEndpoint, **requests_kwargs)
     if r.status_code == 403:
@@ -1015,12 +1115,18 @@ if set_album_thumbnail:
             logging.info("Using asset with index %d as thumbnail for album %s", index, album['albumName'])
             setAlbumThumbnail(album['id'], assets[index]['id'])
         
+# Perform sync mode action: Trigger offline asset removal
+if sync_mode == 2:
+    logging.info("Trigger offline asset removal")
+    triggerOfflineAssetRemoval()
 
 # Perform sync mode action: Delete empty albums
+#
+# For Immich versions prior to v1.116.0:
 # Attention: Since Offline Asset Removal is an asynchronous job,
 # albums affected by it are most likely not empty yet! So this 
 # might only be effective in the next script run.
-if sync_mode == 1:
+if sync_mode >= 1:
     logging.info("Deleting all empty albums")
     albums = fetchAlbums()
     emptyAlbumCount = 0
@@ -1031,14 +1137,9 @@ if sync_mode == 1:
             logging.info("Deleting empty album %s", album['albumName'])
             if deleteAlbum(album):
                 deletedAlbumCount += 1
-    logging.info("Successfully deleted %d/%d empty albums!", deletedAlbumCount, emptyAlbumCount)
-
-# Perform sync mode action: Trigger offline asset removal
-if sync_mode == 2:
-    logging.info("Trigger offline asset removal")
-    libraries = fetchLibraries()
-    for library in libraries:
-        triggerOfflineAssetRemoval(library["id"])
-
+    if emptyAlbumCount > 0:
+        logging.info("Successfully deleted %d/%d empty albums!", deletedAlbumCount, emptyAlbumCount)
+    else:
+        logging.info("No empty albums found!")
 
 logging.info("Done!")
