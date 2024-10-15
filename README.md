@@ -485,7 +485,7 @@ services:
     image: salvoxia/immich-folder-album-creator:latest
     restart: unless-stopped
     environment:
-      API_URL: http://immich_server:3001/api
+      API_URL: http://immich_server:2283/api
       API_KEY: xxxxxxxxxxxxxxxxx
       ROOT_PATH: /external_libs/photos
       CRON_EXPRESSION: "0 * * * *"
