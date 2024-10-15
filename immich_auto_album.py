@@ -332,7 +332,7 @@ def fetchAssets(isNotInAlbum: bool, findArchived: bool) -> list:
         An array of asset objects
     """
 
-    assets = fetchAssetsWithOptions({'isNotInAlbum': isNotInAlbum, 'findArchived': findArchived})
+    assets = fetchAssetsWithOptions({'isNotInAlbum': isNotInAlbum, 'withArchived': findArchived})
     return assets
 
 def fetchAssetsWithOptions(searchOptions: dict) -> list:
