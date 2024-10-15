@@ -296,7 +296,7 @@ def fetchServerVersion() -> dict:
     # This API call was only introduced with version 1.106.1, so it will fail
     # for older versions.
     # Initialize the version with the latest version without this API call
-    r = requests.get(root_url+'server-info/version', **requests_kwargs)
+    r = requests.get(root_url+'server/version', **requests_kwargs)
     if r.status_code == 200:
         version = r.json()
         logging.info("Detected Immich server version %s.%s.%s", version['major'], version['minor'], version['patch'])
