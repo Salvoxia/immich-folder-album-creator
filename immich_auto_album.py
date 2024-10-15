@@ -293,10 +293,14 @@ def fetchServerVersion() -> dict:
             - minor
             - patch
     """
-    # This API call was only introduced with version 1.106.1, so it will fail
-    # for older versions.
-    # Initialize the version with the latest version without this API call
-    r = requests.get(root_url+'server/version', **requests_kwargs)
+    api_endpoint = f'{root_url}server/version'
+    r = requests.get(api_endpoint, **requests_kwargs)
+    # The API endpoint changed in Immich v1.118.0, if the new endpoint
+    # was not found try the legacy one
+    if r.status_code == 404:
+        api_endpoint = f'{root_url}server-info/version'
+        r = requests.get(api_endpoint, **requests_kwargs)
+    
     if r.status_code == 200:
         version = r.json()
         logging.info("Detected Immich server version %s.%s.%s", version['major'], version['minor'], version['patch'])
