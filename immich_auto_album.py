@@ -70,7 +70,9 @@ ALBUM_THUMBNAIL_STATIC_INDICES = {
 parser = argparse.ArgumentParser(description="Create Immich Albums from an external library path based on the top level folders", formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 parser.add_argument("root_path", action='append', help="The external libarary's root path in Immich")
 parser.add_argument("api_url", help="The root API URL of immich, e.g. https://immich.mydomain.com/api/")
-parser.add_argument("api_key", help="The Immich API Key to use")
+api_key_group = parser.add_argument_group('API Key')
+api_key_group.add_argument("-K", "--api-key", help="The Immich API Key to use. Either --api-key or --api-key-file must be specified. The --api-key parameter takes precedence for ease of manual execution, but it is recommended to use --api-key-file. ")
+api_key_group.add_argument("-F", "--api-key-file", help="A path to a file containing the Immich API Key to use. The file must contain only the value.")
 parser.add_argument("-r", "--root-path", action="append", help="Additional external libarary root path in Immich; May be specified multiple times for multiple import paths or external libraries.")
 parser.add_argument("-u", "--unattended", action="store_true", help="Do not ask for user confirmation after identifying albums. Set this flag to run script as a cronjob.")
 parser.add_argument("-a", "--album-levels", default="1", type=str, help="Number of sub-folders or range of sub-folder levels below the root path used for album name creation. Positive numbers start from top of the folder structure, negative numbers from the bottom. Cannot be 0. If a range should be set, the start level and end level must be separated by a comma like '<startLevel>,<endLevel>'. If negative levels are used in a range, <startLevel> must be less than or equal to <endLevel>.")
@@ -98,10 +100,24 @@ args = vars(parser.parse_args())
 logging.basicConfig(level=args["log_level"], stream=sys.stdout, format='time=%(asctime)s level=%(levelname)s msg=%(message)s')
 logging.Formatter.formatTime = (lambda self, record, datefmt=None: datetime.datetime.fromtimestamp(record.created, datetime.timezone.utc).astimezone().isoformat(sep="T",timespec="milliseconds"))
 
+if not (args["api_key"] or args["api_key_file"]):
+    parser.error("At least one of --api-key (-K) or --api-key-file (-F) must be provided.")
+
+def readApiKeyFromFile(file_path: str) -> str:
+    try:
+        with open(file_path, 'r') as secret_file:
+            return secret_file.read().strip()
+    except FileNotFoundError:
+        logging.error("API Key file not found at %s", file_path)
+        exit(1)
+    except Exception as e:
+        logging.error("Error reading API Key file: %s", e)
+        exit(1)    
+
 
 root_paths = args["root_path"]
 root_url = args["api_url"]
-api_key = args["api_key"]
+api_key = args["api_key"] if args["api_key"] else readApiKeyFromFile(args["api_key_file"])
 number_of_images_per_request = args["chunk_size"]
 number_of_assets_to_fetch_per_request = args["fetch_chunk_size"]
 unattended = args["unattended"]

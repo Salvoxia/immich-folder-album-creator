@@ -52,10 +52,18 @@ if [ ! -z "$UNATTENDED" ]; then
     unattended="--unattended"
 fi
 
-args="$unattended $main_root_path $API_URL $API_KEY"
+args="$unattended $main_root_path $API_URL"
 
 if [ ! -z "$additional_root_paths" ]; then
     args="$additional_root_paths $args"
+fi
+
+if [ ! -z "$API_KEY" ]; then
+    args="--api-key \"$API_KEY\" $args"
+fi
+
+if [ ! -z "$API_KEY_FILE" ]; then
+    args="--api-key-file \"$API_KEY_FILE\" $args"
 fi
 
 if [ ! -z "$ALBUM_LEVELS" ]; then
