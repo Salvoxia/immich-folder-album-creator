@@ -52,7 +52,18 @@ if [ ! -z "$UNATTENDED" ]; then
     unattended="--unattended"
 fi
 
-args="$unattended $main_root_path $API_URL $API_KEY"
+api_key=""
+api_key_type=""
+
+if [ ! -z "$API_KEY" ]; then
+    api_key=$API_KEY
+    api_key_type="--api-key-type literal"
+elif [ ! -z "$API_KEY_FILE" ]; then
+    api_key=$API_KEY_FILE
+    api_key_type="--api-key-type file"
+fi
+
+args="$api_key_type $unattended $main_root_path $API_URL $api_key"
 
 if [ ! -z "$additional_root_paths" ]; then
     args="$additional_root_paths $args"
