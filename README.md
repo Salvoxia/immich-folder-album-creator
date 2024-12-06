@@ -71,7 +71,7 @@ This script is mostly based on the following original script: [REDVM/immich_auto
                             Maximum number of assets to fetch with a single API call (default: 5000)
       -l {CRITICAL,ERROR,WARNING,INFO,DEBUG}, --log-level {CRITICAL,ERROR,WARNING,INFO,DEBUG}
                             Log level to use (default: INFO)
-      -k, --insecure        Set to true to ignore SSL verification (default: False)
+      -k, --insecure        Pass to ignore SSL verification (default: False)
       -i IGNORE, --ignore IGNORE
                             Use either literals or glob-like patterns to ignore assets for album name creation. This filter is evaluated after any values passed with --path-filter. May be specified
                             multiple times. (default: None)
@@ -112,9 +112,24 @@ This script is mostly based on the following original script: [REDVM/immich_auto
 
 __Plain example without optional arguments:__
 ```bash
-python3 ./immich_auto_album.py /path/to/external/lib https://immich.mydomain.com/api thisIsMyApiKeyCopiedFromImmichWebGui
+python3 ./immich_auto_album.py \
+  /path/to/external/lib \
+  https://immich.mydomain.com/api \
+  thisIsMyApiKeyCopiedFromImmichWebGui
 ```
+> [!IMPORTANT]  
+> You must pass one root path as the first positional argument to the script. You cannot use `--root-path` alone if you only have a single root path!  
+> Pass `--root-path` additionally for each additional root path you want to use.
 
+__Example:__
+```bash
+python3 ./immich_auto_album.py \
+  --root-path /my/second/root_path \
+  --root-path /my/third/root_path 
+  /my/first/root_path \
+  https://immich.mydomain.com/api \
+  thisIsMyApiKeyCopiedFromImmichWebGui
+```
 ### Docker
 
 A Docker image is provided to be used as a runtime environment. It can be used to either run the script manually, or via cronjob by providing a crontab expression to the container. The container can then be added to the Immich compose stack directly.
@@ -152,21 +167,46 @@ The environment variables are analoguous to the script's command line arguments.
 
 To perform a manually triggered __dry run__ (only list albums that __would__ be created), use the following command:
 ```bash
-docker run -e API_URL="https://immich.mydomain.com/api/" -e API_KEY="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" -e ROOT_PATH="/external_libs/photos" salvoxia/immich-folder-album-creator:latest /script/immich_auto_album.sh
+docker run \
+  -e API_URL="https://immich.mydomain.com/api/" \
+  -e API_KEY="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" \
+  -e ROOT_PATH="/external_libs/photos" \
+  salvoxia/immich-folder-album-creator:latest \
+  /script/immich_auto_album.sh
 ```
 To actually create albums after performing a dry run, use the following command (setting the `UNATTENDED` environment variable):
 ```bash
-docker run -e UNATTENDED="1" -e API_URL="https://immich.mydomain.com/api/" -e API_KEY="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" -e ROOT_PATH="/external_libs/photos" salvoxia/immich-folder-album-creator:latest /script/immich_auto_album.sh
+docker run \
+  -e UNATTENDED="1" \
+  -e API_URL="https://immich.mydomain.com/api/" \
+  -e API_KEY="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" \
+  -e ROOT_PATH="/external_libs/photos" \
+  salvoxia/immich-folder-album-creator:latest \
+  /script/immich_auto_album.sh
 ```
 
 To set up the container to periodically run the script, give it a name, pass the TZ variable and a valid crontab expression as environment variable. This example runs the script every hour:
 ```bash
-docker run --name immich-folder-album-creator -e TZ="Europe/Berlin" -e CRON_EXPRESSION="0 * * * *" -e API_URL="https://immich.mydomain.com/api/" -e API_KEY="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" -e ROOT_PATH="/external_libs/photos" salvoxia/immich-folder-album-creator:latest
+docker run \
+  --name immich-folder-album-creator \
+  -e TZ="Europe/Berlin" \
+  -e CRON_EXPRESSION="0 * * * *" \
+  -e API_URL="https://immich.mydomain.com/api/" \
+  -e API_KEY="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" \
+  -e ROOT_PATH="/external_libs/photos" \
+  salvoxia/immich-folder-album-creator:latest
 ```
 
 If your external library uses multiple import paths or you have set up multiple external libraries, you can pass multiple paths in `ROOT_PATH` by setting it to a comma separated list of paths:  
 ```bash
-docker run --name immich-folder-album-creator -e TZ="Europe/Berlin" -e CRON_EXPRESSION="0 * * * *" -e API_URL="https://immich.mydomain.com/api/" -e API_KEY="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" -e ROOT_PATH="/external_libs/photos,/external_libs/more_photos" salvoxia/immich-folder-album-creator:latest
+docker run \
+  --name immich-folder-album-creator \
+  -e TZ="Europe/Berlin" \
+  -e CRON_EXPRESSION="0 * * * *" \
+  -e API_URL="https://immich.mydomain.com/api/" \
+  -e API_KEY="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" \
+  -e ROOT_PATH="/external_libs/photos,/external_libs/more_photos" \
+  salvoxia/immich-folder-album-creator:latest
 ```
 
 ### Run the container with Docker-Compose
@@ -471,6 +511,9 @@ The following behaviors wil be triggered by the different values:
 
 Option `1` leaves it up to the user to clear up "offline" assets by emptying the trash or restoring access to the files. Only if after any of these actions empty albums are left behind, they are automatically removed.  
 Option `2` will first delete all "offline" assets automatically, then do the same with any empty albums left.  
+
+> [!IMPORTANT]  
+> Some version after v1.116.0 changed the API so that offline assets can no longer be discovered. Thus, `Sync Mode = 2` is not working at the moment. A [Github Issue](https://github.com/immich-app/immich/issues/13161) for Immich has been opened.
 
 > [!IMPORTANT]  
 > If your library is on a network share or external drive that might be prone to not being available all the time, avoid using `Sync Mode = 2`.
