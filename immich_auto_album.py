@@ -79,7 +79,7 @@ parser.add_argument("-s", "--album-separator", default=" ", type=str, help="Sepa
 parser.add_argument("-c", "--chunk-size", default=2000, type=int, help="Maximum number of assets to add to an album with a single API call")
 parser.add_argument("-C", "--fetch-chunk-size", default=5000, type=int, help="Maximum number of assets to fetch with a single API call")
 parser.add_argument("-l", "--log-level", default="INFO", choices=['CRITICAL', 'ERROR', 'WARNING', 'INFO', 'DEBUG'], help="Log level to use")
-parser.add_argument("-k", "--insecure", action="store_true", help="Set to true to ignore SSL verification")
+parser.add_argument("-k", "--insecure", action="store_true", help="Pass to ignore SSL verification")
 parser.add_argument("-i", "--ignore", action="append", help="Use either literals or glob-like patterns to ignore assets for album name creation. This filter is evaluated after any values passed with --path-filter. May be specified multiple times.")
 parser.add_argument("-m", "--mode", default=SCRIPT_MODE_CREATE, choices=[SCRIPT_MODE_CREATE, SCRIPT_MODE_CLEANUP, SCRIPT_MODE_DELETE_ALL], help="Mode for the script to run with. CREATE = Create albums based on folder names and provided arguments; CLEANUP = Create album nmaes based on current images and script arguments, but delete albums if they exist; DELETE_ALL = Delete all albums. If the mode is anything but CREATE, --unattended does not have any effect. Only performs deletion if -d/--delete-confirm option is set, otherwise only performs a dry-run.")
 parser.add_argument("-d", "--delete-confirm", action="store_true", help="Confirm deletion of albums when running in mode "+SCRIPT_MODE_CLEANUP+" or "+SCRIPT_MODE_DELETE_ALL+". If this flag is not set, these modes will perform a dry run only. Has no effect in mode "+SCRIPT_MODE_CREATE)
@@ -666,7 +666,7 @@ def triggerOfflineAssetRemovalSinceMinorVersion116():
     # WARNING! This workaround must NOT be removed to keep compatibility with Immich v1.116.x to at
     # least v1.117.x (reported issue for v1.117.0, might be fixed with v1.118.0)!
     # If removed the assets for users of v1.116.0 - v1.117.x might be deleted completely!!!
-    trashed_assets = fetchAssetsWithOptions({'trashedAfter': '1970-01-01T00:00:00.000Z'})
+    trashed_assets = fetchAssetsWithOptions({})
     #logging.debug("search results: %s", offline_assets)
     
     offline_assets = [asset for asset in trashed_assets if asset['isOffline']]
