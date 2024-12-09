@@ -48,7 +48,8 @@ escaped_glob_tokens_to_re = OrderedDict((
     ('\\?', '.'),
     ('\\[\\*\\]', '\\*'), # Escaped special glob character.
     ('\\[\\?\\]', '\\?'), # Escaped special glob character.
-    ('\\[!', '[^'), # Requires ordered dict, so that ``\\[!`` preceded ``\\[`` in RE pattern. Needed mostly to differentiate between ``!`` used within character class ``[]`` and outside of it, to avoid faulty conversion.
+    ('\\[!', '[^'), # Requires ordered dict, so that ``\\[!`` preceded ``\\[`` in RE pattern.
+                    # Needed mostly to differentiate between ``!`` used within character class ``[]`` and outside of it, to avoid faulty conversion.
     ('\\[', '['),
     ('\\]', ']'),
 ))
@@ -97,38 +98,72 @@ ALBUM_THUMBNAIL_STATIC_INDICES = {
     "last": -1,
 }
 
-parser = argparse.ArgumentParser(description="Create Immich Albums from an external library path based on the top level folders", formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+parser = argparse.ArgumentParser(description="Create Immich Albums from an external library path based on the top level folders",
+    formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 parser.add_argument("root_path", action='append', help="The external library's root path in Immich")
 parser.add_argument("api_url", help="The root API URL of immich, e.g. https://immich.mydomain.com/api/")
 parser.add_argument("api_key", help="The Immich API Key to use. Set --api-key-type to 'file' if a file path is provided.")
 parser.add_argument("-t", "--api-key-type", default="literal", choices=['literal', 'file'], help="The type of the Immich API Key")
-parser.add_argument("-r", "--root-path", action="append", help="Additional external library root path in Immich; May be specified multiple times for multiple import paths or external libraries.")
+parser.add_argument("-r", "--root-path", action="append",
+                    help="Additional external library root path in Immich; May be specified multiple times for multiple import paths or external libraries.")
 parser.add_argument("-u", "--unattended", action="store_true", help="Do not ask for user confirmation after identifying albums. Set this flag to run script as a cronjob.")
-parser.add_argument("-a", "--album-levels", default="1", type=str, 
-                    help="Number of sub-folders or range of sub-folder levels below the root path used for album name creation. Positive numbers start from top of the folder structure, negative numbers from the bottom. Cannot be 0. If a range should be set, the start level and end level must be separated by a comma like '<startLevel>,<endLevel>'. If negative levels are used in a range, <startLevel> must be less than or equal to <endLevel>.")
-parser.add_argument("-s", "--album-separator", default=" ", type=str, help="Separator string to use for compound album names created from nested folders. Only effective if -a is set to a value > 1")
+parser.add_argument("-a", "--album-levels", default="1", type=str,
+                    help="""Number of sub-folders or range of sub-folder levels below the root path used for album name creation.
+                            Positive numbers start from top of the folder structure, negative numbers from the bottom. Cannot be 0. 
+                            If a range should be set, the start level and end level must be separated by a comma like '<startLevel>,<endLevel>'. 
+                            If negative levels are used in a range, <startLevel> must be less than or equal to <endLevel>.""")
+parser.add_argument("-s", "--album-separator", default=" ", type=str,
+                    help="Separator string to use for compound album names created from nested folders. Only effective if -a is set to a value > 1")
 parser.add_argument("-c", "--chunk-size", default=2000, type=int, help="Maximum number of assets to add to an album with a single API call")
 parser.add_argument("-C", "--fetch-chunk-size", default=5000, type=int, help="Maximum number of assets to fetch with a single API call")
 parser.add_argument("-l", "--log-level", default="INFO", choices=['CRITICAL', 'ERROR', 'WARNING', 'INFO', 'DEBUG'], help="Log level to use")
 parser.add_argument("-k", "--insecure", action="store_true", help="Pass to ignore SSL verification")
-parser.add_argument("-i", "--ignore", action="append", help="Use either literals or glob-like patterns to ignore assets for album name creation. This filter is evaluated after any values passed with --path-filter. May be specified multiple times.")
-parser.add_argument("-m", "--mode", default=SCRIPT_MODE_CREATE, choices=[SCRIPT_MODE_CREATE, SCRIPT_MODE_CLEANUP, SCRIPT_MODE_DELETE_ALL], 
+parser.add_argument("-i", "--ignore", action="append",
+                    help="""Use either literals or glob-like patterns to ignore assets for album name creation.
+                            This filter is evaluated after any values passed with --path-filter. May be specified multiple times.""")
+parser.add_argument("-m", "--mode", default=SCRIPT_MODE_CREATE, choices=[SCRIPT_MODE_CREATE, SCRIPT_MODE_CLEANUP, SCRIPT_MODE_DELETE_ALL],
                     help="""Mode for the script to run with.
                             CREATE = Create albums based on folder names and provided arguments; 
                             CLEANUP = Create album nmaes based on current images and script arguments, but delete albums if they exist; 
                             DELETE_ALL = Delete all albums. 
                             If the mode is anything but CREATE, --unattended does not have any effect. 
                             Only performs deletion if -d/--delete-confirm option is set, otherwise only performs a dry-run.""")
-parser.add_argument("-d", "--delete-confirm", action="store_true", help="Confirm deletion of albums when running in mode "+SCRIPT_MODE_CLEANUP+" or "+SCRIPT_MODE_DELETE_ALL+". If this flag is not set, these modes will perform a dry run only. Has no effect in mode "+SCRIPT_MODE_CREATE)
-parser.add_argument("-x", "--share-with", action="append", help="A user name (or email address of an existing user) to share newly created albums with. Sharing only happens if the album was actually created, not if new assets were added to an existing album. If the the share role should be specified by user, the format <userName>=<shareRole> must be used, where <shareRole> must be one of 'viewer' or 'editor'. May be specified multiple times to share albums with more than one user.")
-parser.add_argument("-o", "--share-role", default="viewer", choices=['viewer', 'editor'], help="The default share role for users newly created albums are shared with. Only effective if --share-with is specified at least once and the share role is not specified within --share-with.")
-parser.add_argument("-S", "--sync-mode", default=0, type=int, choices=[0, 1, 2], help="Synchronization mode to use. Synchronization mode helps synchronizing changes in external libraries structures to Immich after albums have already been created. Possible Modes: 0 = do nothing; 1 = Delete any empty albums; 2 = Delete offline assets AND any empty albums")
-parser.add_argument("-O", "--album-order", default=False, type=str, choices=[False, 'asc', 'desc'], help="Set sorting order for newly created albums to newest or oldest file first, Immich defaults to newest file first")
-parser.add_argument("-A", "--find-assets-in-albums", action="store_true", help="By default, the script only finds assets that are not assigned to any album yet. Set this option to make the script discover assets that are already part of an album and handle them as usual. If --find-archived-assets is set as well, both options apply.")
-parser.add_argument("-f", "--path-filter", action="append", help="Use either literals or glob-like patterns to filter assets before album name creation. This filter is evaluated before any values passed with --ignore. May be specified multiple times.")
-parser.add_argument("--set-album-thumbnail", choices=ALBUM_THUMBNAIL_SETTINGS, help="Set first/last/random image as thumbnail for newly created albums or albums assets have been added to. If set to "+ALBUM_THUMBNAIL_RANDOM_FILTERED+", thumbnails are shuffled for all albums whose assets would not be filtered out or ignored by the ignore or path-filter options, even if no assets were added during the run. If set to "+ALBUM_THUMBNAIL_RANDOM_ALL+", the thumbnails for ALL albums will be shuffled on every run.")
-parser.add_argument("-v", "--archive", action="store_true", help="Set this option to automatically archive all assets that were newly added to albums. If this option is set in combination with --mode = CLEANUP or DELETE_ALL, archived images of deleted albums will be unarchived. Archiving hides the assets from Immich's timeline.")
-parser.add_argument("--find-archived-assets", action="store_true", help="By default, the script only finds assets that are not archived in Immich. Set this option to make the script discover assets that are already archived. If -A/--find-assets-in-albums is set as well, both options apply.")
+parser.add_argument("-d", "--delete-confirm", action="store_true",
+                    help="""Confirm deletion of albums when running in mode "+SCRIPT_MODE_CLEANUP+" or "+SCRIPT_MODE_DELETE_ALL+".
+                            If this flag is not set, these modes will perform a dry run only. Has no effect in mode """+SCRIPT_MODE_CREATE)
+parser.add_argument("-x", "--share-with", action="append",
+                    help="""A user name (or email address of an existing user) to share newly created albums with.
+                    Sharing only happens if the album was actually created, not if new assets were added to an existing album.
+                    If the the share role should be specified by user, the format <userName>=<shareRole> must be used, where <shareRole> must be one of 'viewer' or 'editor'.
+                    May be specified multiple times to share albums with more than one user.""")
+parser.add_argument("-o", "--share-role", default="viewer", choices=['viewer', 'editor'],
+                    help="""The default share role for users newly created albums are shared with.
+                            Only effective if --share-with is specified at least once and the share role is not specified within --share-with.""")
+parser.add_argument("-S", "--sync-mode", default=0, type=int, choices=[0, 1, 2],
+                    help="""Synchronization mode to use. Synchronization mode helps synchronizing changes in external libraries structures to Immich after albums
+                            have already been created. Possible Modes: 0 = do nothing; 1 = Delete any empty albums; 2 = Delete offline assets AND any empty albums""")
+parser.add_argument("-O", "--album-order", default=False, type=str, choices=[False, 'asc', 'desc'],
+                    help="Set sorting order for newly created albums to newest or oldest file first, Immich defaults to newest file first")
+parser.add_argument("-A", "--find-assets-in-albums", action="store_true",
+                    help="""By default, the script only finds assets that are not assigned to any album yet.
+                            Set this option to make the script discover assets that are already part of an album and handle them as usual.
+                            If --find-archived-assets is set as well, both options apply.""")
+parser.add_argument("-f", "--path-filter", action="append",
+                    help="""Use either literals or glob-like patterns to filter assets before album name creation.
+                            This filter is evaluated before any values passed with --ignore. May be specified multiple times.""")
+parser.add_argument("--set-album-thumbnail", choices=ALBUM_THUMBNAIL_SETTINGS,
+                    help="""Set first/last/random image as thumbnail for newly created albums or albums assets have been added to.
+                            If set to "+ALBUM_THUMBNAIL_RANDOM_FILTERED+", thumbnails are shuffled for all albums whose assets would not be
+                            filtered out or ignored by the ignore or path-filter options, even if no assets were added during the run.
+                            If set to "+ALBUM_THUMBNAIL_RANDOM_ALL+", the thumbnails for ALL albums will be shuffled on every run.""")
+parser.add_argument("-v", "--archive", action="store_true",
+                    help="""Set this option to automatically archive all assets that were newly added to albums.
+                            If this option is set in combination with --mode = CLEANUP or DELETE_ALL, archived images of deleted albums will be unarchived.
+                            Archiving hides the assets from Immich's timeline.""")
+parser.add_argument("--find-archived-assets", action="store_true",
+                    help="""By default, the script only finds assets that are not archived in Immich.
+                            Set this option to make the script discover assets that are already archived.
+                            If -A/--find-assets-in-albums is set as well, both options apply.""")
 
 
 args = vars(parser.parse_args())
@@ -194,11 +229,11 @@ def determine_api_key(api_key_source: str, key_type: str) -> str:
     """
     if key_type == 'literal':
         return api_key_source
-    elif key_type == 'file':
+    if key_type == 'file':
         return read_file(api_key_source)
-    else:
-        logging.error("Unknown key type (-t, --key-type). Must be either 'literal' or 'file'.")
-        return None
+    # At this point key_type is not a valid value
+    logging.error("Unknown key type (-t, --key-type). Must be either 'literal' or 'file'.")
+    return None
 
 root_paths = args["root_path"]
 root_url = args["api_url"]
@@ -294,8 +329,7 @@ def expand_to_glob(expr: str) -> str:
         glob_expr = f'**/*{expr}*/**'
         logging.debug("expanding %s to %s", expr, glob_expr)
         return glob_expr
-    else:
-        return expr
+    return expr
 
 def divide_chunks(l: list, n: int):
     """Yield successive n-sized chunks from l. """
@@ -645,7 +679,7 @@ def add_assets_to_album(assets_add_album_id: str, asset_list: list[str]) -> list
     # Divide our assets into chunks of number_of_images_per_request,
     # So the API can cope
     assets_chunked = list(divide_chunks(asset_list, number_of_images_per_request))
-    asset_list_added = list()
+    asset_list_added = []
     for assets_chunk in assets_chunked:
         data = {'ids':assets_chunk}
         r = requests.put(root_url+api_endpoint+f'/{assets_add_album_id}/assets', json=data, **requests_kwargs, timeout=REQUEST_TIMEOUT)
@@ -701,7 +735,7 @@ def share_album_with_user_and_role(album_id_to_share: str, user_ids_to_share_wit
     # build payload
     album_users = []
     for user_id_to_share_with in user_ids_to_share_with:
-        share_info = dict()
+        share_info = {}
         share_info['role'] = user_share_role
         share_info['userId'] = user_id_to_share_with
         album_users.append(share_info)
@@ -922,15 +956,16 @@ if insecure:
 # Verify album levels range
 if not is_integer(album_levels):
     album_levels_range_split = album_levels.split(",")
-    if (len(album_levels_range_split) != 2
-            or not is_integer(album_levels_range_split[0])
-            or not is_integer(album_levels_range_split[1])
-            or int(album_levels_range_split[0]) == 0
-            or int(album_levels_range_split[1]) == 0
-            or (int(album_levels_range_split[0]) >= 0 and int(album_levels_range_split[1]) < 0)
-            or (int(album_levels_range_split[0]) < 0 and int(album_levels_range_split[1]) >= 0)
-            or (int(album_levels_range_split[0]) < 0 and int(album_levels_range_split[1]) < 0) and int(album_levels_range_split[0]) > int(album_levels_range_split[1])):
-        logging.error("Invalid album_levels range format! If a range should be set, the start level and end level must be separated by a comma like '<startLevel>,<endLevel>'. If negative levels are used in a range, <startLevel> must be less than or equal to <endLevel>.")
+    if (any(len(album_levels_range_split) != 2,
+            not is_integer(album_levels_range_split[0]),
+            not is_integer(album_levels_range_split[1]),
+            int(album_levels_range_split[0]) == 0,
+            int(album_levels_range_split[1]) == 0,
+            (int(album_levels_range_split[1]) < 0 >= int(album_levels_range_split[0])),
+            (int(album_levels_range_split[0]) < 0 >= int(album_levels_range_split[1])),
+            (int(album_levels_range_split[0]) < 0 and int(album_levels_range_split[1]) < 0) and int(album_levels_range_split[0]) > int(album_levels_range_split[1]))):
+        logging.error("""Invalid album_levels range format! If a range should be set, the start level and end level must be separated by a comma like '<startLevel>,<endLevel>'.
+                         If negative levels are used in a range, <startLevel> must be less than or equal to <endLevel>.""")
         sys.exit(1)
     album_levels_range_arr = album_levels_range_split
     # Convert to int
@@ -1071,10 +1106,10 @@ logging.info("%d existing albums identified", len(albums))
 
 # mode CLEANUP
 if mode == SCRIPT_MODE_CLEANUP:
-    albums_to_delete = list()
+    albums_to_delete = []
     for album in album_to_assets:
         if album in album_to_id:
-            album_to_delete = dict()
+            album_to_delete = {}
             album_to_delete['id'] = album_to_id[album]
             album_to_delete['albumName'] = album
             albums_to_delete.append(album_to_delete)
@@ -1108,7 +1143,7 @@ if mode == SCRIPT_MODE_CLEANUP:
 
 # mode CREATE
 logging.info("Creating albums if needed")
-created_albums = dict()
+created_albums = {}
 for album in album_to_assets:
     if album in album_to_id:
         continue
@@ -1128,9 +1163,9 @@ if share_with is not None and len(created_albums) > 0:
     logging.debug("Found users: %s", users)
 
     # Initialize dicitionary of share roles to user IDs to share with
-    roles_for_share_user_ids = dict()
+    roles_for_share_user_ids = {}
     for allowed_role in SHARE_ROLES:
-        roles_for_share_user_ids[allowed_role] = list()
+        roles_for_share_user_ids[allowed_role] = []
 
     # Search user IDs of users to share with
     for share_user, role in share_user_roles.items():
@@ -1148,7 +1183,7 @@ if share_with is not None and len(created_albums) > 0:
 
         for user in users:
             # Search by name or mail address
-            if user['name'] == share_user or user['email'] == share_user:
+            if share_user in (user['name'], user['email']):
                 share_user_id = user['id']
                 logging.debug("User %s has ID %s", share_user, share_user_id)
                 roles_for_share_user_ids[role].append(share_user_id)
@@ -1180,13 +1215,13 @@ if share_with is not None and len(created_albums) > 0:
 logging.info("Adding assets to albums")
 # Note: Immich manages duplicates without problem,
 # so we can each time ad all assets to same album, no photo will be duplicated
-albums_with_assets_added = list()
-asset_uuids_added = list()
+albums_with_assets_added = []
+asset_uuids_added = []
 for album, assets in album_to_assets.items():
     album_id = album_to_id[album]
     assets_added = add_assets_to_album(album_id, assets)
     if len(assets_added) > 0:
-        album_with_asset_added = dict()
+        album_with_asset_added = {}
         album_with_asset_added['id'] = album_id
         album_with_asset_added['albumName'] = album
         albums_with_assets_added.append(album_with_asset_added)
