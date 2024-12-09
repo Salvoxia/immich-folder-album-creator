@@ -1,3 +1,5 @@
+[![Build Status](https://github.com/salvoxia/immich-folder-album-creator/workflows/CI/badge.svg)](https://github.com/Salvoxia/immich-folder-album-creator/actions/workflows/ci.yaml)
+[![Build Status](https://github.com/salvoxia/immich-folder-album-creator/workflows/build-image/badge.svg)](https://github.com/Salvoxia/immich-folder-album-creator/actions/workflows/build-image.yaml)
 [![Docker][docker-image]][docker-url]
 
 [docker-image]: https://img.shields.io/docker/pulls/salvoxia/immich-folder-album-creator.svg
