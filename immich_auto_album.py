@@ -129,7 +129,7 @@ parser.add_argument("-m", "--mode", default=SCRIPT_MODE_CREATE, choices=[SCRIPT_
                             If the mode is anything but CREATE, --unattended does not have any effect. 
                             Only performs deletion if -d/--delete-confirm option is set, otherwise only performs a dry-run.""")
 parser.add_argument("-d", "--delete-confirm", action="store_true",
-                    help="""Confirm deletion of albums when running in mode "+SCRIPT_MODE_CLEANUP+" or "+SCRIPT_MODE_DELETE_ALL+".
+                    help="""Confirm deletion of albums when running in mode """+SCRIPT_MODE_CLEANUP+""" or """+SCRIPT_MODE_DELETE_ALL+""".
                             If this flag is not set, these modes will perform a dry run only. Has no effect in mode """+SCRIPT_MODE_CREATE)
 parser.add_argument("-x", "--share-with", action="append",
                     help="""A user name (or email address of an existing user) to share newly created albums with.
@@ -153,9 +153,9 @@ parser.add_argument("-f", "--path-filter", action="append",
                             This filter is evaluated before any values passed with --ignore. May be specified multiple times.""")
 parser.add_argument("--set-album-thumbnail", choices=ALBUM_THUMBNAIL_SETTINGS,
                     help="""Set first/last/random image as thumbnail for newly created albums or albums assets have been added to.
-                            If set to "+ALBUM_THUMBNAIL_RANDOM_FILTERED+", thumbnails are shuffled for all albums whose assets would not be
+                            If set to """+ALBUM_THUMBNAIL_RANDOM_FILTERED+""", thumbnails are shuffled for all albums whose assets would not be
                             filtered out or ignored by the ignore or path-filter options, even if no assets were added during the run.
-                            If set to "+ALBUM_THUMBNAIL_RANDOM_ALL+", the thumbnails for ALL albums will be shuffled on every run.""")
+                            If set to """+ALBUM_THUMBNAIL_RANDOM_ALL+""", the thumbnails for ALL albums will be shuffled on every run.""")
 parser.add_argument("-v", "--archive", action="store_true",
                     help="""Set this option to automatically archive all assets that were newly added to albums.
                             If this option is set in combination with --mode = CLEANUP or DELETE_ALL, archived images of deleted albums will be unarchived.
