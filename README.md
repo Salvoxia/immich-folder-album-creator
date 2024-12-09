@@ -1,3 +1,5 @@
+[![Build Status](https://github.com/salvoxia/immich-folder-album-creator/workflows/CI/badge.svg)](https://github.com/Salvoxia/immich-folder-album-creator/actions/workflows/ci.yaml)
+[![Build Status](https://github.com/salvoxia/immich-folder-album-creator/workflows/build-image/badge.svg)](https://github.com/Salvoxia/immich-folder-album-creator/actions/workflows/build-image.yaml)
 [![Docker][docker-image]][docker-url]
 
 [docker-image]: https://img.shields.io/docker/pulls/salvoxia/immich-folder-album-creator.svg
@@ -40,10 +42,10 @@ This script is mostly based on the following original script: [REDVM/immich_auto
     ```
 3. Run the script
     ```
-    usage: immich_auto_album.py [-h] [-t {literal,file}] [-r ROOT_PATH] [-u] [-a ALBUM_LEVELS] [-s ALBUM_SEPARATOR] [-c CHUNK_SIZE] [-C FETCH_CHUNK_SIZE] [-l {CRITICAL,ERROR,WARNING,INFO,DEBUG}] [-k]
-                                [-i IGNORE] [-m {CREATE,CLEANUP,DELETE_ALL}] [-d] [-x SHARE_WITH] [-o {viewer,editor}] [-S {0,1,2}] [-O {False,asc,desc}] [-A] [-f PATH_FILTER]
-                                [--set-album-thumbnail {first,last,random,random-all,random-filtered}] [-v] [--find-archived-assets]
-                                root_path api_url api_key
+    usage: immich_auto_album.py [-h] [-t {literal,file}] [-r ROOT_PATH] [-u] [-a ALBUM_LEVELS] [-s ALBUM_SEPARATOR] [-c CHUNK_SIZE] [-C FETCH_CHUNK_SIZE] [-l {CRITICAL,ERROR,WARNING,INFO,DEBUG}] [-k] [-i IGNORE]
+                            [-m {CREATE,CLEANUP,DELETE_ALL}] [-d] [-x SHARE_WITH] [-o {viewer,editor}] [-S {0,1,2}] [-O {False,asc,desc}] [-A] [-f PATH_FILTER]
+                            [--set-album-thumbnail {first,last,random,random-all,random-filtered}] [-v] [--find-archived-assets]
+                            root_path api_url api_key
 
     Create Immich Albums from an external library path based on the top level folders
 
@@ -60,9 +62,9 @@ This script is mostly based on the following original script: [REDVM/immich_auto
                             Additional external library root path in Immich; May be specified multiple times for multiple import paths or external libraries. (default: None)
       -u, --unattended      Do not ask for user confirmation after identifying albums. Set this flag to run script as a cronjob. (default: False)
       -a ALBUM_LEVELS, --album-levels ALBUM_LEVELS
-                            Number of sub-folders or range of sub-folder levels below the root path used for album name creation. Positive numbers start from top of the folder structure, negative numbers
-                            from the bottom. Cannot be 0. If a range should be set, the start level and end level must be separated by a comma like '<startLevel>,<endLevel>'. If negative levels are used in
-                            a range, <startLevel> must be less than or equal to <endLevel>. (default: 1)
+                            Number of sub-folders or range of sub-folder levels below the root path used for album name creation. Positive numbers start from top of the folder structure, negative numbers from the bottom.
+                            Cannot be 0. If a range should be set, the start level and end level must be separated by a comma like '<startLevel>,<endLevel>'. If negative levels are used in a range, <startLevel> must be
+                            less than or equal to <endLevel>. (default: 1)
       -s ALBUM_SEPARATOR, --album-separator ALBUM_SEPARATOR
                             Separator string to use for compound album names created from nested folders. Only effective if -a is set to a value > 1 (default: )
       -c CHUNK_SIZE, --chunk-size CHUNK_SIZE
@@ -73,41 +75,40 @@ This script is mostly based on the following original script: [REDVM/immich_auto
                             Log level to use (default: INFO)
       -k, --insecure        Pass to ignore SSL verification (default: False)
       -i IGNORE, --ignore IGNORE
-                            Use either literals or glob-like patterns to ignore assets for album name creation. This filter is evaluated after any values passed with --path-filter. May be specified
-                            multiple times. (default: None)
+                            Use either literals or glob-like patterns to ignore assets for album name creation. This filter is evaluated after any values passed with --path-filter. May be specified multiple times.
+                            (default: None)
       -m {CREATE,CLEANUP,DELETE_ALL}, --mode {CREATE,CLEANUP,DELETE_ALL}
-                            Mode for the script to run with. CREATE = Create albums based on folder names and provided arguments; CLEANUP = Create album nmaes based on current images and script arguments,
-                            but delete albums if they exist; DELETE_ALL = Delete all albums. If the mode is anything but CREATE, --unattended does not have any effect. Only performs deletion if
-                            -d/--delete-confirm option is set, otherwise only performs a dry-run. (default: CREATE)
-      -d, --delete-confirm  Confirm deletion of albums when running in mode CLEANUP or DELETE_ALL. If this flag is not set, these modes will perform a dry run only. Has no effect in mode CREATE (default:
-                            False)
+                            Mode for the script to run with. CREATE = Create albums based on folder names and provided arguments; CLEANUP = Create album nmaes based on current images and script arguments, but delete albums
+                            if they exist; DELETE_ALL = Delete all albums. If the mode is anything but CREATE, --unattended does not have any effect. Only performs deletion if -d/--delete-confirm option is set, otherwise
+                            only performs a dry-run. (default: CREATE)
+      -d, --delete-confirm  Confirm deletion of albums when running in mode CLEANUP or DELETE_ALL. If this flag is not set, these modes will perform a dry run only. Has no effect in mode CREATE (default: False)
       -x SHARE_WITH, --share-with SHARE_WITH
-                            A user name (or email address of an existing user) to share newly created albums with. Sharing only happens if the album was actually created, not if new assets were added to an
-                            existing album. If the the share role should be specified by user, the format <userName>=<shareRole> must be used, where <shareRole> must be one of 'viewer' or 'editor'. May be
-                            specified multiple times to share albums with more than one user. (default: None)
+                            A user name (or email address of an existing user) to share newly created albums with. Sharing only happens if the album was actually created, not if new assets were added to an existing album.
+                            If the the share role should be specified by user, the format <userName>=<shareRole> must be used, where <shareRole> must be one of 'viewer' or 'editor'. May be specified multiple times to share
+                            albums with more than one user. (default: None)
       -o {viewer,editor}, --share-role {viewer,editor}
-                            The default share role for users newly created albums are shared with. Only effective if --share-with is specified at least once and the share role is not specified within
-                            --share-with. (default: viewer)
+                            The default share role for users newly created albums are shared with. Only effective if --share-with is specified at least once and the share role is not specified within --share-with.
+                            (default: viewer)
       -S {0,1,2}, --sync-mode {0,1,2}
-                            Synchronization mode to use. Synchronization mode helps synchronizing changes in external libraries structures to Immich after albums have already been created. Possible Modes:
-                            0 = do nothing; 1 = Delete any empty albums; 2 = Delete offline assets AND any empty albums (default: 0)
+                            Synchronization mode to use. Synchronization mode helps synchronizing changes in external libraries structures to Immich after albums have already been created. Possible Modes: 0 = do nothing; 1
+                            = Delete any empty albums; 2 = Delete offline assets AND any empty albums (default: 0)
       -O {False,asc,desc}, --album-order {False,asc,desc}
                             Set sorting order for newly created albums to newest or oldest file first, Immich defaults to newest file first (default: False)
       -A, --find-assets-in-albums
-                            By default, the script only finds assets that are not assigned to any album yet. Set this option to make the script discover assets that are already part of an album and handle
-                            them as usual. If --find-archived-assets is set as well, both options apply. (default: False)
+                            By default, the script only finds assets that are not assigned to any album yet. Set this option to make the script discover assets that are already part of an album and handle them as usual. If
+                            --find-archived-assets is set as well, both options apply. (default: False)
       -f PATH_FILTER, --path-filter PATH_FILTER
-                            Use either literals or glob-like patterns to filter assets before album name creation. This filter is evaluated before any values passed with --ignore. May be specified multiple
-                            times. (default: None)
+                            Use either literals or glob-like patterns to filter assets before album name creation. This filter is evaluated before any values passed with --ignore. May be specified multiple times. (default:
+                            None)
       --set-album-thumbnail {first,last,random,random-all,random-filtered}
-                            Set first/last/random image as thumbnail for newly created albums or albums assets have been added to. If set to random-filtered, thumbnails are shuffled for all albums whose
-                            assets would not be filtered out or ignored by the ignore or path-filter options, even if no assets were added during the run. If set to random-all, the thumbnails for ALL
-                            albums will be shuffled on every run. (default: None)
-      -v, --archive         Set this option to automatically archive all assets that were newly added to albums. If this option is set in combination with --mode = CLEANUP or DELETE_ALL, archived images of
-                            deleted albums will be unarchived. Archiving hides the assets from Immich's timeline. (default: False)
+                            Set first/last/random image as thumbnail for newly created albums or albums assets have been added to. If set to random-filtered, thumbnails are shuffled for all albums whose assets would not be
+                            filtered out or ignored by the ignore or path-filter options, even if no assets were added during the run. If set to random-all, the thumbnails for ALL albums will be shuffled on every run.
+                            (default: None)
+      -v, --archive         Set this option to automatically archive all assets that were newly added to albums. If this option is set in combination with --mode = CLEANUP or DELETE_ALL, archived images of deleted albums
+                            will be unarchived. Archiving hides the assets from Immich's timeline. (default: False)
       --find-archived-assets
-                            By default, the script only finds assets that are not archived in Immich. Set this option to make the script discover assets that are already archived. If -A/--find-assets-in-
-                            albums is set as well, both options apply. (default: False)
+                            By default, the script only finds assets that are not archived in Immich. Set this option to make the script discover assets that are already archived. If -A/--find-assets-in-albums is set as
+                            well, both options apply. (default: False)
     ```
 
 __Plain example without optional arguments:__
