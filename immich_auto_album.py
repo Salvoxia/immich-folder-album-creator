@@ -956,14 +956,16 @@ if insecure:
 # Verify album levels range
 if not is_integer(album_levels):
     album_levels_range_split = album_levels.split(",")
-    if (any(len(album_levels_range_split) != 2,
+    if any([
+            len(album_levels_range_split) != 2,
             not is_integer(album_levels_range_split[0]),
             not is_integer(album_levels_range_split[1]),
             int(album_levels_range_split[0]) == 0,
             int(album_levels_range_split[1]) == 0,
             (int(album_levels_range_split[1]) < 0 >= int(album_levels_range_split[0])),
             (int(album_levels_range_split[0]) < 0 >= int(album_levels_range_split[1])),
-            (int(album_levels_range_split[0]) < 0 and int(album_levels_range_split[1]) < 0) and int(album_levels_range_split[0]) > int(album_levels_range_split[1]))):
+            (int(album_levels_range_split[0]) < 0 and int(album_levels_range_split[1]) < 0 and int(album_levels_range_split[0]) > int(album_levels_range_split[1]))
+        ]):
         logging.error("""Invalid album_levels range format! If a range should be set, the start level and end level must be separated by a comma like '<startLevel>,<endLevel>'.
                          If negative levels are used in a range, <startLevel> must be less than or equal to <endLevel>.""")
         sys.exit(1)
