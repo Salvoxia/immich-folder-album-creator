@@ -949,6 +949,107 @@ def check_api_response(response: requests.Response):
             logging.error("API respsonse did not contain a payload")
     response.raise_for_status()
 
+def delete_all_albums(unarchive_assets: bool, force_delete: bool):
+    """
+    Deletes all albums in Immich if force_delete is True. Otherwise lists all albums
+    that would be deleted.
+    If unarchived_assets is set to true, all archived assets in deleted albums
+    will be unarchived.
+
+    Parameters
+    ----------
+        unarchive_assets : bool
+            Flag indicating whether to unarchive archived assets
+        force_delete : bool
+            Flag indicating whether to actually delete albums (True) or only to
+            perfrom a dry-run (False)
+   
+    Raises
+    ----------
+        HTTPError if the API call fails
+    """
+
+    all_albums = fetch_albums()
+    logging.info("%d existing albums identified", len(all_albums))
+    # Delete Confirm check
+    if not force_delete:
+        album_names = []
+        for album_to_delete in all_albums:
+            album_names.append(album_to_delete['albumName'])
+        print("Would delete the following albums (ALL albums!):")
+        print(album_names)
+        if is_docker:
+            print("Run the container with environment variable DELETE_CONFIRM set to 1 to actually delete these albums!")
+        else:
+            print("Call with --delete-confirm to actually delete albums!")
+        sys.exit(0)
+    # pylint: disable=C0103
+    deleted_album_count = 0
+    for album_to_delete in all_albums:
+        if delete_album(album_to_delete):
+             # If the archived flag is set it means we need to unarchived all images of deleted albums;
+            # In order to do so, we need to fetch all assets of the album we're going to delete
+            assets_in_deleted_album = []
+            if unarchive_assets:
+                assets_in_deleted_album = fetch_album_assets(album_to_delete['id'])
+            logging.info("Deleted album %s", album_to_delete['albumName'])
+            deleted_album_count += 1
+            if len(assets_in_deleted_album) > 0 and unarchive_assets:
+                set_assets_archived([asset['id'] for asset in assets_in_deleted_album], False)
+                logging.info("Unarchived %d assets", len(assets_in_deleted_album))
+    logging.info("Deleted %d/%d albums", deleted_album_count, len(all_albums))
+
+def cleanup_albums(unarchive_assets: bool, force_delete: bool):
+    """
+    Instead of creating, deletes albums in Immich if force_delete is True. Otherwise lists all albums
+    that would be deleted.
+    If unarchived_assets is set to true, all archived assets in deleted albums
+    will be unarchived.
+
+    Parameters
+    ----------
+        unarchive_assets : bool
+            Flag indicating whether to unarchive archived assets
+        force_delete : bool
+            Flag indicating whether to actually delete albums (True) or only to
+            perfrom a dry-run (False)
+   
+    Raises
+    ----------
+        HTTPError if the API call fails
+    """
+
+    albums_to_delete = []
+    for album_record_to_delete in album_to_assets:
+        if album_record_to_delete in album_to_id:
+            album_to_delete = {}
+            album_to_delete['id'] = album_to_id[album_record_to_delete]
+            album_to_delete['albumName'] = album_record_to_delete
+            albums_to_delete.append(album_to_delete)
+
+    # Delete Confirm check
+    if not force_delete:
+        print("Would delete the following albums:")
+        print([a['albumName'] for a in albums_to_delete])
+        if is_docker:
+            print("Run the container with environment variable DELETE_CONFIRM set to 1 to actually delete these albums!")
+        else:
+            print(" Call with --delete-confirm to actually delete albums!")
+    else:
+        cpt = 0 # pylint: disable=C0103
+        for album_to_delete in albums_to_delete:
+            # If the archived flag is set it means we need to unarchived all images of deleted albums;
+            # In order to do so, we need to fetch all assets of the album we're going to delete
+            assets_in_album = []
+            if unarchive_assets:
+                assets_in_album = fetch_album_assets(album_to_delete['id'])
+            if delete_album(album_to_delete):
+                logging.info("Deleted album %s", album_to_delete['albumName'])
+                cpt += 1
+                if len(assets_in_album) > 0 and unarchive_assets:
+                    set_assets_archived([asset['id'] for asset in assets_in_album], False)
+                    logging.info("Unarchived %d assets", len(assets_in_album))
+        logging.info("Deleted %d/%d albums", cpt, len(album_to_assets))
 
 if insecure:
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -1017,35 +1118,7 @@ if version['major'] == 1 and version ['minor'] < 106:
 
 # Special case: Run Mode DELETE_ALL albums
 if mode == SCRIPT_MODE_DELETE_ALL:
-    albums = fetch_albums()
-    logging.info("%d existing albums identified", len(albums))
-    # Delete Confirm check
-    if not delete_confirm:
-        album_names = []
-        for album in albums:
-            album_names.append(album['albumName'])
-        print("Would delete the following albums (ALL albums!):")
-        print(album_names)
-        if is_docker:
-            print("Run the container with environment variable DELETE_CONFIRM set to 1 to actually delete these albums!")
-        else:
-            print("Call with --delete-confirm to actually delete albums!")
-        sys.exit(0)
-    # pylint: disable=C0103
-    cpt = 0
-    for album in albums:
-        if delete_album(album):
-             # If the archived flag is set it means we need to unarchived all images of deleted albums;
-            # In order to do so, we need to fetch all assets of the album we're going to delete
-            assets_in_album = []
-            if archive:
-                assets_in_album = fetch_album_assets(album['id'])
-            logging.info("Deleted album %s", album['albumName'])
-            cpt += 1
-            if len(assets_in_album) > 0 and archive:
-                set_assets_archived([asset['id'] for asset in assets_in_album], False)
-                logging.info("Unarchived %d assets", len(assets_in_album))
-    logging.info("Deleted %d/%d albums", cpt, len(albums))
+    delete_all_albums(archive, delete_confirm)
     sys.exit(0)
 
 logging.info("Requesting all assets")
@@ -1108,39 +1181,8 @@ logging.info("%d existing albums identified", len(albums))
 
 # mode CLEANUP
 if mode == SCRIPT_MODE_CLEANUP:
-    albums_to_delete = []
-    for album in album_to_assets:
-        if album in album_to_id:
-            album_to_delete = {}
-            album_to_delete['id'] = album_to_id[album]
-            album_to_delete['albumName'] = album
-            albums_to_delete.append(album_to_delete)
-
-    # Delete Confirm check
-    if not delete_confirm:
-        print("Would delete the following albums:")
-        print([a['albumName'] for a in albums_to_delete])
-        if is_docker:
-            print("Run the container with environment variable DELETE_CONFIRM set to 1 to actually delete these albums!")
-        else:
-            print(" Call with --delete-confirm to actually delete albums!")
-        sys.exit(0)
-    else:
-        cpt = 0 # pylint: disable=C0103
-        for album_to_delete in albums_to_delete:
-            # If the archived flag is set it means we need to unarchived all images of deleted albums;
-            # In order to do so, we need to fetch all assets of the album we're going to delete
-            assets_in_album = []
-            if archive:
-                assets_in_album = fetch_album_assets(album_to_delete['id'])
-            if delete_album(album_to_delete):
-                logging.info("Deleted album %s", album_to_delete['albumName'])
-                cpt += 1
-                if len(assets_in_album) > 0 and archive:
-                    set_assets_archived([asset['id'] for asset in assets_in_album], False)
-                    logging.info("Unarchived %d assets", len(assets_in_album))
-        logging.info("Deleted %d/%d albums", cpt, len(album_to_assets))
-        sys.exit(0)
+    cleanup_albums(archive, delete_confirm)
+    sys.exit(0)
 
 
 # mode CREATE
@@ -1278,15 +1320,15 @@ if sync_mode >= 1:
     # pylint: disable=C0103
     empty_album_count = 0
     # pylint: disable=C0103
-    deleted_album_count = 0
+    cleaned_album_count = 0
     for album in albums:
         if album['assetCount'] == 0:
             empty_album_count += 1
             logging.info("Deleting empty album %s", album['albumName'])
             if delete_album(album):
-                deleted_album_count += 1
+                cleaned_album_count += 1
     if empty_album_count > 0:
-        logging.info("Successfully deleted %d/%d empty albums!", deleted_album_count, empty_album_count)
+        logging.info("Successfully deleted %d/%d empty albums!", cleaned_album_count, empty_album_count)
     else:
         logging.info("No empty albums found!")
 
