@@ -14,37 +14,30 @@ from urllib.error import HTTPError
 
 import urllib3
 import requests
-
+# Disable pylint rule for too many instance attributes
+# pylint: disable=R0902
+# Disable pylint rule for too few public methods
+# pylint: disable=R0903
 class AlbumModel:
     """Model of an album with all properties necessary for handling albums in the scope of this script"""
-    # The album ID, set after it was created
-    id = None
-    # The album name
-    name = None
-    # The description to set for the album
-    description = None
-    # A list of dicts with Immich assets
-    assets = []
-    # a list of dicts with keys user and role, listing all users and their role to share the album with
-    share_with = []
-    # Either a fully qualified asset path or one of 'first', 'last', 'random'
-    thumbnail_setting = None
-    # Sorting order for this album, 'asc' or 'desc'
-    sort_order = None
-    # Boolean indicating whether assets in this album should be archived after adding
-    archive = None
-    # Boolean indicating whether assets in this albums can be commented on and liked
-    comments_and_likes_enabled = None
-
     def __init__(self, name : str):
+        # The album ID, set after it was created
         self.id = None
+        # The album name
         self.name = name
+        # The description to set for the album
         self.description = None
+        # A list of dicts with Immich assets
         self.assets = []
+        # a list of dicts with keys user and role, listing all users and their role to share the album with
         self.share_with = []
+        # Either a fully qualified asset path or one of 'first', 'last', 'random'
         self.thumbnail_setting = None
+        # Sorting order for this album, 'asc' or 'desc'
         self.sort_order = None
+        # Boolean indicating whether assets in this album should be archived after adding
         self.archive = None
+        # Boolean indicating whether assets in this albums can be commented on and liked
         self.comments_and_likes_enabled = None
 
 
@@ -605,7 +598,7 @@ def delete_album(album_delete: dict):
     """
     api_endpoint = 'albums'
 
-    logging.debug("Album ID = %s, Album Name = %s", album_delete['id'], album_delete['albumName'])
+    logging.debug("Deleting Album: Album ID = %s, Album Name = %s", album_delete['id'], album_delete['albumName'])
     r = requests.delete(root_url+api_endpoint+'/'+album_delete['id'], **requests_kwargs, timeout=REQUEST_TIMEOUT)
     try:
         check_api_response(r)
@@ -1289,16 +1282,16 @@ def cleanup_albums(albums_to_delete: list[AlbumModel], force_delete: bool):
         # If the archived flag is set it means we need to unarchived all images of deleted albums;
         # In order to do so, we need to fetch all assets of the album we're going to delete
         assets_in_album = []
+        if album_to_delete.archive:
+            album_to_delete_info = fetch_album_info(album_to_delete.id)
+            assets_in_album = album_to_delete_info['assets']
         if delete_album({'id': album_to_delete.id, 'albumName': album_to_delete.name}):
             logging.info("Deleted album %s", album_to_delete.name)
             cpt += 1
             # Archive flag is set, so we need to unarchive assets
-            if album_to_delete.archive:
-                album_to_delete_info = fetch_album_info(album_to_delete.id)
-                assets_in_album = album_to_delete_info['assets']
-                if len(assets_in_album) > 0:
-                    set_assets_archived([asset['id'] for asset in assets_in_album], False)
-                    logging.info("Unarchived %d assets", len(assets_in_album))
+            if album_to_delete.archive and len(assets_in_album) > 0:
+                set_assets_archived([asset['id'] for asset in assets_in_album], False)
+                logging.info("Unarchived %d assets", len(assets_in_album))
     return cpt
 
 
@@ -1508,6 +1501,11 @@ logging.info("Listing existing albums on immich")
 albums = fetch_albums()
 album_to_id = {album['albumName']:album['id'] for album in albums }
 logging.info("%d existing albums identified", len(albums))
+# Set album ID for existing albums
+for album in albums_to_create.values():
+    if album.name in album_to_id:
+        # Album already exists, just get the ID
+        album.id = album_to_id[album.name]
 
 # mode CLEANUP
 if mode == SCRIPT_MODE_CLEANUP:
@@ -1528,10 +1526,8 @@ created_albums = []
 # List for gathering all asset UUIDs for later archiving
 asset_uuids_added = []
 for album in albums_to_create.values():
-    if album.name in album_to_id:
-        # Album already exists, just get the ID
-        album.id = album_to_id[album.name]
-    else:
+    # If the album already has an ID set, it exists and we don't need to create it
+    if not album.id:
         # Create album
         album.id = create_album(album.name)
         created_albums.append(album)
@@ -1548,7 +1544,7 @@ for album in albums_to_create.values():
         update_album_properties(album)
     except HTTPError as e:
         logging.error('Error updating properties for album %s: %s', album.name, e)
-    
+
     # Handle album sharing
     update_album_shared_state(album, True)
 
