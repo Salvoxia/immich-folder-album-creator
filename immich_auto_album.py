@@ -1537,7 +1537,7 @@ for album in albums_to_create.values():
     assets_added = add_assets_to_album(album.id, album.get_asset_uuids())
     if len(assets_added) > 0:
         asset_uuids_added += assets_added
-        logging.info("%d new assets added to %s", len(asset_uuids_added), album.name)
+        logging.info("%d new assets added to %s", len(assets_added), album.name)
 
     # Set album properties
     try:
