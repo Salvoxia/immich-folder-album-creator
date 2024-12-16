@@ -1,3 +1,8 @@
+[BASIC]
+
+# Good variable names which should always be accepted, separated by a comma
+good-names=e,ex,id,r,i,j
+
 [FORMAT]
 
 # Maximum number of characters on a single line.
