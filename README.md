@@ -13,10 +13,10 @@ Using the provided docker image, the script can simply be added to the Immich co
 
 __Current compatibility:__ Immich v1.106.1 - v1.122.x
 
-## Disclaimer
+### Disclaimer
 This script is mostly based on the following original script: [REDVM/immich_auto_album.py](https://gist.github.com/REDVM/d8b3830b2802db881f5b59033cf35702)
 
-# Table of Contents
+## Table of Contents
 1. [Usage (Bare Python Script)](#bare-python-script)
 2. [Usage (Docker)](#docker)
 3. [Choosing the correct `root_path`](#choosing-the-correct-root_path)
@@ -26,8 +26,9 @@ This script is mostly based on the following original script: [REDVM/immich_auto
 7. [Cleaning Up Albums](#cleaning-up-albums)
 8. [Assets in Multiple Albums](#assets-in-multiple-albums)
 9. [Setting Album Thumbnails](#setting-album-thumbnails)
-10. [Automatic Archiving](#automatic-archiving)
-11. [Dealing with External Library Changes](#dealing-with-external-library-changes)
+10. [Setting Album-Fine Properties](#setting-album-fine-properties)
+11. [Automatic Archiving](#automatic-archiving)
+12. [Dealing with External Library Changes](#dealing-with-external-library-changes)
 
 ## Usage
 ### Bare Python Script
@@ -107,8 +108,9 @@ This script is mostly based on the following original script: [REDVM/immich_auto
       -v, --archive         Set this option to automatically archive all assets that were newly added to albums. If this option is set in combination with --mode = CLEANUP or DELETE_ALL, archived images of deleted albums
                             will be unarchived. Archiving hides the assets from Immich's timeline. (default: False)
       --find-archived-assets
-                            By default, the script only finds assets that are not archived in Immich. Set this option to make the script discover assets that are already archived. If -A/--find-assets-in-albums is set as
-                            well, both options apply. (default: False)
+                            By default, the script only finds assets that are not archived in Immich. Set this option to make the script discover assets that are already archived. If -A/--find-assets-in-albums is set as well, both options apply. (default: False)
+      --read-album-properties
+                            If set, the script tries to access all passed root paths and recursively search for .albumprops files in all contained folders. These properties will be used to set custom options on an per-album level. Check the readme for a complete documentation. (default: False)
     ```
 
 __Plain example without optional arguments:__
@@ -163,6 +165,7 @@ The environment variables are analoguous to the script's command line arguments.
 | SET_ALBUM_THUMBNAIL | no | Set first/last/random image as thumbnail (based on image creation timestamp) for newly created albums or albums assets have been added to.<br> Allowed values: `first`,`last`,`random`,`random-filtered`,`random-all`<br>If set to `random-filtered`, thumbnails are shuffled for all albums whose assets would not be filtered out or ignored by the `IGNORE` or `PATH_FILTER` options, even if no assets were added during the run. If set to random-all, the thumbnails for ALL albums will be shuffled on every run. (default: `None`)<br>Refer to [Setting Album Thumbnails](#setting-album-thumbnails). |
 | ARCHIVE     | no | Set this option to automatically archive all assets that were newly added to albums.<br>If this option is set in combination with `MODE` = `CLEANUP` or `DELETE_ALL`, archived images of deleted albums will be unarchived.<br>Archiving hides the assets from Immich's timeline. (default: `False`)<br>Refer to [Automatic Archiving](#automatic-archiving). |
 | FIND_ARCHIVED_ASSETS     | no | By default, the script only finds assets that are not archived in Immich. Set this option make the script discover assets that are already archived. If -A/--find-assets-in-albums is set as well, both options apply. (default: `False`)<br>Refer to [Automatic Archiving](#automatic-archiving). |
+| READ_ALBUM_PROPERTIES     | no | Set to `True` to enable discovery of `.albumprops` files in root paths, allowing to set different album properties for differnt albums. (default: `False`)<br>Refer to [Setting Album-Fine Properties](#setting-album-fine-properties). |
 
 #### Run the container with Docker
 
@@ -210,7 +213,7 @@ docker run \
   salvoxia/immich-folder-album-creator:latest
 ```
 
-### Run the container with Docker-Compose
+#### Run the container with Docker-Compose
 
 Adding the container to Immich's `docker-compose.yml` file:
 ```yml
@@ -244,7 +247,7 @@ services:
 
 ```
 
-## Choosing the correct `root_path`
+### Choosing the correct `root_path`
 The root path  `/path/to/external/lib/` is the path you have mounted your external library into the Immich container.  
 If you are following [Immich's External library Documentation](https://immich.app/docs/guides/external-library), you are using an environment variable called `${EXTERNAL_PATH}` which is mounted to `/usr/src/app/external` in the Immich container. Your `root_path` to pass to the script is `/usr/src/app/external`.
 
@@ -314,7 +317,7 @@ Albums created for `root_path = /external_libs/photos/Birthdays`:
  - `Jane` (containing all imags from `Birthdays/Jane`)
  - `Skiing 2023`
  
- ### Album Level Ranges
+ ## Album Level Ranges
 
  It is possible to specify not just a number for `--album-levels`, but a range from level x to level y in the folder structure that should make up an album's name:  
  `--album-levels="2,3"`  
@@ -484,6 +487,67 @@ Furthermore, the script supports two additional modes that are applied  __even i
   
 > [!CAUTION]  
 > Updating album thumbnails cannot be reverted!
+
+## Setting Album-Fine Properties
+
+This script supports defining album properties on a per-folder basis. For example, it is possible to share albums with different users using different roles or disable comments and likes for different albums. For a full list of options see the example below.  
+This is achieved by placing `.albumprops` files in each folder these properties should apply to later. The script will scan for all `.albumprops` files and apply the settings when creating albums or adding assets to existing albums.
+
+### Prerequisites
+
+This function requires that all `root_paths` passed to the script are also accessible to it on a file-system level.
+  - Docker: All root paths must be mounted under the same path to the `immich-folder-album-creator` container as they are mounted to the Immich container
+  - Bare Python Script: The script must have access to all root paths under the same path as they are mounted into the Immich container
+    Either mount the folders into Immich under the same path as they are on the Immich host, or create symlinks for the script to access
+
+### `.albumprops` File Format
+
+A file named `.albumprops` may be placed into any folder of an external library.
+The file itself is a YAML formatted text file with the following properties:
+```yaml
+# Album Name overriding the album name generated from folder names
+override_name: "Your images are in another album"
+description: "This is a very informative text describing the album"
+share_with:
+  # either provide user name
+  - user: "user1"
+    role: "editor"
+  # or provide user mail address
+  - user: "user2@example.org"
+    role: "viewer"
+# Set album thumbnail, valid values: first, last, random or fully qualified path of an asset that is (or will be) assigned to the album
+thumbnail_setting: "first"
+# Sort order in album, valid values: asc, desc
+sort_oder: "desc"
+# Flag indicating whether to archive images added to this album, valid values: true, false
+archive: true
+# Flag indicating whether assets in this albums can be commented on and liked
+comments_and_likes_enabled: false
+```
+All properties are optional.
+
+>[!IMPORTANT]  
+>The `override_name` property makes it possible assign assets to an album that does not have anything to do with their folder name. That way, it is also possible to merge assets from different folders (even under different `root_paths`) into the same album.  
+>If the script finds multiple `.albumprops` files using the same `override_name` property, it enforced that all properties that exist in at least one of the `.albumprops` files are identical in all files that use the same `override_name`. If this is not the case, the script will exit with an error.
+
+>[!TIP]
+> Note the possibilty to set `thumbnail_setting` to an absolute asset path. This asset must be part of the album once the script has run for Immich to accept it as album thumbnail / cover. This is only possible in `.albumprops` files, as such a setting would not make much sense as a global option.
+
+### Enabling `.albumprops` discovery
+
+To enable Album-Fine Properties, pass the option `--read-album-properties` (Bare Python) or set the environment variable `READ_ALBUM_PROPERTIES` to `1` (Docker) to enable scanning for `.albumprops` files and use the values found there to created the albums.
+
+### Property Precedence
+
+In case the script is provided with `--share-with`, `--share-role`, `--archive`, `--set-album-thumbnail` options (or `SHARE_WITH`, `SHARE_ROLE`, `ARCHIVE`, or `SET_ALBUM_THUMBNAIL` environment variables for Docker), properties in `.albumprops` always take precedence. Options passed to the script only have effect if no `.albumprops` file is found for an album or the specific property is missing.
+
+Example:
+```yaml
+share_with:
+  - user: Dad
+    role: editor
+```
+If the script is called with `--share-with "Mom"` and `--archive`, the album created from the folder the file above resides in will only be shared with user `Dad` using `editor` permissions, and assets will be archived. All other albums will be shared with user `Mom` (using `viewer` permissions, as defined by default) and assets will be archived.
 
 ## Automatic Archiving
 
