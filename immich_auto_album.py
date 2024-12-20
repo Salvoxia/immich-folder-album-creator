@@ -605,7 +605,7 @@ def create_album_name(asset_path_chunks: list[str], album_separator: str) -> str
     Create album names from provided path_chunks string array.
 
     The method uses global variables album_levels_range_arr or album_levels to
-    generate ablum names either by level range or absolute album levels. If multiple
+    generate album names either by level range or absolute album levels. If multiple
     album path chunks are used for album names they are separated by album_separator.
     """
 
@@ -1682,7 +1682,7 @@ parser.add_argument("--find-archived-assets", action="store_true",
                             Set this option to make the script discover assets that are already archived.
                             If -A/--find-assets-in-albums is set as well, both options apply.""")
 parser.add_argument("--read-album-properties", action="store_true",
-                    help="""If set, the script tries to access all passed root paths and recursively search for .ablumprops files in all contained folders.
+                    help="""If set, the script tries to access all passed root paths and recursively search for .albumprops files in all contained folders.
                             These properties will be used to set custom options on an per-album level. Check the readme for a complete documentation.""")
 
 
