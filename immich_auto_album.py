@@ -1691,8 +1691,10 @@ parser.add_argument("--read-album-properties", action="store_true",
                     help="""If set, the script tries to access all passed root paths and recursively search for .albumprops files in all contained folders.
                             These properties will be used to set custom options on an per-album level. Check the readme for a complete documentation.""")
 parser.add_argument("--api-timeout",  default=REQUEST_TIMEOUT_DEFAULT, type=int, help="Timeout when requesting Immich API in seconds")
-parser.add_argument("--comments-and-likes-enabled", action="store_true", help="Pass this argument to enable comment and like functionality in all albums this script adds assets to. Cannot be used together with --comments-and-likes-disabled")
-parser.add_argument("--comments-and-likes-disabled", action="store_true", help="Pass this argument to disable comment and like functionality in all albums this script adds assets to. Cannot be used together with --comments-and-likes-enabled")
+parser.add_argument("--comments-and-likes-enabled", action="store_true",
+                    help="Pass this argument to enable comment and like functionality in all albums this script adds assets to. Cannot be used together with --comments-and-likes-disabled")
+parser.add_argument("--comments-and-likes-disabled", action="store_true",
+                    help="Pass this argument to disable comment and like functionality in all albums this script adds assets to. Cannot be used together with --comments-and-likes-enabled")
 
 
 args = vars(parser.parse_args())

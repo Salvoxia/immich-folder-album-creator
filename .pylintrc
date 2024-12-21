@@ -9,4 +9,4 @@ good-names=e,ex,id,r,i,j
 max-line-length=200
 
 # Maximum number of lines in a module
-max-module-lines=2000
+max-module-lines=2500
