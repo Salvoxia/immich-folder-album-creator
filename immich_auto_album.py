@@ -34,7 +34,7 @@ ENV_IS_DOCKER = "IS_DOCKER"
 SHARE_ROLES = ["editor", "viewer"]
 
 # Immich API request timeout
-REQUEST_TIMEOUT = 20
+REQUEST_TIMEOUT_DEFAULT = 20
 
 # Constants for album thumbnail setting
 ALBUM_THUMBNAIL_RANDOM_ALL = "random-all"
@@ -666,12 +666,12 @@ def fetch_server_version() -> dict:
             - patch
     """
     api_endpoint = f'{root_url}server/version'
-    r = requests.get(api_endpoint, **requests_kwargs, timeout=REQUEST_TIMEOUT)
+    r = requests.get(api_endpoint, **requests_kwargs, timeout=api_timeout)
     # The API endpoint changed in Immich v1.118.0, if the new endpoint
     # was not found try the legacy one
     if r.status_code == 404:
         api_endpoint = f'{root_url}server-info/version'
-        r = requests.get(api_endpoint, **requests_kwargs, timeout=REQUEST_TIMEOUT)
+        r = requests.get(api_endpoint, **requests_kwargs, timeout=api_timeout)
 
     if r.status_code == 200:
         server_version = r.json()
@@ -729,7 +729,7 @@ def fetch_assets_with_options(search_options: dict) -> list:
     # Initial API call, let's fetch our first chunk
     page = 1
     body['page'] = str(page)
-    r = requests.post(root_url+'search/metadata', json=body, **requests_kwargs, timeout=REQUEST_TIMEOUT)
+    r = requests.post(root_url+'search/metadata', json=body, **requests_kwargs, timeout=api_timeout)
     r.raise_for_status()
     response_json = r.json()
     assets_received = response_json['assets']['items']
@@ -740,7 +740,7 @@ def fetch_assets_with_options(search_options: dict) -> list:
     while len(assets_received) == number_of_assets_to_fetch_per_request_search:
         page += 1
         body['page'] = page
-        r = requests.post(root_url+'search/metadata', json=body, **requests_kwargs, timeout=REQUEST_TIMEOUT)
+        r = requests.post(root_url+'search/metadata', json=body, **requests_kwargs, timeout=api_timeout)
         check_api_response(r)
         response_json = r.json()
         assets_received = response_json['assets']['items']
@@ -754,7 +754,7 @@ def fetch_albums():
 
     api_endpoint = 'albums'
 
-    r = requests.get(root_url+api_endpoint, **requests_kwargs, timeout=REQUEST_TIMEOUT)
+    r = requests.get(root_url+api_endpoint, **requests_kwargs, timeout=api_timeout)
     check_api_response(r)
     return r.json()
 
@@ -771,7 +771,7 @@ def fetch_album_info(album_id_for_info: str):
 
     api_endpoint = f'albums/{album_id_for_info}'
 
-    r = requests.get(root_url+api_endpoint, **requests_kwargs, timeout=REQUEST_TIMEOUT)
+    r = requests.get(root_url+api_endpoint, **requests_kwargs, timeout=api_timeout)
     check_api_response(r)
     return r.json()
 
@@ -795,7 +795,7 @@ def delete_album(album_delete: dict):
     api_endpoint = 'albums'
 
     logging.debug("Deleting Album: Album ID = %s, Album Name = %s", album_delete['id'], album_delete['albumName'])
-    r = requests.delete(root_url+api_endpoint+'/'+album_delete['id'], **requests_kwargs, timeout=REQUEST_TIMEOUT)
+    r = requests.delete(root_url+api_endpoint+'/'+album_delete['id'], **requests_kwargs, timeout=api_timeout)
     try:
         check_api_response(r)
         return True
@@ -827,7 +827,7 @@ def create_album(album_name_to_create: str) -> str:
     data = {
         'albumName': album_name_to_create
     }
-    r = requests.post(root_url+api_endpoint, json=data, **requests_kwargs, timeout=REQUEST_TIMEOUT)
+    r = requests.post(root_url+api_endpoint, json=data, **requests_kwargs, timeout=api_timeout)
     check_api_response(r)
 
     return r.json()['id']
@@ -903,7 +903,7 @@ def add_assets_to_album(assets_add_album_id: str, asset_list: list[str]) -> list
     asset_list_added = []
     for assets_chunk in assets_chunked:
         data = {'ids':assets_chunk}
-        r = requests.put(root_url+api_endpoint+f'/{assets_add_album_id}/assets', json=data, **requests_kwargs, timeout=REQUEST_TIMEOUT)
+        r = requests.put(root_url+api_endpoint+f'/{assets_add_album_id}/assets', json=data, **requests_kwargs, timeout=api_timeout)
         check_api_response(r)
         response = r.json()
 
@@ -921,7 +921,7 @@ def fetch_users():
 
     api_endpoint = 'users'
 
-    r = requests.get(root_url+api_endpoint, **requests_kwargs, timeout=REQUEST_TIMEOUT)
+    r = requests.get(root_url+api_endpoint, **requests_kwargs, timeout=api_timeout)
     check_api_response(r)
     return r.json()
 
@@ -1024,7 +1024,7 @@ def unshare_album_with_user(album_id_to_unshare: str, unshare_user_id: str):
         HTTPError if the API call fails
     """
     api_endpoint = f'albums/{album_id_to_unshare}/user/{unshare_user_id}'
-    r = requests.delete(root_url+api_endpoint, **requests_kwargs, timeout=REQUEST_TIMEOUT)
+    r = requests.delete(root_url+api_endpoint, **requests_kwargs, timeout=api_timeout)
     check_api_response(r)
 
 def update_album_share_user_role(album_id_to_share: str, share_user_id: str, share_user_role: str):
@@ -1052,7 +1052,7 @@ def update_album_share_user_role(album_id_to_share: str, share_user_id: str, sha
         'role': share_user_role
     }
 
-    r = requests.put(root_url+api_endpoint, json=data, **requests_kwargs, timeout=REQUEST_TIMEOUT)
+    r = requests.put(root_url+api_endpoint, json=data, **requests_kwargs, timeout=api_timeout)
     check_api_response(r)
 
 def share_album_with_user_and_role(album_id_to_share: str, user_ids_to_share_with: list[str], user_share_role: str):
@@ -1090,7 +1090,7 @@ def share_album_with_user_and_role(album_id_to_share: str, user_ids_to_share_wit
         'albumUsers': album_users
     }
 
-    r = requests.put(root_url+api_endpoint, json=data, **requests_kwargs, timeout=REQUEST_TIMEOUT)
+    r = requests.put(root_url+api_endpoint, json=data, **requests_kwargs, timeout=api_timeout)
     check_api_response(r)
 
 def trigger_offline_asset_removal():
@@ -1167,7 +1167,7 @@ def delete_assets(assets_to_delete: list, force: bool):
         'ids': asset_ids_to_delete
     }
 
-    r = requests.delete(root_url+api_endpoint, json=data, **requests_kwargs, timeout=REQUEST_TIMEOUT)
+    r = requests.delete(root_url+api_endpoint, json=data, **requests_kwargs, timeout=api_timeout)
     check_api_response(r)
 
 
@@ -1200,7 +1200,7 @@ def fetch_libraries() -> list[dict]:
 
     api_endpoint = 'libraries'
 
-    r = requests.get(root_url+api_endpoint, **requests_kwargs, timeout=REQUEST_TIMEOUT)
+    r = requests.get(root_url+api_endpoint, **requests_kwargs, timeout=api_timeout)
     check_api_response(r)
     return r.json()
 
@@ -1219,7 +1219,7 @@ def trigger_offline_asset_removal_async(library_id: str):
 
     api_endpoint = f'libraries/{library_id}/removeOffline'
 
-    r = requests.post(root_url+api_endpoint, **requests_kwargs, timeout=REQUEST_TIMEOUT)
+    r = requests.post(root_url+api_endpoint, **requests_kwargs, timeout=api_timeout)
     if r.status_code == 403:
         logging.fatal("--sync-mode 2 requires an Admin User API key!")
     else:
@@ -1244,7 +1244,7 @@ def set_album_thumb(thumbnail_album_id: str, thumbnail_asset_id: str):
 
     data = {"albumThumbnailAssetId": thumbnail_asset_id}
 
-    r = requests.patch(root_url+api_endpoint, json=data, **requests_kwargs, timeout=REQUEST_TIMEOUT)
+    r = requests.patch(root_url+api_endpoint, json=data, **requests_kwargs, timeout=api_timeout)
     check_api_response(r)
 
 def choose_thumbnail(thumbnail_setting: str, thumbnail_asset_list: list[dict]) -> str:
@@ -1334,7 +1334,7 @@ def update_album_properties(album_to_update: AlbumModel):
     if len(data) > 0:
         api_endpoint = f'albums/{album_to_update.id}'
 
-        respnonse = requests.patch(root_url+api_endpoint, json=data, **requests_kwargs, timeout=REQUEST_TIMEOUT)
+        respnonse = requests.patch(root_url+api_endpoint, json=data, **requests_kwargs, timeout=api_timeout)
         check_api_response(respnonse)
 
 def set_assets_archived(asset_ids_to_archive: list[str], is_archived: bool):
@@ -1359,7 +1359,7 @@ def set_assets_archived(asset_ids_to_archive: list[str], is_archived: bool):
         "isArchived": is_archived
     }
 
-    r = requests.put(root_url+api_endpoint, json=data, **requests_kwargs, timeout=REQUEST_TIMEOUT)
+    r = requests.put(root_url+api_endpoint, json=data, **requests_kwargs, timeout=api_timeout)
     check_api_response(r)
 
 def check_api_response(response: requests.Response):
@@ -1684,6 +1684,7 @@ parser.add_argument("--find-archived-assets", action="store_true",
 parser.add_argument("--read-album-properties", action="store_true",
                     help="""If set, the script tries to access all passed root paths and recursively search for .albumprops files in all contained folders.
                             These properties will be used to set custom options on an per-album level. Check the readme for a complete documentation.""")
+parser.add_argument("--api-timeout",  default=REQUEST_TIMEOUT_DEFAULT, type=int, help="Timeout when requesting Immich API in seconds")
 
 
 args = vars(parser.parse_args())
@@ -1718,6 +1719,7 @@ set_album_thumbnail = args["set_album_thumbnail"]
 archive = args["archive"]
 find_archived_assets = args["find_archived_assets"]
 read_album_properties = args["read_album_properties"]
+api_timeout = args["api_timeout"]
 
 # Override unattended if we're running in destructive mode
 if mode != SCRIPT_MODE_CREATE:
@@ -1750,6 +1752,7 @@ logging.debug("set_album_thumbnail = %s", set_album_thumbnail)
 logging.debug("archive = %s", archive)
 logging.debug("find_archived_assets = %s", find_archived_assets)
 logging.debug("read_album_properties = %s", read_album_properties)
+logging.debug("api_timeout = %s", api_timeout)
 
 # Verify album levels
 if is_integer(album_levels) and album_levels == 0:
