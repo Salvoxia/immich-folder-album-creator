@@ -111,6 +111,8 @@ This script is mostly based on the following original script: [REDVM/immich_auto
                             By default, the script only finds assets that are not archived in Immich. Set this option to make the script discover assets that are already archived. If -A/--find-assets-in-albums is set as well, both options apply. (default: False)
       --read-album-properties
                             If set, the script tries to access all passed root paths and recursively search for .albumprops files in all contained folders. These properties will be used to set custom options on an per-album level. Check the readme for a complete documentation. (default: False)
+      --api-timeout API_TIMEOUT
+                            Timeout when requesting Immich API in seconds (default: 20)
     ```
 
 __Plain example without optional arguments:__
@@ -166,6 +168,7 @@ The environment variables are analoguous to the script's command line arguments.
 | ARCHIVE     | no | Set this option to automatically archive all assets that were newly added to albums.<br>If this option is set in combination with `MODE` = `CLEANUP` or `DELETE_ALL`, archived images of deleted albums will be unarchived.<br>Archiving hides the assets from Immich's timeline. (default: `False`)<br>Refer to [Automatic Archiving](#automatic-archiving). |
 | FIND_ARCHIVED_ASSETS     | no | By default, the script only finds assets that are not archived in Immich. Set this option make the script discover assets that are already archived. If -A/--find-assets-in-albums is set as well, both options apply. (default: `False`)<br>Refer to [Automatic Archiving](#automatic-archiving). |
 | READ_ALBUM_PROPERTIES     | no | Set to `True` to enable discovery of `.albumprops` files in root paths, allowing to set different album properties for differnt albums. (default: `False`)<br>Refer to [Setting Album-Fine Properties](#setting-album-fine-properties). |
+| API_TIMEOUT         | no | Timeout when requesting Immich API in seconds (default: `20`) |
 
 #### Run the container with Docker
 
