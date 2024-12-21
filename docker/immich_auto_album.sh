@@ -141,5 +141,9 @@ if [ ! -z "$ARCHIVE" ]; then
     args="--archive $args"
 fi
 
+if [ ! -z "$READ_ALBUM_PROPERTIES" ]; then
+    args="--read-album-properties $args"
+fi
+
 BASEDIR=$(dirname "$0")
 echo $args | xargs python3 -u $BASEDIR/immich_auto_album.py
