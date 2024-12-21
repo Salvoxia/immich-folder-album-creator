@@ -1520,6 +1520,12 @@ def set_album_properties_in_model(album_model_to_update: AlbumModel):
     if album_order:
         album_model_to_update.sort_order = album_order
 
+    # Comments and Likes
+    if comments_and_likes_enabled:
+        album_model_to_update.comments_and_likes_enabled = True
+    elif comments_and_likes_disabled:
+        album_model_to_update.comments_and_likes_enabled = False
+
 def build_album_list(asset_list : list[dict], root_path_list : list[str], album_props_templates: dict) -> dict:
     """
     Builds a list of album models, enriched with assets assigned to each album.
@@ -1685,6 +1691,10 @@ parser.add_argument("--read-album-properties", action="store_true",
                     help="""If set, the script tries to access all passed root paths and recursively search for .albumprops files in all contained folders.
                             These properties will be used to set custom options on an per-album level. Check the readme for a complete documentation.""")
 parser.add_argument("--api-timeout",  default=REQUEST_TIMEOUT_DEFAULT, type=int, help="Timeout when requesting Immich API in seconds")
+parser.add_argument("--comments-and-likes-enabled", action="store_true",
+                    help="Pass this argument to enable comment and like functionality in all albums this script adds assets to. Cannot be used together with --comments-and-likes-disabled")
+parser.add_argument("--comments-and-likes-disabled", action="store_true",
+                    help="Pass this argument to disable comment and like functionality in all albums this script adds assets to. Cannot be used together with --comments-and-likes-enabled")
 
 
 args = vars(parser.parse_args())
@@ -1720,6 +1730,11 @@ archive = args["archive"]
 find_archived_assets = args["find_archived_assets"]
 read_album_properties = args["read_album_properties"]
 api_timeout = args["api_timeout"]
+comments_and_likes_enabled = args["comments_and_likes_enabled"]
+comments_and_likes_disabled = args["comments_and_likes_disabled"]
+if comments_and_likes_disabled and comments_and_likes_enabled:
+    logging.fatal("Arguments --comments-and-likes-enabled and --comments-and-likes-disabled cannot be used together! Choose one!")
+    sys.exit(1)
 
 # Override unattended if we're running in destructive mode
 if mode != SCRIPT_MODE_CREATE:
@@ -1753,6 +1768,8 @@ logging.debug("archive = %s", archive)
 logging.debug("find_archived_assets = %s", find_archived_assets)
 logging.debug("read_album_properties = %s", read_album_properties)
 logging.debug("api_timeout = %s", api_timeout)
+logging.debug("comments_and_likes_enabled = %s", comments_and_likes_enabled)
+logging.debug("comments_and_likes_disabled = %s", comments_and_likes_disabled)
 
 # Verify album levels
 if is_integer(album_levels) and album_levels == 0:

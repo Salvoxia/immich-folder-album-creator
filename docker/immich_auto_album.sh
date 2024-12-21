@@ -149,5 +149,11 @@ if [ ! -z "$API_TIMEOUT" ]; then
     args="--api-timeout \"$API_TIMEOUT\" $args"
 fi
 
+if [ "$COMMENTS_AND_LIKES" == "1" ]; then
+    args="--comments-and-likes-enabled $args"
+elif [ "$COMMENTS_AND_LIKES" == "0" ]; then
+    args="--comments-and-likes-disabled $args"
+fi
+
 BASEDIR=$(dirname "$0")
 echo $args | xargs python3 -u $BASEDIR/immich_auto_album.py
