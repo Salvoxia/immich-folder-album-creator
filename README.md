@@ -240,19 +240,33 @@ services:
     container_name: immich_server
     volumes:
      - /path/to/my/photos:/external_libs/photos
-     - /path/to/secret/file:/immich_api_key.secret:ro
   ...
   immich-folder-album-creator:
     container_name: immich_folder_album_creator
     image: salvoxia/immich-folder-album-creator:latest
     restart: unless-stopped
+    volumes:
+     - /path/to/secret/file:/immich_api_key.secret:ro
     environment:
       API_URL: http://immich_server:2283/api
       API_KEY_FILE: /immich_api_key.secret
       ROOT_PATH: /external_libs/photos
       CRON_EXPRESSION: "0 * * * *"
       TZ: Europe/Berlin
+```
 
+This will periodically re-scan the library as per `CRON_EXPRESSION` settings and create albums (the cron script sets `UNATTENDED=1` explicitly).
+
+To perform a manually triggered __dry run__ (only list albums that __would__ be created) in an already running container, use the following command:
+
+```
+docker exec immich_folder_album_creator /bin/sh -c "/script/immich_auto_album.sh"
+```
+
+To actually create albums after performing the dry run, use the following command (setting the `UNATTENDED` environment variable):
+
+```
+docker exec immich_folder_album_creator /bin/sh -c "UNATTENDED=1 /script/immich_auto_album.sh"
 ```
 
 ### Choosing the correct `root_path`
