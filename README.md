@@ -255,7 +255,19 @@ services:
       TZ: Europe/Berlin
 ```
 
-This will periodically re-scan the library as per `CRON_EXPRESSION` settings. To trigger re-scanning manually (even with a different environment), you can run e.g. `docker exec immich_folder_album_creator /bin/sh -c "UNATTENDED=1 MODE=CLEANUP /script/immich_auto_album.sh"` on command line for the running container.
+This will periodically re-scan the library as per `CRON_EXPRESSION` settings and create albums (the cron script sets `UNATTENDED=1` explicitly).
+
+To perform a manually triggered __dry run__ (only list albums that __would__ be created) in an already running container, use the following command:
+
+```
+docker exec immich_folder_album_creator /bin/sh -c "/script/immich_auto_album.sh"
+```
+
+To actually create albums after performing the dry run, use the following command (setting the `UNATTENDED` environment variable):
+
+```
+docker exec immich_folder_album_creator /bin/sh -c "UNATTENDED=1 /script/immich_auto_album.sh"
+```
 
 ### Choosing the correct `root_path`
 The root path  `/path/to/external/lib/` is the path you have mounted your external library into the Immich container.  
