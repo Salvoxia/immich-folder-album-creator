@@ -240,20 +240,22 @@ services:
     container_name: immich_server
     volumes:
      - /path/to/my/photos:/external_libs/photos
-     - /path/to/secret/file:/immich_api_key.secret:ro
   ...
   immich-folder-album-creator:
     container_name: immich_folder_album_creator
     image: salvoxia/immich-folder-album-creator:latest
     restart: unless-stopped
+    volumes:
+     - /path/to/secret/file:/immich_api_key.secret:ro
     environment:
       API_URL: http://immich_server:2283/api
       API_KEY_FILE: /immich_api_key.secret
       ROOT_PATH: /external_libs/photos
       CRON_EXPRESSION: "0 * * * *"
       TZ: Europe/Berlin
-
 ```
+
+This will periodically re-scan the library as per `CRON_EXPRESSION` settings. To trigger re-scanning manually (even with a different environment), you can run e.g. `docker exec immich_folder_album_creator /bin/sh -c "UNATTENDED=1 MODE=CLEANUP /script/immich_auto_album.sh"` on command line for the running container.
 
 ### Choosing the correct `root_path`
 The root path  `/path/to/external/lib/` is the path you have mounted your external library into the Immich container.  
