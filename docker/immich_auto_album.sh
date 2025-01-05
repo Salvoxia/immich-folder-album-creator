@@ -155,5 +155,9 @@ elif [ "$COMMENTS_AND_LIKES" == "0" ]; then
     args="--comments-and-likes-disabled $args"
 fi
 
+if [ ! -z "$UPDATE_ALBUM_PROPS_MODE" ]; then
+    args="--update-album-props-mode $UPDATE_ALBUM_PROPS_MODE $args"
+fi
+
 BASEDIR=$(dirname "$0")
 echo $args | xargs python3 -u $BASEDIR/immich_auto_album.py

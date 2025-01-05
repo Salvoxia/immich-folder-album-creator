@@ -1695,6 +1695,11 @@ parser.add_argument("--comments-and-likes-enabled", action="store_true",
                     help="Pass this argument to enable comment and like functionality in all albums this script adds assets to. Cannot be used together with --comments-and-likes-disabled")
 parser.add_argument("--comments-and-likes-disabled", action="store_true",
                     help="Pass this argument to disable comment and like functionality in all albums this script adds assets to. Cannot be used together with --comments-and-likes-enabled")
+parser.add_argument("--update-album-props-mode", type=int, choices=[0, 1, 2], default=0,
+                    help="""Change how album properties are updated whenever new assets are added to an album. Album properties can either come from script arguments or the .albumprops file. Possible values:
+                            0 = Do not change album properties.
+                            1 = Only override album properties but do not change the share status.
+                            2 = Override album properties and share status, this will remove all users from the album which are not in the SHARE_WITH list.""")
 
 
 args = vars(parser.parse_args())
@@ -1735,6 +1740,7 @@ comments_and_likes_disabled = args["comments_and_likes_disabled"]
 if comments_and_likes_disabled and comments_and_likes_enabled:
     logging.fatal("Arguments --comments-and-likes-enabled and --comments-and-likes-disabled cannot be used together! Choose one!")
     sys.exit(1)
+update_album_props_mode = args["update_album_props_mode"]
 
 # Override unattended if we're running in destructive mode
 if mode != SCRIPT_MODE_CREATE:
@@ -1770,6 +1776,7 @@ logging.debug("read_album_properties = %s", read_album_properties)
 logging.debug("api_timeout = %s", api_timeout)
 logging.debug("comments_and_likes_enabled = %s", comments_and_likes_enabled)
 logging.debug("comments_and_likes_disabled = %s", comments_and_likes_disabled)
+logging.debug("update_album_props_mode = %d", update_album_props_mode)
 
 # Verify album levels
 if is_integer(album_levels) and album_levels == 0:
@@ -1938,14 +1945,18 @@ for album in albums_to_create.values():
         asset_uuids_added += assets_added
         logging.info("%d new assets added to %s", len(assets_added), album.get_final_name())
 
-    # Set album properties
-    try:
-        update_album_properties(album)
-    except HTTPError as e:
-        logging.error('Error updating properties for album %s: %s', album.get_final_name(), e)
+    # Update album properties depending on mode or if newly created
+    if update_album_props_mode > 0 or (album in created_albums):
+        # Update album properties
+        try:
+            update_album_properties(album)
+        except HTTPError as e:
+            logging.error('Error updating properties for album %s: %s', album.get_final_name(), e)
 
-    # Handle album sharing
-    update_album_shared_state(album, True)
+    # Update album sharing if needed or newly created
+    if update_album_props_mode == 2 or (album in created_albums):
+        # Handle album sharing
+        update_album_shared_state(album, True)
 
 logging.info("%d albums created", len(created_albums))
 
