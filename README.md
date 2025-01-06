@@ -117,6 +117,11 @@ This script is mostly based on the following original script: [REDVM/immich_auto
                             Pass this argument to enable comment and like functionality in all albums this script adds assets to. Cannot be used together with --comments-and-likes-disabled (default: False)
       --comments-and-likes-disabled
                             Pass this argument to disable comment and like functionality in all albums this script adds assets to. Cannot be used together with --comments-and-likes-enabled (default: False)
+      --update-album-props-mode
+                            Change how album properties are updated whenever new assets are added to an album. Album properties can either come from script arguments or the `.albumprops` file. Possible values:
+                            0 = Do not change album properties.
+                            1 = Only override album properties but do not change the share status.
+                            2 = Override album properties and share status, this will remove all users from the album which are not in the SHARE_WITH list.
     ```
 
 __Plain example without optional arguments:__
@@ -174,6 +179,7 @@ The environment variables are analoguous to the script's command line arguments.
 | READ_ALBUM_PROPERTIES     | no | Set to `True` to enable discovery of `.albumprops` files in root paths, allowing to set different album properties for differnt albums. (default: `False`)<br>Refer to [Setting Album-Fine Properties](#setting-album-fine-properties). |
 | API_TIMEOUT         | no | Timeout when requesting Immich API in seconds (default: `20`) |
 | COMMENTS_AND_LIKES  | no | Set to `1` to explicitly enable Comments & Likes functionality for all albums this script adds assets to, set to `0` to disable. If not set, this setting is left alone by the script. |
+| UPDATE_ALBUM_PROPS_MODE | no | Change how album properties are updated whenever new assets are added to an album. Album properties can either come from script arguments or the `.albumprops` file. Possible values: <br>`0` = Do not change album properties.<br> `1` = Only override album properties but do not change the share status.<br> `2` = Override album properties and share status, this will remove all users from the album which are not in the SHARE_WITH list. |
 
 #### Run the container with Docker
 
@@ -446,6 +452,7 @@ To share new albums with users `User A` and a user with mail address `userB@mydo
 python3 ./immich_auto_album.py --share-with "User A=editor" --share-with "userB@mydomain.com" /path/to/external/lib https://immich.mydomain.com/api thisIs
 ```
 
+Per default these share settings are applied once when the album is created and remain unchanged if an asset is added to an album later. If you want to override the share state whenever an asset is added to an album you can set `--update-album-props-mode` to `2`. Note that this will completely override all shared users, any changes made within Immich will be lost.
 
 ### Album Sharing Examples (Docker)
 Two environment variables control this feature:
@@ -466,6 +473,8 @@ To share new albums with users `User A` and a user with mail address `userB@mydo
 ```bash
 docker run -e SHARE_WITH="User A=editor:userB@mydomain.com" -e UNATTENDED="1" -e API_URL="https://immich.mydomain.com/api/" -e API_KEY="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" -e ROOT_PATH="/external_libs/photos" salvoxia/immich-folder-album-creator:latest /script/immich_auto_album.sh
 ```
+
+Per default these share settings are applied once when the album is created and remain unchanged if an asset is added to an album later. If you want to override the share state whenever an asset is added to an album you can set `UPDATE_ALBUM_PROPS_MODE` to `2`. Note that this will completely override all shared users, any changes made within Immich will be lost.
 
 
 ## Cleaning Up Albums
