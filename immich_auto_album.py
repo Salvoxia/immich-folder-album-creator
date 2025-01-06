@@ -1696,7 +1696,8 @@ parser.add_argument("--comments-and-likes-enabled", action="store_true",
 parser.add_argument("--comments-and-likes-disabled", action="store_true",
                     help="Pass this argument to disable comment and like functionality in all albums this script adds assets to. Cannot be used together with --comments-and-likes-enabled")
 parser.add_argument("--update-album-props-mode", type=int, choices=[0, 1, 2], default=0,
-                    help="""Change how album properties are updated whenever new assets are added to an album. Album properties can either come from script arguments or the .albumprops file. Possible values:
+                    help="""Change how album properties are updated whenever new assets are added to an album. Album properties can either come from script arguments or the .albumprops file.
+                            Possible values:
                             0 = Do not change album properties.
                             1 = Only override album properties but do not change the share status.
                             2 = Override album properties and share status, this will remove all users from the album which are not in the SHARE_WITH list.""")
