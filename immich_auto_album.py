@@ -1693,8 +1693,6 @@ parser.add_argument("--read-album-properties", action="store_true",
 parser.add_argument("--api-timeout",  default=REQUEST_TIMEOUT_DEFAULT, type=int, help="Timeout when requesting Immich API in seconds")
 parser.add_argument("--comments-and-likes-enabled", action="store_true",
                     help="Pass this argument to enable comment and like functionality in all albums this script adds assets to. Cannot be used together with --comments-and-likes-disabled")
-parser.add_argument("--comments-and-likes-disabled", action="store_true",
-                    help="Pass this argument to disable comment and like functionality in all albums this script adds assets to. Cannot be used together with --comments-and-likes-enabled")
 parser.add_argument("--update-album-props-mode", type=int, choices=[0, 1, 2], default=0,
                     help="""Change how album properties are updated whenever new assets are added to an album. Album properties can either come from script arguments or the .albumprops file.
                             Possible values:
