@@ -27,8 +27,9 @@ This script is mostly based on the following original script: [REDVM/immich_auto
 8. [Assets in Multiple Albums](#assets-in-multiple-albums)
 9. [Setting Album Thumbnails](#setting-album-thumbnails)
 10. [Setting Album-Fine Properties](#setting-album-fine-properties)
-11. [Automatic Archiving](#automatic-archiving)
-12. [Dealing with External Library Changes](#dealing-with-external-library-changes)
+11. [Mass Updating Album Properties](#mass-updating-album-properties)
+12. [Automatic Archiving](#automatic-archiving)
+13. [Dealing with External Library Changes](#dealing-with-external-library-changes)
 
 ## Usage
 ### Bare Python Script
@@ -115,8 +116,6 @@ This script is mostly based on the following original script: [REDVM/immich_auto
                             Timeout when requesting Immich API in seconds (default: 20)
       --comments-and-likes-enabled
                             Pass this argument to enable comment and like functionality in all albums this script adds assets to. Cannot be used together with --comments-and-likes-disabled (default: False)
-      --comments-and-likes-disabled
-                            Pass this argument to disable comment and like functionality in all albums this script adds assets to. Cannot be used together with --comments-and-likes-enabled (default: False)
       --update-album-props-mode
                             Change how album properties are updated whenever new assets are added to an album. Album properties can either come from script arguments or the `.albumprops` file. Possible values:
                             0 = Do not change album properties.
@@ -579,6 +578,54 @@ share_with:
     role: editor
 ```
 If the script is called with `--share-with "Mom"` and `--archive`, the album created from the folder the file above resides in will only be shared with user `Dad` using `editor` permissions, and assets will be archived. All other albums will be shared with user `Mom` (using `viewer` permissions, as defined by default) and assets will be archived.
+
+## Mass Updating Album Properties
+
+The script supports updating album properties after the fact, i.e. after they already have been created. Useful examples for this are mass sharing albums or enabling/disabling the "Comments and Likes" functionality. All album properties supported by `.albumprops` files (Refer to [Setting Album-Fine Properties](#setting-album-fine-properties)) are supported. They can be provided either by placing an `.albumprops` file in each folder, or by passing the appropriate argument to the script.
+Updating already existing albums is done by setting the `--find-assets-in-albums` argument (or appropriate [environment variable](#environment-variables)) to discover assets that are already assigned to albums, and also setting the `--update-album-props-mode` argument ((or appropriate [environment variable](#environment-variables))).  
+When setting `--update-album-props-mode` to `1`, all album properties __except__ the shared status are updated. When setting it to `2`, the shared status is updated as well.
+By applying `--path-filter` and/or `--ignore` options, it is possible to get a more fine granular control over the albums to update.
+
+>[!IMPORTANT]
+> The shared status is always updated to match exactly the users and roles provided to the script, the changes are not additive.
+
+### Examples:
+1. Share all albums (either existing or newly ) created from a `Birhtdays` folder with users `User A` and `User B`:
+    ```bash
+    python3 ./immich_auto_album.py \
+      --find-assets-in-albums \
+      --update-album-props-mode 2 \
+      --share-with "User A" \
+      --share-with "User B" \
+      --path-filter "Birthdays/**" \
+      /path/to/external/lib \
+      https://immich.mydomain.com/api \
+      thisIsMyApiKeyCopiedFromImmichWebGui
+    ```
+
+    To unshare the same albums simply run the same command without the `--share-with` arguments. The script will make sure all identified albums are shared with all people passed in `--share-with`, that is no-one.
+    ```bash 
+    python3 ./immich_auto_album.py \
+      --find-assets-in-albums \
+      --update-album-props-mode 2 \
+      --path-filter "Birthdays/**" \
+      /path/to/external/lib \
+      https://immich.mydomain.com/api \
+      thisIsMyApiKeyCopiedFromImmichWebGui
+    ```
+
+2. Disable comments and likes in all albums but the ones created from a `Birthdays` folder, without changing the "shared with" settings:
+    ```bash
+    python3 ./immich_auto_album.py \
+      --find-assets-in-albums \
+      --update-album-props-mode 1 \
+      --disable-comments-an-likes \
+      --ignore "Birthdays/**" \
+      /path/to/external/lib \
+      https://immich.mydomain.com/api \
+      thisIsMyApiKeyCopiedFromImmichWebGui
+    ```
+
 
 ## Automatic Archiving
 
