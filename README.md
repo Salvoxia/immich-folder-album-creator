@@ -116,6 +116,8 @@ This script is mostly based on the following original script: [REDVM/immich_auto
                             Timeout when requesting Immich API in seconds (default: 20)
       --comments-and-likes-enabled
                             Pass this argument to enable comment and like functionality in all albums this script adds assets to. Cannot be used together with --comments-and-likes-disabled (default: False)
+      --comments-and-likes-disabled
+                            Pass this argument to disable comment and like functionality in all albums this script adds assets to. Cannot be used together with --comments-and-likes-enabled (default: False)
       --update-album-props-mode
                             Change how album properties are updated whenever new assets are added to an album. Album properties can either come from script arguments or the `.albumprops` file. Possible values:
                             0 = Do not change album properties.
