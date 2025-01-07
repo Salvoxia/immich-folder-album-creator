@@ -27,8 +27,9 @@ This script is mostly based on the following original script: [REDVM/immich_auto
 8. [Assets in Multiple Albums](#assets-in-multiple-albums)
 9. [Setting Album Thumbnails](#setting-album-thumbnails)
 10. [Setting Album-Fine Properties](#setting-album-fine-properties)
-11. [Automatic Archiving](#automatic-archiving)
-12. [Dealing with External Library Changes](#dealing-with-external-library-changes)
+11. [Mass Updating Album Properties](#mass-updating-album-properties)
+12. [Automatic Archiving](#automatic-archiving)
+13. [Dealing with External Library Changes](#dealing-with-external-library-changes)
 
 ## Usage
 ### Bare Python Script
@@ -115,8 +116,6 @@ This script is mostly based on the following original script: [REDVM/immich_auto
                             Timeout when requesting Immich API in seconds (default: 20)
       --comments-and-likes-enabled
                             Pass this argument to enable comment and like functionality in all albums this script adds assets to. Cannot be used together with --comments-and-likes-disabled (default: False)
-      --comments-and-likes-disabled
-                            Pass this argument to disable comment and like functionality in all albums this script adds assets to. Cannot be used together with --comments-and-likes-enabled (default: False)
       --update-album-props-mode
                             Change how album properties are updated whenever new assets are added to an album. Album properties can either come from script arguments or the `.albumprops` file. Possible values:
                             0 = Do not change album properties.
@@ -439,17 +438,33 @@ Two arguments control this feature:
 
 To share new albums with users `User A` and `User B` as `viewer`, use the following call:
 ```bash
-python3 ./immich_auto_album.py --share-with "User A" --share-with "User B" /path/to/external/lib https://immich.mydomain.com/api thisIsMyApiKeyCopiedFromImmichWebGui
+python3 ./immich_auto_album.py \
+  --share-with "User A" \
+  --share-with "User B" \
+  /path/to/external/lib \
+  https://immich.mydomain.com/api \
+  thisIsMyApiKeyCopiedFromImmichWebGui
 ```
 
 To share new albums with users `User A` and `User B` as `editor`, use the following call:
 ```bash
-python3 ./immich_auto_album.py --share-with "User A" --share-with "User B" --share-role "editor" /path/to/external/lib https://immich.mydomain.com/api thisIsMyApiKeyCopiedFromImmichWebGui
+python3 ./immich_auto_album.py \
+  --share-with "User A" \
+  --share-with "User B" \
+  --share-role "editor" \
+  /path/to/external/lib \
+  https://immich.mydomain.com/api \
+  thisIsMyApiKeyCopiedFromImmichWebGui
 ```
 
 To share new albums with users `User A` and a user with mail address `userB@mydomain.com`, but `User A` should be an editor, use the following call:
 ```bash
-python3 ./immich_auto_album.py --share-with "User A=editor" --share-with "userB@mydomain.com" /path/to/external/lib https://immich.mydomain.com/api thisIs
+python3 ./immich_auto_album.py \
+  --share-with "User A=editor" \
+  --share-with "userB@mydomain.com" \
+  path/to/external/lib \
+  https://immich.mydomain.com/api \
+  thisIs
 ```
 
 Per default these share settings are applied once when the album is created and remain unchanged if an asset is added to an album later. If you want to override the share state whenever an asset is added to an album you can set `--update-album-props-mode` to `2`. Note that this will completely override all shared users, any changes made within Immich will be lost.
@@ -461,17 +476,39 @@ Two environment variables control this feature:
 
 To share new albums with users `User A` and `User B` as `viewer`, use the following call:
 ```bash
-docker run -e SHARE_WITH="User A:User B" -e UNATTENDED="1" -e API_URL="https://immich.mydomain.com/api/" -e API_KEY="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" -e ROOT_PATH="/external_libs/photos" salvoxia/immich-folder-album-creator:latest /script/immich_auto_album.sh
+docker run \
+  -e SHARE_WITH="User A:User B" \
+  -e UNATTENDED="1" \
+  -e API_URL="https://immich.mydomain.com/api/" \
+  -e API_KEY="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" \
+  -e ROOT_PATH="/external_libs/photos" \
+  salvoxia/immich-folder-album-creator:latest \
+  /script/immich_auto_album.sh
 ```
 
 To share new albums with users `User A` and `User B` as `editor`, use the following call:
 ```bash
-docker run -e SHARE_WITH="User A:User B" -e SHARE_ROLE="editor" -e UNATTENDED="1" -e API_URL="https://immich.mydomain.com/api/" -e API_KEY="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" -e ROOT_PATH="/external_libs/photos" salvoxia/immich-folder-album-creator:latest /script/immich_auto_album.sh
+docker run \
+  -e SHARE_WITH="User A:User B" \
+  -e SHARE_ROLE="editor" \
+  -e UNATTENDED="1" \
+  -e API_URL="https://immich.mydomain.com/api/" \
+  -e API_KEY="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" \
+  -e ROOT_PATH="/external_libs/photos" \
+  salvoxia/immich-folder-album-creator:latest \
+  /script/immich_auto_album.sh
 ```
 
 To share new albums with users `User A` and a user with mail address `userB@mydomain.com`, but `User A` should be an editor, use the following call:
 ```bash
-docker run -e SHARE_WITH="User A=editor:userB@mydomain.com" -e UNATTENDED="1" -e API_URL="https://immich.mydomain.com/api/" -e API_KEY="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" -e ROOT_PATH="/external_libs/photos" salvoxia/immich-folder-album-creator:latest /script/immich_auto_album.sh
+docker run \
+  -e SHARE_WITH="User A=editor:userB@mydomain.com" \
+  -e UNATTENDED="1" \
+  -e API_URL="https://immich.mydomain.com/api/" \
+  -e API_KEY="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" \
+  -e ROOT_PATH="/external_libs/photos" \
+  salvoxia/immich-folder-album-creator:latest \
+  /script/immich_auto_album.sh
 ```
 
 Per default these share settings are applied once when the album is created and remain unchanged if an asset is added to an album later. If you want to override the share state whenever an asset is added to an album you can set `UPDATE_ALBUM_PROPS_MODE` to `2`. Note that this will completely override all shared users, any changes made within Immich will be lost.
@@ -580,6 +617,54 @@ share_with:
 ```
 If the script is called with `--share-with "Mom"` and `--archive`, the album created from the folder the file above resides in will only be shared with user `Dad` using `editor` permissions, and assets will be archived. All other albums will be shared with user `Mom` (using `viewer` permissions, as defined by default) and assets will be archived.
 
+## Mass Updating Album Properties
+
+The script supports updating album properties after the fact, i.e. after they already have been created. Useful examples for this are mass sharing albums or enabling/disabling the "Comments and Likes" functionality. All album properties supported by `.albumprops` files (Refer to [Setting Album-Fine Properties](#setting-album-fine-properties)) are supported. They can be provided either by placing an `.albumprops` file in each folder, or by passing the appropriate argument to the script.
+Updating already existing albums is done by setting the `--find-assets-in-albums` argument (or appropriate [environment variable](#environment-variables)) to discover assets that are already assigned to albums, and also setting the `--update-album-props-mode` argument ((or appropriate [environment variable](#environment-variables))).  
+When setting `--update-album-props-mode` to `1`, all album properties __except__ the shared status are updated. When setting it to `2`, the shared status is updated as well.
+By applying `--path-filter` and/or `--ignore` options, it is possible to get a more fine granular control over the albums to update.
+
+>[!IMPORTANT]
+> The shared status is always updated to match exactly the users and roles provided to the script, the changes are not additive.
+
+### Examples:
+1. Share all albums (either existing or newly ) created from a `Birhtdays` folder with users `User A` and `User B`:
+    ```bash
+    python3 ./immich_auto_album.py \
+      --find-assets-in-albums \
+      --update-album-props-mode 2 \
+      --share-with "User A" \
+      --share-with "User B" \
+      --path-filter "Birthdays/**" \
+      /path/to/external/lib \
+      https://immich.mydomain.com/api \
+      thisIsMyApiKeyCopiedFromImmichWebGui
+    ```
+
+    To unshare the same albums simply run the same command without the `--share-with` arguments. The script will make sure all identified albums are shared with all people passed in `--share-with`, that is no-one.
+    ```bash 
+    python3 ./immich_auto_album.py \
+      --find-assets-in-albums \
+      --update-album-props-mode 2 \
+      --path-filter "Birthdays/**" \
+      /path/to/external/lib \
+      https://immich.mydomain.com/api \
+      thisIsMyApiKeyCopiedFromImmichWebGui
+    ```
+
+2. Disable comments and likes in all albums but the ones created from a `Birthdays` folder, without changing the "shared with" settings:
+    ```bash
+    python3 ./immich_auto_album.py \
+      --find-assets-in-albums \
+      --update-album-props-mode 1 \
+      --disable-comments-an-likes \
+      --ignore "Birthdays/**" \
+      /path/to/external/lib \
+      https://immich.mydomain.com/api \
+      thisIsMyApiKeyCopiedFromImmichWebGui
+    ```
+
+
 ## Automatic Archiving
 
 In Immich, 'archiving' an image means to hide it from the main timeline.  
@@ -619,6 +704,41 @@ Option `2` will first delete all "offline" assets automatically, then do the sam
 
 It is up to you whether you want to use the full capabilities Sync Mode offers, parts of it or none.  
 An example for the Immich `docker-compose.yml` stack when using full Sync Mode might look like this:
+
+### `docker-compose` example passing the API key as environment variable
+```yml
+#
+# WARNING: Make sure to use the docker-compose.yml of the current release:
+#
+# https://github.com/immich-app/immich/releases/latest/download/docker-compose.yml
+#
+# The compose file on main may not be compatible with the latest release.
+#
+
+name: immich
+
+services:
+  immich-server:
+    container_name: immich_server
+    volumes:
+     - /path/to/my/photos:/external_libs/photos
+  ...
+  immich-folder-album-creator:
+    container_name: immich_folder_album_creator
+    image: salvoxia/immich-folder-album-creator:latest
+    restart: unless-stopped
+    environment:
+      API_URL: http://immich_server:2283/api
+      API_KEY: "This_Is_My_API_Key_Generated_In_Immich"
+      ROOT_PATH: /external_libs/photos
+      # Run every full hour
+      CRON_EXPRESSION: "0 * * * *"
+      TZ: Europe/Berlin
+      # Remove offline assets and delete empty albums after each run
+      SYNC_MODE: "2"
+```
+
+### `docker-compose` example using a secrets file for the API key
 ```yml
 #
 # WARNING: Make sure to use the docker-compose.yml of the current release:
@@ -645,6 +765,7 @@ services:
       API_URL: http://immich_server:2283/api
       API_KEY_FILE: "/immich_api_key.secret"
       ROOT_PATH: /external_libs/photos
+      # Run every full hour
       CRON_EXPRESSION: "0 * * * *"
       TZ: Europe/Berlin
       # Remove offline assets and delete empty albums after each run
