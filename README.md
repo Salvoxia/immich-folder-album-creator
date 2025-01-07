@@ -438,17 +438,33 @@ Two arguments control this feature:
 
 To share new albums with users `User A` and `User B` as `viewer`, use the following call:
 ```bash
-python3 ./immich_auto_album.py --share-with "User A" --share-with "User B" /path/to/external/lib https://immich.mydomain.com/api thisIsMyApiKeyCopiedFromImmichWebGui
+python3 ./immich_auto_album.py \
+  --share-with "User A" \
+  --share-with "User B" \
+  /path/to/external/lib \
+  https://immich.mydomain.com/api \
+  thisIsMyApiKeyCopiedFromImmichWebGui
 ```
 
 To share new albums with users `User A` and `User B` as `editor`, use the following call:
 ```bash
-python3 ./immich_auto_album.py --share-with "User A" --share-with "User B" --share-role "editor" /path/to/external/lib https://immich.mydomain.com/api thisIsMyApiKeyCopiedFromImmichWebGui
+python3 ./immich_auto_album.py \
+  --share-with "User A" \
+  --share-with "User B" \
+  --share-role "editor" \
+  /path/to/external/lib \
+  https://immich.mydomain.com/api \
+  thisIsMyApiKeyCopiedFromImmichWebGui
 ```
 
 To share new albums with users `User A` and a user with mail address `userB@mydomain.com`, but `User A` should be an editor, use the following call:
 ```bash
-python3 ./immich_auto_album.py --share-with "User A=editor" --share-with "userB@mydomain.com" /path/to/external/lib https://immich.mydomain.com/api thisIs
+python3 ./immich_auto_album.py \
+  --share-with "User A=editor" \
+  --share-with "userB@mydomain.com" \
+  path/to/external/lib \
+  https://immich.mydomain.com/api \
+  thisIs
 ```
 
 Per default these share settings are applied once when the album is created and remain unchanged if an asset is added to an album later. If you want to override the share state whenever an asset is added to an album you can set `--update-album-props-mode` to `2`. Note that this will completely override all shared users, any changes made within Immich will be lost.
@@ -460,17 +476,39 @@ Two environment variables control this feature:
 
 To share new albums with users `User A` and `User B` as `viewer`, use the following call:
 ```bash
-docker run -e SHARE_WITH="User A:User B" -e UNATTENDED="1" -e API_URL="https://immich.mydomain.com/api/" -e API_KEY="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" -e ROOT_PATH="/external_libs/photos" salvoxia/immich-folder-album-creator:latest /script/immich_auto_album.sh
+docker run \
+  -e SHARE_WITH="User A:User B" \
+  -e UNATTENDED="1" \
+  -e API_URL="https://immich.mydomain.com/api/" \
+  -e API_KEY="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" \
+  -e ROOT_PATH="/external_libs/photos" \
+  salvoxia/immich-folder-album-creator:latest \
+  /script/immich_auto_album.sh
 ```
 
 To share new albums with users `User A` and `User B` as `editor`, use the following call:
 ```bash
-docker run -e SHARE_WITH="User A:User B" -e SHARE_ROLE="editor" -e UNATTENDED="1" -e API_URL="https://immich.mydomain.com/api/" -e API_KEY="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" -e ROOT_PATH="/external_libs/photos" salvoxia/immich-folder-album-creator:latest /script/immich_auto_album.sh
+docker run \
+  -e SHARE_WITH="User A:User B" \
+  -e SHARE_ROLE="editor" \
+  -e UNATTENDED="1" \
+  -e API_URL="https://immich.mydomain.com/api/" \
+  -e API_KEY="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" \
+  -e ROOT_PATH="/external_libs/photos" \
+  salvoxia/immich-folder-album-creator:latest \
+  /script/immich_auto_album.sh
 ```
 
 To share new albums with users `User A` and a user with mail address `userB@mydomain.com`, but `User A` should be an editor, use the following call:
 ```bash
-docker run -e SHARE_WITH="User A=editor:userB@mydomain.com" -e UNATTENDED="1" -e API_URL="https://immich.mydomain.com/api/" -e API_KEY="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" -e ROOT_PATH="/external_libs/photos" salvoxia/immich-folder-album-creator:latest /script/immich_auto_album.sh
+docker run \
+  -e SHARE_WITH="User A=editor:userB@mydomain.com" \
+  -e UNATTENDED="1" \
+  -e API_URL="https://immich.mydomain.com/api/" \
+  -e API_KEY="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" \
+  -e ROOT_PATH="/external_libs/photos" \
+  salvoxia/immich-folder-album-creator:latest \
+  /script/immich_auto_album.sh
 ```
 
 Per default these share settings are applied once when the album is created and remain unchanged if an asset is added to an album later. If you want to override the share state whenever an asset is added to an album you can set `UPDATE_ALBUM_PROPS_MODE` to `2`. Note that this will completely override all shared users, any changes made within Immich will be lost.
@@ -666,6 +704,41 @@ Option `2` will first delete all "offline" assets automatically, then do the sam
 
 It is up to you whether you want to use the full capabilities Sync Mode offers, parts of it or none.  
 An example for the Immich `docker-compose.yml` stack when using full Sync Mode might look like this:
+
+### `docker-compose` example passing the API key as environment variable
+```yml
+#
+# WARNING: Make sure to use the docker-compose.yml of the current release:
+#
+# https://github.com/immich-app/immich/releases/latest/download/docker-compose.yml
+#
+# The compose file on main may not be compatible with the latest release.
+#
+
+name: immich
+
+services:
+  immich-server:
+    container_name: immich_server
+    volumes:
+     - /path/to/my/photos:/external_libs/photos
+  ...
+  immich-folder-album-creator:
+    container_name: immich_folder_album_creator
+    image: salvoxia/immich-folder-album-creator:latest
+    restart: unless-stopped
+    environment:
+      API_URL: http://immich_server:2283/api
+      API_KEY: "This_Is_My_API_Key_Generated_In_Immich"
+      ROOT_PATH: /external_libs/photos
+      # Run every full hour
+      CRON_EXPRESSION: "0 * * * *"
+      TZ: Europe/Berlin
+      # Remove offline assets and delete empty albums after each run
+      SYNC_MODE: "2"
+```
+
+### `docker-compose` example using a secrets file for the API key
 ```yml
 #
 # WARNING: Make sure to use the docker-compose.yml of the current release:
@@ -692,6 +765,7 @@ services:
       API_URL: http://immich_server:2283/api
       API_KEY_FILE: "/immich_api_key.secret"
       ROOT_PATH: /external_libs/photos
+      # Run every full hour
       CRON_EXPRESSION: "0 * * * *"
       TZ: Europe/Berlin
       # Remove offline assets and delete empty albums after each run
