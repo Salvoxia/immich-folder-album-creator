@@ -1502,9 +1502,15 @@ def set_album_properties_in_model(album_model_to_update: AlbumModel):
     # Set share_with
     if share_with:
         for album_share_user in share_with:
+            # Resolve share user-specific share role syntax <name>=<role>
+            share_user_name, share_user_role = parse_separated_string(album_share_user, '=')
+            # Fallback to default
+            if share_user_role is None:
+                share_user_role = share_role
+
             album_share_with = {
-                'user': album_share_user,
-                'role': share_role
+                'user': share_user_name,
+                'role': share_user_role
             }
             album_model_to_update.share_with.append(album_share_with)
 
