@@ -20,7 +20,7 @@ import requests
 # Script Constants
 
 # Constants holding script run modes
-# Creat albums based on folder names and script arguments
+# Create albums based on folder names and script arguments
 SCRIPT_MODE_CREATE = "CREATE"
 # Create album names based on folder names, but delete these albums
 SCRIPT_MODE_CLEANUP = "CLEANUP"
@@ -73,7 +73,7 @@ class AlbumModel:
         self.id = None
         # The album name
         self.name = name
-        # The override album name, takes precendence over name for album creation
+        # The override album name, takes precedence over name for album creation
         self.override_name = None
         # The description to set for the album
         self.description = None
@@ -351,7 +351,7 @@ def build_album_properties_templates() -> dict:
         logging.fatal("Encountered at least one fatal error during parsing or validating of album properties files, exiting!")
         sys.exit(1)
 
-    # Now validate that all album properties templates with the same override_name are comaptible with each other
+    # Now validate that all album properties templates with the same override_name are compatible with each other
     validate_album_props_templates(album_props_templates.values(), album_name_to_album_properties_file_path)
 
     return album_props_templates
@@ -570,7 +570,7 @@ def divide_chunks(full_list: list, chunk_size: int):
     for j in range(0, len(full_list), chunk_size):
         yield full_list[j:j + chunk_size]
 
-def parse_separated_string(separated_string: str, seprator: str) -> Tuple[str, str]:
+def parse_separated_string(separated_string: str, separator: str) -> Tuple[str, str]:
     """
     Parse a key, value pair, separated by the provided separator.
     
@@ -580,12 +580,12 @@ def parse_separated_string(separated_string: str, seprator: str) -> Tuple[str, s
     or
         foo="hello world"
     """
-    items = separated_string.split(seprator)
+    items = separated_string.split(separator)
     key = items[0].strip() # we remove blanks around keys, as is logical
     value = None
     if len(items) > 1:
         # rejoin the rest:
-        value = seprator.join(items[1:])
+        value = separator.join(items[1:])
     return (key, value)
 
 
@@ -736,7 +736,7 @@ def fetch_assets_with_options(search_options: dict) -> list:
     logging.debug("Received %s assets with chunk %s", len(assets_received), page)
 
     assets_found = assets_found + assets_received
-    # If we got a full chunk size back, let's perfrom subsequent calls until we get less than a full chunk size
+    # If we got a full chunk size back, let's perform subsequent calls until we get less than a full chunk size
     while len(assets_received) == number_of_assets_to_fetch_per_request_search:
         page += 1
         body['page'] = page
@@ -1099,7 +1099,7 @@ def trigger_offline_asset_removal():
 
     Takes into account API changes happening between v1.115.0 and v1.116.0.
 
-    Before v1.116.0, offline asset removal was an asynchronuous job that could only be
+    Before v1.116.0, offline asset removal was an asynchronous job that could only be
     triggered by an Administrator for a specific library.
 
     Since v1.116.0, offline assets are no longer displayed in the main timeline but shown in the trash. They automatically
@@ -1113,11 +1113,11 @@ def trigger_offline_asset_removal():
     if version['major'] == 1 and version ['minor'] < 116:
         trigger_offline_asset_removal_pre_minor_version_116()
     else:
-        trigger_offline_asset_removal_sincee_minor_version_116()
+        trigger_offline_asset_removal_since_minor_version_116()
 
-def trigger_offline_asset_removal_sincee_minor_version_116():
+def trigger_offline_asset_removal_since_minor_version_116():
     """
-    Synchronuously deletes offline assets.
+    Synchronously deletes offline assets.
 
     Uses the searchMetadata endpoint to find all assets marked as offline, then
     issues a delete call for these asset UUIDs.
@@ -1334,8 +1334,8 @@ def update_album_properties(album_to_update: AlbumModel):
     if len(data) > 0:
         api_endpoint = f'albums/{album_to_update.id}'
 
-        respnonse = requests.patch(root_url+api_endpoint, json=data, **requests_kwargs, timeout=api_timeout)
-        check_api_response(respnonse)
+        response = requests.patch(root_url+api_endpoint, json=data, **requests_kwargs, timeout=api_timeout)
+        check_api_response(response)
 
 def set_assets_archived(asset_ids_to_archive: list[str], is_archived: bool):
     """
@@ -1364,12 +1364,12 @@ def set_assets_archived(asset_ids_to_archive: list[str], is_archived: bool):
 
 def check_api_response(response: requests.Response):
     """
-    Checks the HTTP return code for the privided response and
+    Checks the HTTP return code for the provided response and
     logs any errors before raising an HTTPError
 
     Parameters
     ----------
-        respsone : requests.Response
+        response : requests.Response
             A list of asset IDs to archive
         isArchived : bool
             Flag indicating whether to archive or unarchive the passed assets
@@ -1384,7 +1384,7 @@ def check_api_response(response: requests.Response):
         if response.json():
             logging.error("Error in API call: %s", response.json())
         else:
-            logging.error("API respsonse did not contain a payload")
+            logging.error("API response did not contain a payload")
     response.raise_for_status()
 
 def delete_all_albums(unarchive_assets: bool, force_delete: bool):
@@ -1400,7 +1400,7 @@ def delete_all_albums(unarchive_assets: bool, force_delete: bool):
             Flag indicating whether to unarchive archived assets
         force_delete : bool
             Flag indicating whether to actually delete albums (True) or only to
-            perfrom a dry-run (False)
+            perform a dry-run (False)
    
     Raises
     ----------
@@ -1451,7 +1451,7 @@ def cleanup_albums(albums_to_delete: list[AlbumModel], force_delete: bool):
             A list of AlbumModel records to delete
         force_delete : bool
             Flag indicating whether to actually delete albums (True) or only to
-            perfrom a dry-run (False)
+            perform a dry-run (False)
 
     Returns
     ----------
@@ -1535,7 +1535,7 @@ def build_album_list(asset_list : list[dict], root_path_list : list[str], album_
     Parameters
     ----------
         asset_list : list[dict]
-            List of assets dictioniaries fetched from Immich API
+            List of assets dictionaries fetched from Immich API
         root_path_list : list[str]
             List of root paths to use for album creation
         album_props_templates: dict
@@ -1548,7 +1548,7 @@ def build_album_list(asset_list : list[dict], root_path_list : list[str], album_
     album_models = defaultdict(list)
     for asset_to_add in asset_list:
         asset_path = asset_to_add['originalPath']
-        # This method will log the ignore reason, so no need to log anyhting again.
+        # This method will log the ignore reason, so no need to log anything again.
         if is_path_ignored(asset_path):
             continue
 
@@ -1607,7 +1607,7 @@ def find_user_by_name_or_email(name_or_email: str, user_list: list[dict]) -> dic
         name_or_email: str
             The user name or email address to find the user by
         user_list: list[dict]
-            A list of user dictioniaries with the following mandatory keys:
+            A list of user dictionaries with the following mandatory keys:
               - id
               - name
               - email
@@ -1647,7 +1647,7 @@ parser.add_argument("-i", "--ignore", action="append",
 parser.add_argument("-m", "--mode", default=SCRIPT_MODE_CREATE, choices=[SCRIPT_MODE_CREATE, SCRIPT_MODE_CLEANUP, SCRIPT_MODE_DELETE_ALL],
                     help="""Mode for the script to run with.
                             CREATE = Create albums based on folder names and provided arguments; 
-                            CLEANUP = Create album nmaes based on current images and script arguments, but delete albums if they exist; 
+                            CLEANUP = Create album names based on current images and script arguments, but delete albums if they exist; 
                             DELETE_ALL = Delete all albums. 
                             If the mode is anything but CREATE, --unattended does not have any effect. 
                             Only performs deletion if -d/--delete-confirm option is set, otherwise only performs a dry-run.""")
