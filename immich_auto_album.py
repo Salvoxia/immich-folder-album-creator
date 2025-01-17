@@ -1507,7 +1507,7 @@ def set_album_properties_in_model(album_model_to_update: AlbumModel):
             # Fallback to default
             if share_user_role is None:
                 share_user_role = share_role
-            
+
             album_share_with = {
                 'user': share_user_name,
                 'role': share_user_role
