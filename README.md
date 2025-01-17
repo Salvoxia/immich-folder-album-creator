@@ -80,7 +80,7 @@ This script is mostly based on the following original script: [REDVM/immich_auto
                             Use either literals or glob-like patterns to ignore assets for album name creation. This filter is evaluated after any values passed with --path-filter. May be specified multiple times.
                             (default: None)
       -m {CREATE,CLEANUP,DELETE_ALL}, --mode {CREATE,CLEANUP,DELETE_ALL}
-                            Mode for the script to run with. CREATE = Create albums based on folder names and provided arguments; CLEANUP = Create album nmaes based on current images and script arguments, but delete albums
+                            Mode for the script to run with. CREATE = Create albums based on folder names and provided arguments; CLEANUP = Create album names based on current images and script arguments, but delete albums
                             if they exist; DELETE_ALL = Delete all albums. If the mode is anything but CREATE, --unattended does not have any effect. Only performs deletion if -d/--delete-confirm option is set, otherwise
                             only performs a dry-run. (default: CREATE)
       -d, --delete-confirm  Confirm deletion of albums when running in mode CLEANUP or DELETE_ALL. If this flag is not set, these modes will perform a dry run only. Has no effect in mode CREATE (default: False)
@@ -150,10 +150,10 @@ python3 ./immich_auto_album.py \
 A Docker image is provided to be used as a runtime environment. It can be used to either run the script manually, or via cronjob by providing a crontab expression to the container. The container can then be added to the Immich compose stack directly.
 
 #### Environment Variables
-The environment variables are analoguous to the script's command line arguments.
+The environment variables are analogous to the script's command line arguments.
 
-| Environment varible   |  Mandatory? | Description   |
-| :------------------- | :----------- | :------------ |
+| Environment variable | Mandatory? | Description |
+| :------------------- | :--------- | :---------- |
 | ROOT_PATH            | yes | A single or a comma separated list of import paths for external libraries in Immich. <br>Refer to [Choosing the correct `root_path`](#choosing-the-correct-root_path).|
 | API_URL            | yes | The root API URL of immich, e.g. https://immich.mydomain.com/api/ |
 | API_KEY            | no | The Immich API Key to use. Either `API_KEY` or `API_KEY_FILE` must be specified. The `API_KEY` variable takes precedence for ease of manual execution, but it is recommended to use `API_KEY_FILE`. 
@@ -166,7 +166,7 @@ The environment variables are analoguous to the script's command line arguments.
 | LOG_LEVEL          | no | Log level to use (default: INFO), allowed values: `CRITICAL`,`ERROR`,`WARNING`,`INFO`,`DEBUG` |
 | INSECURE           | no | Set to `true` to disable SSL verification for the Immich API server, useful for self-signed certificates (default: `false`), allowed values: `true`, `false` |
 | IGNORE             | no | A colon `:` separated list of literals or glob-style patterns that will cause an image to be ignored if found in its path. |
-| MODE               | no | Mode for the script to run with. <br> __`CREATE`__ = Create albums based on folder names and provided arguments<br>__`CLEANUP`__ = Create album nmaes based on current images and script arguments, but delete albums if they exist <br> __`DELETE_ALL`__ = Delete all albums. <br> If the mode is anything but `CREATE`, `--unattended` does not have any effect. <br> (default: `CREATE`). <br>Refer to [Cleaning Up Albums](#cleaning-up-albums). |
+| MODE               | no | Mode for the script to run with. <br> __`CREATE`__ = Create albums based on folder names and provided arguments<br>__`CLEANUP`__ = Create album names based on current images and script arguments, but delete albums if they exist <br> __`DELETE_ALL`__ = Delete all albums. <br> If the mode is anything but `CREATE`, `--unattended` does not have any effect. <br> (default: `CREATE`). <br>Refer to [Cleaning Up Albums](#cleaning-up-albums). |
 | DELETE_CONFIRM     | no | Confirm deletion of albums when running in mode `CLEANUP` or `DELETE_ALL`. If this flag is not set, these modes will perform a dry run only. Has no effect in mode `CREATE` (default: `False`). <br>Refer to [Cleaning Up Albums](#cleaning-up-albums).|
 | SHARE_WITH     | no | A single or a colon (`:`) separated list of existing user names (or email addresses of existing users) to share newly created albums with. If the the share role should be specified by user, the format <userName>=<shareRole> must be used, where <shareRole> must be one of `viewer` or `editor`. May be specified multiple times to share albums with more than one user. (default: None) Sharing only happens if an album is actually created, not if new assets are added to it.  <br>Refer to [Automatic Album Sharing](#automatic-album-sharing).|
 | SHARE_ROLE     | no | The role for users newly created albums are shared with. Only effective if `SHARE_WITH` is not empty and no explicit share role was specified for at least one user. (default: viewer), allowed values: `viewer`, `editor` |
@@ -177,7 +177,7 @@ The environment variables are analoguous to the script's command line arguments.
 | SET_ALBUM_THUMBNAIL | no | Set first/last/random image as thumbnail (based on image creation timestamp) for newly created albums or albums assets have been added to.<br> Allowed values: `first`,`last`,`random`,`random-filtered`,`random-all`<br>If set to `random-filtered`, thumbnails are shuffled for all albums whose assets would not be filtered out or ignored by the `IGNORE` or `PATH_FILTER` options, even if no assets were added during the run. If set to random-all, the thumbnails for ALL albums will be shuffled on every run. (default: `None`)<br>Refer to [Setting Album Thumbnails](#setting-album-thumbnails). |
 | ARCHIVE     | no | Set this option to automatically archive all assets that were newly added to albums.<br>If this option is set in combination with `MODE` = `CLEANUP` or `DELETE_ALL`, archived images of deleted albums will be unarchived.<br>Archiving hides the assets from Immich's timeline. (default: `False`)<br>Refer to [Automatic Archiving](#automatic-archiving). |
 | FIND_ARCHIVED_ASSETS     | no | By default, the script only finds assets that are not archived in Immich. Set this option make the script discover assets that are already archived. If -A/--find-assets-in-albums is set as well, both options apply. (default: `False`)<br>Refer to [Automatic Archiving](#automatic-archiving). |
-| READ_ALBUM_PROPERTIES     | no | Set to `True` to enable discovery of `.albumprops` files in root paths, allowing to set different album properties for differnt albums. (default: `False`)<br>Refer to [Setting Album-Fine Properties](#setting-album-fine-properties). |
+| READ_ALBUM_PROPERTIES     | no | Set to `True` to enable discovery of `.albumprops` files in root paths, allowing to set different album properties for different albums. (default: `False`)<br>Refer to [Setting Album-Fine Properties](#setting-album-fine-properties). |
 | API_TIMEOUT         | no | Timeout when requesting Immich API in seconds (default: `20`) |
 | COMMENTS_AND_LIKES  | no | Set to `1` to explicitly enable Comments & Likes functionality for all albums this script adds assets to, set to `0` to disable. If not set, this setting is left alone by the script. |
 | UPDATE_ALBUM_PROPS_MODE | no | Change how album properties are updated whenever new assets are added to an album. Album properties can either come from script arguments or the `.albumprops` file. Possible values: <br>`0` = Do not change album properties.<br> `1` = Only override album properties but do not change the share status.<br> `2` = Override album properties and share status, this will remove all users from the album which are not in the SHARE_WITH list. |
@@ -282,7 +282,7 @@ If you are following [Immich's External library Documentation](https://immich.ap
 
 ## How it works
 
-The script utilizies [Immich's REST API](https://immich.app/docs/api/) to query all images indexed by Immich, extract the folder for all images that are in the top level of any provided `root_path`, then creates albums with the names of these folders (if not yet exists) and adds the images to the correct albums.
+The script utilizes [Immich's REST API](https://immich.app/docs/api/) to query all images indexed by Immich, extract the folder for all images that are in the top level of any provided `root_path`, then creates albums with the names of these folders (if not yet exists) and adds the images to the correct albums.
 
 The following arguments influence what albums are created:  
 `root_path`, `--album-levels` and `--album-separator`  
@@ -325,15 +325,15 @@ Albums created for `root_path = /external_libs/photos/Birthdays`:
  Albums created for `root_path = /external_libs/photos` and `--album-levels = 2`:
  - `2020` (containing all images from `2020` itself, if any)
  - `2020 02 Feb` (containing all images from `2020/02 Feb` itself, `2020/02 Feb/Vacation` and `2020/02 Aug/Vacation`)
- - `Birthdays John` (containing all imags from `Birthdays/John`)
- - `Birthdays Jane` (containing all imags from `Birthdays/John`)
+ - `Birthdays John` (containing all images from `Birthdays/John`)
+ - `Birthdays Jane` (containing all images from `Birthdays/John`)
  - `Skiing 2023`
 
  Albums created for `root_path = /external_libs/photos`, `--album-levels = 3` and `--album-separator " - "` :
  - `2020` (containing all images from `2020` itself, if any)
  - `2020 - 02 Feb` (containing all images from `02 Feb` itself, if any)
- - `2020 - 02 Feb - Vacation` (containing all imags from `2020/02 Feb/Vacation`)
- - `2020 - 08 Aug - Vacation` (containing all imags from `2020/02 Aug/Vacation`)
+ - `2020 - 02 Feb - Vacation` (containing all images from `2020/02 Feb/Vacation`)
+ - `2020 - 08 Aug - Vacation` (containing all images from `2020/02 Aug/Vacation`)
  - `Birthdays - John`
  - `Birthdays - Jane`
  - `Skiing 2023`
@@ -342,8 +342,8 @@ Albums created for `root_path = /external_libs/photos/Birthdays`:
  - `2020` (containing all images from `2020` itself, if any)
  - `02 Feb` (containing all images from `2020/02 Feb` itself, if any)
  - `Vacation` (containing all images from `2020/02 Feb/Vacation` AND `2020/08 Aug/Vacation`)
- - `John` (containing all imags from `Birthdays/John`)
- - `Jane` (containing all imags from `Birthdays/Jane`)
+ - `John` (containing all images from `Birthdays/John`)
+ - `Jane` (containing all images from `Birthdays/Jane`)
  - `Skiing 2023`
  
  ## Album Level Ranges
@@ -357,7 +357,7 @@ Albums created for `root_path = /external_libs/photos/Birthdays`:
 /external_libs/photos/2020/2020 08 Aug/Vacation
 ```
  - `--album-levels="2,3"` will create albums (for this folder structure, this is equal to `--album-levels="-2"`)
-    - `2020 02 Feb Facation`
+    - `2020 02 Feb Vacation`
     - `2020 08 Aug Vacation`
   - `--album-levels="2,2"` will create albums (for this folder structure, this is equal to `--album-levels="-2,-2"`)
     - `2020 02 Feb`
@@ -518,7 +518,7 @@ Per default these share settings are applied once when the album is created and 
 
 ## Cleaning Up Albums
 
-The script supports differnt run modes (option `-m`/`--mode` or env variable `MODE` for Docker). The default mode is `CREATE`, which is used to create albums.
+The script supports different run modes (option `-m`/`--mode` or env variable `MODE` for Docker). The default mode is `CREATE`, which is used to create albums.
 The other two modes are `CLEANUP` and `DELETE_ALL`.
 > [!CAUTION]  
 > Regardless of the mode you are using, deleting albums cannot be undone! The only option is to let the script run again and create new albums base on the passed arguments and current assets in Immich.
@@ -601,7 +601,7 @@ All properties are optional.
 >If the script finds multiple `.albumprops` files using the same `override_name` property, it enforced that all properties that exist in at least one of the `.albumprops` files are identical in all files that use the same `override_name`. If this is not the case, the script will exit with an error.
 
 >[!TIP]
-> Note the possibilty to set `thumbnail_setting` to an absolute asset path. This asset must be part of the album once the script has run for Immich to accept it as album thumbnail / cover. This is only possible in `.albumprops` files, as such a setting would not make much sense as a global option.
+> Note the possibility to set `thumbnail_setting` to an absolute asset path. This asset must be part of the album once the script has run for Immich to accept it as album thumbnail / cover. This is only possible in `.albumprops` files, as such a setting would not make much sense as a global option.
 
 ### Enabling `.albumprops` discovery
 
@@ -630,7 +630,7 @@ By applying `--path-filter` and/or `--ignore` options, it is possible to get a m
 > The shared status is always updated to match exactly the users and roles provided to the script, the changes are not additive.
 
 ### Examples:
-1. Share all albums (either existing or newly ) created from a `Birhtdays` folder with users `User A` and `User B`:
+1. Share all albums (either existing or newly ) created from a `Birthdays` folder with users `User A` and `User B`:
     ```bash
     python3 ./immich_auto_album.py \
       --find-assets-in-albums \
