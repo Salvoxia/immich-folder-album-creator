@@ -68,85 +68,85 @@ This script is mostly based on the following original script: [REDVM/immich_auto
     ```
 3. Run the script
     ```
-    usage: immich_auto_album.py [-h] [-t {literal,file}] [-r ROOT_PATH] [-u] [-a ALBUM_LEVELS] [-s ALBUM_SEPARATOR] [-c CHUNK_SIZE] [-C FETCH_CHUNK_SIZE] [-l {CRITICAL,ERROR,WARNING,INFO,DEBUG}] [-k] [-i IGNORE]
-                            [-m {CREATE,CLEANUP,DELETE_ALL}] [-d] [-x SHARE_WITH] [-o {viewer,editor}] [-S {0,1,2}] [-O {False,asc,desc}] [-A] [-f PATH_FILTER]
-                            [--set-album-thumbnail {first,last,random,random-all,random-filtered}] [-v] [--find-archived-assets]
+    usage: immich_auto_album.py [-h] [-t {literal,file}] [-r ROOT_PATH] [-u] [-a ALBUM_LEVELS] [-s ALBUM_SEPARATOR] [-R PATTERN [REPL ...]] [-c CHUNK_SIZE] [-C FETCH_CHUNK_SIZE] [-l {CRITICAL,ERROR,WARNING,INFO,DEBUG}] [-k] [-i IGNORE]
+                            [-m {CREATE,CLEANUP,DELETE_ALL}] [-d] [-x SHARE_WITH] [-o {viewer,editor}] [-S {0,1,2}] [-O {False,asc,desc}] [-A] [-f PATH_FILTER] [--set-album-thumbnail {first,last,random,random-all,random-filtered}] [-v]
+                            [--find-archived-assets] [--read-album-properties] [--api-timeout API_TIMEOUT] [--comments-and-likes-enabled] [--comments-and-likes-disabled] [--update-album-props-mode {0,1,2}]
                             root_path api_url api_key
 
-    Create Immich Albums from an external library path based on the top level folders
+Create Immich Albums from an external library path based on the top level folders
 
-    positional arguments:
-      root_path             The external library's root path in Immich
-      api_url               The root API URL of immich, e.g. https://immich.mydomain.com/api/
-      api_key               The Immich API Key to use. Set --api-key-type to 'file' if a file path is provided.
+positional arguments:
+  root_path             The external library's root path in Immich
+  api_url               The root API URL of immich, e.g. https://immich.mydomain.com/api/
+  api_key               The Immich API Key to use. Set --api-key-type to 'file' if a file path is provided.
 
-    options:
-      -h, --help            show this help message and exit
-      -t {literal,file}, --api-key-type {literal,file}
-                            The type of the Immich API Key (default: literal)
-      -r ROOT_PATH, --root-path ROOT_PATH
-                            Additional external library root path in Immich; May be specified multiple times for multiple import paths or external libraries. (default: None)
-      -u, --unattended      Do not ask for user confirmation after identifying albums. Set this flag to run script as a cronjob. (default: False)
-      -a ALBUM_LEVELS, --album-levels ALBUM_LEVELS
-                            Number of sub-folders or range of sub-folder levels below the root path used for album name creation. Positive numbers start from top of the folder structure, negative numbers from the bottom.
-                            Cannot be 0. If a range should be set, the start level and end level must be separated by a comma like '<startLevel>,<endLevel>'. If negative levels are used in a range, <startLevel> must be
-                            less than or equal to <endLevel>. (default: 1)
-      -s ALBUM_SEPARATOR, --album-separator ALBUM_SEPARATOR
-                            Separator string to use for compound album names created from nested folders. Only effective if -a is set to a value > 1 (default: )
-      -c CHUNK_SIZE, --chunk-size CHUNK_SIZE
-                            Maximum number of assets to add to an album with a single API call (default: 2000)
-      -C FETCH_CHUNK_SIZE, --fetch-chunk-size FETCH_CHUNK_SIZE
-                            Maximum number of assets to fetch with a single API call (default: 5000)
-      -l {CRITICAL,ERROR,WARNING,INFO,DEBUG}, --log-level {CRITICAL,ERROR,WARNING,INFO,DEBUG}
-                            Log level to use (default: INFO)
-      -k, --insecure        Pass to ignore SSL verification (default: False)
-      -i IGNORE, --ignore IGNORE
-                            Use either literals or glob-like patterns to ignore assets for album name creation. This filter is evaluated after any values passed with --path-filter. May be specified multiple times.
-                            (default: None)
-      -m {CREATE,CLEANUP,DELETE_ALL}, --mode {CREATE,CLEANUP,DELETE_ALL}
-                            Mode for the script to run with. CREATE = Create albums based on folder names and provided arguments; CLEANUP = Create album names based on current images and script arguments, but delete albums
-                            if they exist; DELETE_ALL = Delete all albums. If the mode is anything but CREATE, --unattended does not have any effect. Only performs deletion if -d/--delete-confirm option is set, otherwise
-                            only performs a dry-run. (default: CREATE)
-      -d, --delete-confirm  Confirm deletion of albums when running in mode CLEANUP or DELETE_ALL. If this flag is not set, these modes will perform a dry run only. Has no effect in mode CREATE (default: False)
-      -x SHARE_WITH, --share-with SHARE_WITH
-                            A user name (or email address of an existing user) to share newly created albums with. Sharing only happens if the album was actually created, not if new assets were added to an existing album.
-                            If the the share role should be specified by user, the format <userName>=<shareRole> must be used, where <shareRole> must be one of 'viewer' or 'editor'. May be specified multiple times to share
-                            albums with more than one user. (default: None)
-      -o {viewer,editor}, --share-role {viewer,editor}
-                            The default share role for users newly created albums are shared with. Only effective if --share-with is specified at least once and the share role is not specified within --share-with.
-                            (default: viewer)
-      -S {0,1,2}, --sync-mode {0,1,2}
-                            Synchronization mode to use. Synchronization mode helps synchronizing changes in external libraries structures to Immich after albums have already been created. Possible Modes: 0 = do nothing; 1
-                            = Delete any empty albums; 2 = Delete offline assets AND any empty albums (default: 0)
-      -O {False,asc,desc}, --album-order {False,asc,desc}
-                            Set sorting order for newly created albums to newest or oldest file first, Immich defaults to newest file first (default: False)
-      -A, --find-assets-in-albums
-                            By default, the script only finds assets that are not assigned to any album yet. Set this option to make the script discover assets that are already part of an album and handle them as usual. If
-                            --find-archived-assets is set as well, both options apply. (default: False)
-      -f PATH_FILTER, --path-filter PATH_FILTER
-                            Use either literals or glob-like patterns to filter assets before album name creation. This filter is evaluated before any values passed with --ignore. May be specified multiple times. (default:
-                            None)
-      --set-album-thumbnail {first,last,random,random-all,random-filtered}
-                            Set first/last/random image as thumbnail for newly created albums or albums assets have been added to. If set to random-filtered, thumbnails are shuffled for all albums whose assets would not be
-                            filtered out or ignored by the ignore or path-filter options, even if no assets were added during the run. If set to random-all, the thumbnails for ALL albums will be shuffled on every run.
-                            (default: None)
-      -v, --archive         Set this option to automatically archive all assets that were newly added to albums. If this option is set in combination with --mode = CLEANUP or DELETE_ALL, archived images of deleted albums
-                            will be unarchived. Archiving hides the assets from Immich's timeline. (default: False)
-      --find-archived-assets
-                            By default, the script only finds assets that are not archived in Immich. Set this option to make the script discover assets that are already archived. If -A/--find-assets-in-albums is set as well, both options apply. (default: False)
-      --read-album-properties
-                            If set, the script tries to access all passed root paths and recursively search for .albumprops files in all contained folders. These properties will be used to set custom options on an per-album level. Check the readme for a complete documentation. (default: False)
-      --api-timeout API_TIMEOUT
-                            Timeout when requesting Immich API in seconds (default: 20)
-      --comments-and-likes-enabled
-                            Pass this argument to enable comment and like functionality in all albums this script adds assets to. Cannot be used together with --comments-and-likes-disabled (default: False)
-      --comments-and-likes-disabled
-                            Pass this argument to disable comment and like functionality in all albums this script adds assets to. Cannot be used together with --comments-and-likes-enabled (default: False)
-      --update-album-props-mode
-                            Change how album properties are updated whenever new assets are added to an album. Album properties can either come from script arguments or the `.albumprops` file. Possible values:
-                            0 = Do not change album properties.
-                            1 = Only override album properties but do not change the share status.
-                            2 = Override album properties and share status, this will remove all users from the album which are not in the SHARE_WITH list.
+options:
+  -h, --help            show this help message and exit
+  -t {literal,file}, --api-key-type {literal,file}
+                        The type of the Immich API Key (default: literal)
+  -r ROOT_PATH, --root-path ROOT_PATH
+                        Additional external library root path in Immich; May be specified multiple times for multiple import paths or external libraries. (default: None)
+  -u, --unattended      Do not ask for user confirmation after identifying albums. Set this flag to run script as a cronjob. (default: False)
+  -a ALBUM_LEVELS, --album-levels ALBUM_LEVELS
+                        Number of sub-folders or range of sub-folder levels below the root path used for album name creation. Positive numbers start from top of the folder structure, negative numbers from the bottom. Cannot be 0. If a
+                        range should be set, the start level and end level must be separated by a comma like '<startLevel>,<endLevel>'. If negative levels are used in a range, <startLevel> must be less than or equal to <endLevel>.
+                        (default: 1)
+  -s ALBUM_SEPARATOR, --album-separator ALBUM_SEPARATOR
+                        Separator string to use for compound album names created from nested folders. Only effective if -a is set to a value > 1 (default: )
+  -R PATTERN [REPL ...], --album-name-post-regex PATTERN [REPL ...]
+                        Regex pattern and optional replacement (use "" for empty replacement). Can be specified multiple times. (default: None)
+  -c CHUNK_SIZE, --chunk-size CHUNK_SIZE
+                        Maximum number of assets to add to an album with a single API call (default: 2000)
+  -C FETCH_CHUNK_SIZE, --fetch-chunk-size FETCH_CHUNK_SIZE
+                        Maximum number of assets to fetch with a single API call (default: 5000)
+  -l {CRITICAL,ERROR,WARNING,INFO,DEBUG}, --log-level {CRITICAL,ERROR,WARNING,INFO,DEBUG}
+                        Log level to use (default: INFO)
+  -k, --insecure        Pass to ignore SSL verification (default: False)
+  -i IGNORE, --ignore IGNORE
+                        Use either literals or glob-like patterns to ignore assets for album name creation. This filter is evaluated after any values passed with --path-filter. May be specified multiple times. (default: None)
+  -m {CREATE,CLEANUP,DELETE_ALL}, --mode {CREATE,CLEANUP,DELETE_ALL}
+                        Mode for the script to run with. CREATE = Create albums based on folder names and provided arguments; CLEANUP = Create album names based on current images and script arguments, but delete albums if they exist;
+                        DELETE_ALL = Delete all albums. If the mode is anything but CREATE, --unattended does not have any effect. Only performs deletion if -d/--delete-confirm option is set, otherwise only performs a dry-run. (default:
+                        CREATE)
+  -d, --delete-confirm  Confirm deletion of albums when running in mode CLEANUP or DELETE_ALL. If this flag is not set, these modes will perform a dry run only. Has no effect in mode CREATE (default: False)
+  -x SHARE_WITH, --share-with SHARE_WITH
+                        A user name (or email address of an existing user) to share newly created albums with. Sharing only happens if the album was actually created, not if new assets were added to an existing album. If the the share
+                        role should be specified by user, the format <userName>=<shareRole> must be used, where <shareRole> must be one of 'viewer' or 'editor'. May be specified multiple times to share albums with more than one user.
+                        (default: None)
+  -o {viewer,editor}, --share-role {viewer,editor}
+                        The default share role for users newly created albums are shared with. Only effective if --share-with is specified at least once and the share role is not specified within --share-with. (default: viewer)
+  -S {0,1,2}, --sync-mode {0,1,2}
+                        Synchronization mode to use. Synchronization mode helps synchronizing changes in external libraries structures to Immich after albums have already been created. Possible Modes: 0 = do nothing; 1 = Delete any empty
+                        albums; 2 = Delete offline assets AND any empty albums (default: 0)
+  -O {False,asc,desc}, --album-order {False,asc,desc}
+                        Set sorting order for newly created albums to newest or oldest file first, Immich defaults to newest file first (default: False)
+  -A, --find-assets-in-albums
+                        By default, the script only finds assets that are not assigned to any album yet. Set this option to make the script discover assets that are already part of an album and handle them as usual. If --find-archived-
+                        assets is set as well, both options apply. (default: False)
+  -f PATH_FILTER, --path-filter PATH_FILTER
+                        Use either literals or glob-like patterns to filter assets before album name creation. This filter is evaluated before any values passed with --ignore. May be specified multiple times. (default: None)
+  --set-album-thumbnail {first,last,random,random-all,random-filtered}
+                        Set first/last/random image as thumbnail for newly created albums or albums assets have been added to. If set to random-filtered, thumbnails are shuffled for all albums whose assets would not be filtered out or
+                        ignored by the ignore or path-filter options, even if no assets were added during the run. If set to random-all, the thumbnails for ALL albums will be shuffled on every run. (default: None)
+  -v, --archive         Set this option to automatically archive all assets that were newly added to albums. If this option is set in combination with --mode = CLEANUP or DELETE_ALL, archived images of deleted albums will be unarchived.
+                        Archiving hides the assets from Immich's timeline. (default: False)
+  --find-archived-assets
+                        By default, the script only finds assets that are not archived in Immich. Set this option to make the script discover assets that are already archived. If -A/--find-assets-in-albums is set as well, both options
+                        apply. (default: False)
+  --read-album-properties
+                        If set, the script tries to access all passed root paths and recursively search for .albumprops files in all contained folders. These properties will be used to set custom options on an per-album level. Check the
+                        readme for a complete documentation. (default: False)
+  --api-timeout API_TIMEOUT
+                        Timeout when requesting Immich API in seconds (default: 20)
+  --comments-and-likes-enabled
+                        Pass this argument to enable comment and like functionality in all albums this script adds assets to. Cannot be used together with --comments-and-likes-disabled (default: False)
+  --comments-and-likes-disabled
+                        Pass this argument to disable comment and like functionality in all albums this script adds assets to. Cannot be used together with --comments-and-likes-enabled (default: False)
+  --update-album-props-mode {0,1,2}
+                        Change how album properties are updated whenever new assets are added to an album. Album properties can either come from script arguments or the .albumprops file. Possible values: 0 = Do not change album
+                        properties. 1 = Only override album properties but do not change the share status. 2 = Override album properties and share status, this will remove all users from the album which are not in the SHARE_WITH list.
+                        (default: 0)
+
     ```
 
 __Plain example without optional arguments:__
@@ -454,7 +454,7 @@ Consider the following folder structure:
 
 ## Album Name Regex
 
-As a last step it is possible to run search and replace on Album Names. This can be repetitive with the following syntax: `--album-name-post-regex PATTERN [REPLACEMENT] [--album-name-post-regex  PATTERN [REPLACEMENT]]` 
+As a last step it is possible to run search and replace on Album Names. This can be repetitive with the following syntax: `-R PATTERN [REPLACEMENT] [-R PATTERN [REPLACEMENT]]` (equal to `--album-name-post-regex`)
   * PATTERN should be an regex
   * REPLACMENT is optional default ''
 
@@ -469,7 +469,7 @@ Consider the following folder structure where you have a YYYY/MMDD, YYYY/DD MMM 
 
 In a default way, the script would create Album as `2020 02 Feb My Birthday` and `2020 0408_Cycling_Holidays_in_the_Alps`. As we see, the Album Names gets pretty long and as immich extract EXIF dates, there is no need for these structed dates in the Album Name. Furthermore the underscores may be good for file operations but don't look nice in our Album Names. This can be accomplished with two Regex: 
 
-`--album-name-post-regex '[\d]+_|\d+\s\w{3}' --album-name-post-regex '_' ' '`
+`-R '[\d]+_|\d+\s\w{3}' -R '_' ' '`
 
 As a result, the Album Names will be `Cycling holidays in the Alps` and `My Birthday`
 

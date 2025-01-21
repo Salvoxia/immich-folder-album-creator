@@ -1658,7 +1658,7 @@ parser.add_argument("-a", "--album-levels", default="1", type=str,
                             If negative levels are used in a range, <startLevel> must be less than or equal to <endLevel>.""")
 parser.add_argument("-s", "--album-separator", default=" ", type=str,
                     help="Separator string to use for compound album names created from nested folders. Only effective if -a is set to a value > 1")
-parser.add_argument("--album-name-post-regex", nargs='+',
+parser.add_argument("-R", "--album-name-post-regex", nargs='+',
         action='append',
         metavar=('PATTERN', 'REPL'),
         help='Regex pattern and optional replacement (use "" for empty replacement). Can be specified multiple times.')
