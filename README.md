@@ -17,19 +17,43 @@ __Current compatibility:__ Immich v1.106.1 - v1.124.x
 This script is mostly based on the following original script: [REDVM/immich_auto_album.py](https://gist.github.com/REDVM/d8b3830b2802db881f5b59033cf35702)
 
 ## Table of Contents
-1. [Usage (Bare Python Script)](#bare-python-script)
-2. [Usage (Docker)](#docker)
-3. [Choosing the correct `root_path`](#choosing-the-correct-root_path)
-4. [How It Works (with Examples)](#how-it-works)
-5. [Filtering](#filtering)
-6. [Automatic Album Sharing](#automatic-album-sharing)
-7. [Cleaning Up Albums](#cleaning-up-albums)
-8. [Assets in Multiple Albums](#assets-in-multiple-albums)
-9. [Setting Album Thumbnails](#setting-album-thumbnails)
-10. [Setting Album-Fine Properties](#setting-album-fine-properties)
-11. [Mass Updating Album Properties](#mass-updating-album-properties)
-12. [Automatic Archiving](#automatic-archiving)
-13. [Dealing with External Library Changes](#dealing-with-external-library-changes)
+- [Immich Folder Album Creator](#immich-folder-album-creator)
+    - [Disclaimer](#disclaimer)
+  - [Table of Contents](#table-of-contents)
+  - [Usage](#usage)
+    - [Bare Python Script](#bare-python-script)
+    - [Docker](#docker)
+      - [Environment Variables](#environment-variables)
+      - [Run the container with Docker](#run-the-container-with-docker)
+      - [Run the container with Docker-Compose](#run-the-container-with-docker-compose)
+    - [Choosing the correct `root_path`](#choosing-the-correct-root_path)
+  - [How it works](#how-it-works)
+  - [Album Level Ranges](#album-level-ranges)
+  - [Filtering](#filtering)
+    - [Ignoring Assets](#ignoring-assets)
+    - [Filtering for Assets](#filtering-for-assets)
+    - [Filter Examples](#filter-examples)
+  - [Album Name Regex](#album-name-regex)
+    - [Regex Examples](#regex-examples)
+  - [Automatic Album Sharing](#automatic-album-sharing)
+    - [Album Sharing Examples (Bare Python Script)](#album-sharing-examples-bare-python-script)
+    - [Album Sharing Examples (Docker)](#album-sharing-examples-docker)
+  - [Cleaning Up Albums](#cleaning-up-albums)
+    - [`CLEANUP`](#cleanup)
+    - [`DELETE_ALL`](#delete_all)
+  - [Assets in Multiple Albums](#assets-in-multiple-albums)
+  - [Setting Album Thumbnails](#setting-album-thumbnails)
+  - [Setting Album-Fine Properties](#setting-album-fine-properties)
+    - [Prerequisites](#prerequisites)
+    - [`.albumprops` File Format](#albumprops-file-format)
+    - [Enabling `.albumprops` discovery](#enabling-albumprops-discovery)
+    - [Property Precedence](#property-precedence)
+  - [Mass Updating Album Properties](#mass-updating-album-properties)
+    - [Examples:](#examples)
+  - [Automatic Archiving](#automatic-archiving)
+  - [Dealing with External Library Changes](#dealing-with-external-library-changes)
+    - [`docker-compose` example passing the API key as environment variable](#docker-compose-example-passing-the-api-key-as-environment-variable)
+    - [`docker-compose` example using a secrets file for the API key](#docker-compose-example-using-a-secrets-file-for-the-api-key)
 
 ## Usage
 ### Bare Python Script
@@ -427,6 +451,29 @@ Consider the following folder structure:
   - `root_path=/external_libs/photos`
   - `--album-level=-1`
   - `--path-filter=**/Vacation/*`
+
+## Album Name Regex
+
+As a last step it is possible to run search and replace on Album Names. This can be repetitive with the following syntax: `--album-name-post-regex PATTERN [REPLACEMENT] [--album-name-post-regex  PATTERN [REPLACEMENT]]` 
+  * PATTERN should be an regex
+  * REPLACMENT is optional default ''
+
+### Regex Examples
+Consider the following folder structure where you have a YYYY/MMDD, YYYY/DD MMM or similar structure: 
+```
+/external_libs/photos/
+└──  2020/
+   └── 02 Feb My Birthday
+   └── 0408_Cycling_Holidays_in_the_Alps
+```
+
+In a default way, the script would create Album as `2020 02 Feb My Birthday` and `2020 0408_Cycling_Holidays_in_the_Alps`. As we see, the Album Names gets pretty long and as immich extract EXIF dates, there is no need for these structed dates in the Album Name. Furthermore the underscores may be good for file operations but don't look nice in our Album Names. This can be accomplished with two Regex: 
+
+`--album-name-post-regex '[\d]+_|\d+\s\w{3}' --album-name-post-regex '_' ' '`
+
+As a result, the Album Names will be `Cycling holidays in the Alps` and `My Birthday`
+
+This feature is suggested to be run as python script directly. ENV variables may cause some challanges. 
 
 
 ## Automatic Album Sharing

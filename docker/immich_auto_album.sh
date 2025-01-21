@@ -77,12 +77,8 @@ if [ ! -z "$ALBUM_SEPARATOR" ]; then
     args="--album-separator \"$ALBUM_SEPARATOR\" $args"
 fi
 
-if [ ! -z "$ALBUM_NAME_REGEX" ]; then
-    args="--album-name-regex \"$ALBUM_NAME_REGEX\" $args"
-fi
-
-if [ ! -z "$ALBUM_NAME_REPLACE" ]; then
-    args="--album-name_replace \"$ALBUM_NAME_REPLACE\" $args"
+if [ ! -z "$ALBUM_NAME_POST_REGEX" ]; then
+    args="--album-name-post-regex \"$ALBUM_NAME_POST_REGEX\" $args"
 fi
 
 if [ ! -z "$FETCH_CHUNK_SIZE" ]; then
