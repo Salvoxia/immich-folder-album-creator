@@ -67,7 +67,7 @@ This script is mostly based on the following original script: [REDVM/immich_auto
     pip3 install -r requirements.txt
     ```
 3. Run the script
-    ```
+```
     usage: immich_auto_album.py [-h] [-t {literal,file}] [-r ROOT_PATH] [-u] [-a ALBUM_LEVELS] [-s ALBUM_SEPARATOR] [-R PATTERN [REPL ...]] [-c CHUNK_SIZE] [-C FETCH_CHUNK_SIZE] [-l {CRITICAL,ERROR,WARNING,INFO,DEBUG}] [-k] [-i IGNORE]
                             [-m {CREATE,CLEANUP,DELETE_ALL}] [-d] [-x SHARE_WITH] [-o {viewer,editor}] [-S {0,1,2}] [-O {False,asc,desc}] [-A] [-f PATH_FILTER] [--set-album-thumbnail {first,last,random,random-all,random-filtered}] [-v]
                             [--find-archived-assets] [--read-album-properties] [--api-timeout API_TIMEOUT] [--comments-and-likes-enabled] [--comments-and-likes-disabled] [--update-album-props-mode {0,1,2}]
@@ -147,7 +147,7 @@ options:
                         properties. 1 = Only override album properties but do not change the share status. 2 = Override album properties and share status, this will remove all users from the album which are not in the SHARE_WITH list.
                         (default: 0)
 
-    ```
+```
 
 __Plain example without optional arguments:__
 ```bash
