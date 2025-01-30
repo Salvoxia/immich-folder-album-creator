@@ -321,7 +321,7 @@ def build_album_properties_templates() -> dict:
 
         # remove last item from path chunks, which is the file name
         del path_chunks[-1]
-        album_name = create_album_name(path_chunks, album_level_separator)
+        album_name = create_album_name(path_chunks, album_level_separator, album_name_post_regex)
 
         try:
             # Parse the album properties into an album model
@@ -600,13 +600,15 @@ def parse_separated_strings(items: list[str]) -> dict:
             parsed_strings_dict[key] = value
     return parsed_strings_dict
 
-def create_album_name(asset_path_chunks: list[str], album_separator: str) -> str:
+def create_album_name(asset_path_chunks: list[str], album_separator: str, album_name_post_regex: list = [str]) -> str:
     """
     Create album names from provided path_chunks string array.
 
     The method uses global variables album_levels_range_arr or album_levels to
     generate album names either by level range or absolute album levels. If multiple
     album path chunks are used for album names they are separated by album_separator.
+
+    album_name_post_regex is list of pairs of regex and replace, this is optional
     """
 
     album_name_chunks = ()
@@ -649,7 +651,20 @@ def create_album_name(asset_path_chunks: list[str], album_separator: str) -> str
         if album_name_chunk_size < 0:
             album_name_chunks = asset_path_chunks[album_name_chunk_size:]
     logging.debug("album_name_chunks = %s", album_name_chunks)
-    return album_separator.join(album_name_chunks)
+
+    # final album name before regex
+    album_name = album_separator.join(album_name_chunks)
+    logging.debug(f"Album Name {album_name}")
+
+    # apply regex if any
+    if album_name_post_regex:
+        for pattern, *repl in album_name_post_regex:
+            # If no replacement string provided, default to empty string
+            replace = repl[0] if repl else ''
+            album_name = re.sub(pattern, replace, album_name)    
+            logging.debug(f"Album Post Regex s/{pattern}/{replace}/g --> {album_name}")
+
+    return album_name.strip()
 
 def fetch_server_version() -> dict:
     """
@@ -1571,7 +1586,7 @@ def build_album_list(asset_list : list[dict], root_path_list : list[str], album_
 
         # remove last item from path chunks, which is the file name
         del path_chunks[-1]
-        album_name = create_album_name(path_chunks, album_level_separator)
+        album_name = create_album_name(path_chunks, album_level_separator, album_name_post_regex)
         if len(album_name) > 0:
             # First check if there are album properties for this album
             if album_name in album_props_templates:
@@ -1643,6 +1658,10 @@ parser.add_argument("-a", "--album-levels", default="1", type=str,
                             If negative levels are used in a range, <startLevel> must be less than or equal to <endLevel>.""")
 parser.add_argument("-s", "--album-separator", default=" ", type=str,
                     help="Separator string to use for compound album names created from nested folders. Only effective if -a is set to a value > 1")
+parser.add_argument("-R", "--album-name-post-regex", nargs='+',
+        action='append',
+        metavar=('PATTERN', 'REPL'),
+        help='Regex pattern and optional replacement (use "" for empty replacement). Can be specified multiple times.')
 parser.add_argument("-c", "--chunk-size", default=2000, type=int, help="Maximum number of assets to add to an album with a single API call")
 parser.add_argument("-C", "--fetch-chunk-size", default=5000, type=int, help="Maximum number of assets to fetch with a single API call")
 parser.add_argument("-l", "--log-level", default="INFO", choices=['CRITICAL', 'ERROR', 'WARNING', 'INFO', 'DEBUG'], help="Log level to use")
@@ -1727,6 +1746,7 @@ album_levels = args["album_levels"]
 # Album Levels Range handling
 album_levels_range_arr = ()
 album_level_separator = args["album_separator"]
+album_name_post_regex = args["album_name_post_regex"]
 album_order = args["album_order"]
 insecure = args["insecure"]
 ignore_albums = args["ignore"]
@@ -1765,6 +1785,7 @@ logging.debug("unattended = %s", unattended)
 logging.debug("album_levels = %s", album_levels)
 #logging.debug("album_levels_range = %s", album_levels_range)
 logging.debug("album_level_separator = %s", album_level_separator)
+logging.debug("album_name_post_regex= %s", album_name_post_regex)
 logging.debug("album_order = %s", album_order)
 logging.debug("insecure = %s", insecure)
 logging.debug("ignore = %s", ignore_albums)

@@ -44,6 +44,26 @@ if [ ! -z "$IGNORE" ]; then
     done
 fi
 
+## parse ABLUM_NAME_POST_REGEX<n>
+# Split on newline only
+IFS=$(echo -en "\n\b")´
+album_name_post_regex_list=""
+# Support up to 10 regex patterns
+regex_max=10
+for regex_no in `seq 1 $regex_max`
+do
+    for entry in `env`
+    do
+        # check if env variable name begins with ALBUM_POST_NAME_REGEX followed by a the current regex no and and equal sign
+        pattern=$(echo "^ALBUM_NAME_POST_REGEX${regex_no}+=.+")
+        TEST=$(echo "${entry}" | grep -E "$pattern")
+        if [ ! -z "${TEST}" ]; then
+            value=$(echo ${entry} |  cut -d'=' -f2)
+            album_name_post_regex_list="$album_name_post_regex_list --album-name-post-regex $value"
+        fi
+    done
+done
+
 # reset IFS
 IFS=$oldIFS
 
@@ -75,6 +95,10 @@ fi
 
 if [ ! -z "$ALBUM_SEPARATOR" ]; then
     args="--album-separator \"$ALBUM_SEPARATOR\" $args"
+fi
+
+if [ ! -z "$album_name_post_regex_list" ]; then
+    args="$album_name_post_regex_list $args"
 fi
 
 if [ ! -z "$FETCH_CHUNK_SIZE" ]; then
