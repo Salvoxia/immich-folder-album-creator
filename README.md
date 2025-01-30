@@ -11,7 +11,7 @@ This is a python script designed to automatically create albums in [Immich](http
 This is useful for automatically creating and populating albums for external libraries.
 Using the provided docker image, the script can simply be added to the Immich compose stack and run along the rest of Immich's containers.
 
-__Current compatibility:__ Immich v1.106.1 - v1.124.x
+__Current compatibility:__ Immich v1.106.1 - v1.125.x
 
 ### Disclaimer
 This script is mostly based on the following original script: [REDVM/immich_auto_album.py](https://gist.github.com/REDVM/d8b3830b2802db881f5b59033cf35702)
@@ -176,36 +176,37 @@ A Docker image is provided to be used as a runtime environment. It can be used t
 #### Environment Variables
 The environment variables are analogous to the script's command line arguments.
 
-| Environment variable | Mandatory? | Description |
-| :------------------- | :--------- | :---------- |
-| ROOT_PATH            | yes | A single or a comma separated list of import paths for external libraries in Immich. <br>Refer to [Choosing the correct `root_path`](#choosing-the-correct-root_path).|
-| API_URL            | yes | The root API URL of immich, e.g. https://immich.mydomain.com/api/ |
-| API_KEY            | no | The Immich API Key to use. Either `API_KEY` or `API_KEY_FILE` must be specified. The `API_KEY` variable takes precedence for ease of manual execution, but it is recommended to use `API_KEY_FILE`. 
-| API_KEY_FILE       | no | An absolute path (from the root of the container) to a file containing the Immich API Key. The file might be mounted into the container using a volume (e.g. `-v /path/to/api_key.secret:/immich_api_key.secret:ro`). The file must contain only the value. |
-| CRON_EXPRESSION    | yes | A [crontab-style expression](https://crontab.guru/) (e.g. `0 * * * *`) to perform album creation on a schedule (e.g. every hour). |
-| RUN_IMMEDIATELY    | no | Set to `true` to run the script right away, after running once the script will automatically run again based on the CRON_EXPRESSION |
-| ALBUM_LEVELS       | no | Number of sub-folders or range of sub-folder levels below the root path used for album name creation. Positive numbers start from top of the folder structure, negative numbers from the bottom. Cannot be `0`. If a range should be set, the start level and end level must be separated by a comma. <br>Refer to [How it works](#how-it-works) for a detailed explanation and examples. |
-| ALBUM_SEPARATOR    | no | Separator string to use for compound album names created from nested folders. Only effective if `-a` is set to a value `> 1`(default: "` `") |
-| CHUNK_SIZE         | no | Maximum number of assets to add to an album with a single API call (default: `2000`)  |
-| FETCH_CHUNK_SIZE   | no | Maximum number of assets to fetch with a single API call (default: `5000`)            |
-| LOG_LEVEL          | no | Log level to use (default: INFO), allowed values: `CRITICAL`,`ERROR`,`WARNING`,`INFO`,`DEBUG` |
-| INSECURE           | no | Set to `true` to disable SSL verification for the Immich API server, useful for self-signed certificates (default: `false`), allowed values: `true`, `false` |
-| IGNORE             | no | A colon `:` separated list of literals or glob-style patterns that will cause an image to be ignored if found in its path. |
-| MODE               | no | Mode for the script to run with. <br> __`CREATE`__ = Create albums based on folder names and provided arguments<br>__`CLEANUP`__ = Create album names based on current images and script arguments, but delete albums if they exist <br> __`DELETE_ALL`__ = Delete all albums. <br> If the mode is anything but `CREATE`, `--unattended` does not have any effect. <br> (default: `CREATE`). <br>Refer to [Cleaning Up Albums](#cleaning-up-albums). |
-| DELETE_CONFIRM     | no | Confirm deletion of albums when running in mode `CLEANUP` or `DELETE_ALL`. If this flag is not set, these modes will perform a dry run only. Has no effect in mode `CREATE` (default: `False`). <br>Refer to [Cleaning Up Albums](#cleaning-up-albums).|
-| SHARE_WITH     | no | A single or a colon (`:`) separated list of existing user names (or email addresses of existing users) to share newly created albums with. If the the share role should be specified by user, the format <userName>=<shareRole> must be used, where <shareRole> must be one of `viewer` or `editor`. May be specified multiple times to share albums with more than one user. (default: None) Sharing only happens if an album is actually created, not if new assets are added to it.  <br>Refer to [Automatic Album Sharing](#automatic-album-sharing).|
-| SHARE_ROLE     | no | The role for users newly created albums are shared with. Only effective if `SHARE_WITH` is not empty and no explicit share role was specified for at least one user. (default: viewer), allowed values: `viewer`, `editor` |
-| SYNC_MODE     | no | Synchronization mode to use. Synchronization mode helps synchronizing changes in external libraries structures to Immich after albums have already been created. Possible Modes: <br>`0` = do nothing<br>`1` = Delete any empty albums<br>`2` =  Delete offline assets AND any empty albums<br>(default: `0`)<br>Refer to [Dealing with External Library Changes](#dealing-with-external-library-changes). |
-| ALBUM_ORDER     | no | Set sorting order for newly created albums to newest (`desc`) or oldest (`asc`) file first, Immich defaults to newest file first, allowed values: `asc`, `desc` |
-| FIND_ASSETS_IN_ALBUMS     | no | By default, the script only finds assets that are not assigned to any album yet. Set this option to make the script discover assets that are already part of an album and handle them as usual. If --find-archived-assets is set as well, both options apply. (default: `False`)<br>Refer to [Assets in Multiple Albums](#assets-in-multiple-albums). |
-| PATH_FILTER     | no | A colon `:` separated list of literals or glob-style patterns to filter assets before album name creation. (default: ``)<br>Refer to [Filtering](#filtering). |
-| SET_ALBUM_THUMBNAIL | no | Set first/last/random image as thumbnail (based on image creation timestamp) for newly created albums or albums assets have been added to.<br> Allowed values: `first`,`last`,`random`,`random-filtered`,`random-all`<br>If set to `random-filtered`, thumbnails are shuffled for all albums whose assets would not be filtered out or ignored by the `IGNORE` or `PATH_FILTER` options, even if no assets were added during the run. If set to random-all, the thumbnails for ALL albums will be shuffled on every run. (default: `None`)<br>Refer to [Setting Album Thumbnails](#setting-album-thumbnails). |
-| ARCHIVE     | no | Set this option to automatically archive all assets that were newly added to albums.<br>If this option is set in combination with `MODE` = `CLEANUP` or `DELETE_ALL`, archived images of deleted albums will be unarchived.<br>Archiving hides the assets from Immich's timeline. (default: `False`)<br>Refer to [Automatic Archiving](#automatic-archiving). |
-| FIND_ARCHIVED_ASSETS     | no | By default, the script only finds assets that are not archived in Immich. Set this option make the script discover assets that are already archived. If -A/--find-assets-in-albums is set as well, both options apply. (default: `False`)<br>Refer to [Automatic Archiving](#automatic-archiving). |
-| READ_ALBUM_PROPERTIES     | no | Set to `True` to enable discovery of `.albumprops` files in root paths, allowing to set different album properties for different albums. (default: `False`)<br>Refer to [Setting Album-Fine Properties](#setting-album-fine-properties). |
-| API_TIMEOUT         | no | Timeout when requesting Immich API in seconds (default: `20`) |
-| COMMENTS_AND_LIKES  | no | Set to `1` to explicitly enable Comments & Likes functionality for all albums this script adds assets to, set to `0` to disable. If not set, this setting is left alone by the script. |
-| UPDATE_ALBUM_PROPS_MODE | no | Change how album properties are updated whenever new assets are added to an album. Album properties can either come from script arguments or the `.albumprops` file. Possible values: <br>`0` = Do not change album properties.<br> `1` = Only override album properties but do not change the share status.<br> `2` = Override album properties and share status, this will remove all users from the album which are not in the SHARE_WITH list. |
+| Environment variable         | Mandatory? | Description |
+| :--------------------------- | :--------- | :---------- |
+| `ROOT_PATH`                  | yes        | A single or a comma separated list of import paths for external libraries in Immich. <br>Refer to [Choosing the correct `root_path`](#choosing-the-correct-root_path).|
+| `API_URL`                    | yes        | The root API URL of immich, e.g. https://immich.mydomain.com/api/ |
+| `API_KEY`                    | no         | The Immich API Key to use. Either `API_KEY` or `API_KEY_FILE` must be specified. The `API_KEY` variable takes precedence for ease of manual execution, but it is recommended to use `API_KEY_FILE`. 
+| `API_KEY_FILE`               | no         | An absolute path (from the root of the container) to a file containing the Immich API Key. The file might be mounted into the container using a volume (e.g. `-v /path/to/api_key.secret:/immich_api_key.secret:ro`). The file must contain only the value. |
+| `CRON_EXPRESSION`            | yes        | A [crontab-style expression](https://crontab.guru/) (e.g. `0 * * * *`) to perform album creation on a schedule (e.g. every hour). |
+| `RUN_IMMEDIATELY`            | no         | Set to `true` to run the script right away, after running once the script will automatically run again based on the CRON_EXPRESSION |
+| `ALBUM_LEVELS`               | no         | Number of sub-folders or range of sub-folder levels below the root path used for album name creation. Positive numbers start from top of the folder structure, negative numbers from the bottom. Cannot be `0`. If a range should be set, the start level and end level must be separated by a comma. <br>Refer to [How it works](#how-it-works) for a detailed explanation and examples. |
+| `ALBUM_SEPARATOR`            | no         | Separator string to use for compound album names created from nested folders. Only effective if `-a` is set to a value `> 1`(default: "` `") |
+| `CHUNK_SIZE`                 | no         | Maximum number of assets to add to an album with a single API call (default: `2000`)  |
+| `FETCH_CHUNK_SIZE`           | no         | Maximum number of assets to fetch with a single API call (default: `5000`)            |
+| `LOG_LEVEL`                  | no         | Log level to use (default: INFO), allowed values: `CRITICAL`,`ERROR`,`WARNING`,`INFO`,`DEBUG` |
+| `INSECURE`                   | no         | Set to `true` to disable SSL verification for the Immich API server, useful for self-signed certificates (default: `false`), allowed values: `true`, `false` |
+| `IGNORE`                     | no         | A colon `:` separated list of literals or glob-style patterns that will cause an image to be ignored if found in its path. |
+| `MODE`                       | no         | Mode for the script to run with. <br> __`CREATE`__ = Create albums based on folder names and provided arguments<br>__`CLEANUP`__ = Create album names based on current images and script arguments, but delete albums if they exist <br> __`DELETE_ALL`__ = Delete all albums. <br> If the mode is anything but `CREATE`, `--unattended` does not have any effect. <br> (default: `CREATE`). <br>Refer to [Cleaning Up Albums](#cleaning-up-albums). |
+| `DELETE_CONFIRM`             | no         | Confirm deletion of albums when running in mode `CLEANUP` or `DELETE_ALL`. If this flag is not set, these modes will perform a dry run only. Has no effect in mode `CREATE` (default: `False`). <br>Refer to [Cleaning Up Albums](#cleaning-up-albums).|
+| `SHARE_WITH`                 | no         | A single or a colon (`:`) separated list of existing user names (or email addresses of existing users) to share newly created albums with. If the the share role should be specified by user, the format <userName>=<shareRole> must be used, where <shareRole> must be one of `viewer` or `editor`. May be specified multiple times to share albums with more than one user. (default: None) Sharing only happens if an album is actually created, not if new assets are added to it.  <br>Refer to [Automatic Album Sharing](#automatic-album-sharing).|
+| `SHARE_ROLE`                 | no         | The role for users newly created albums are shared with. Only effective if `SHARE_WITH` is not empty and no explicit share role was specified for at least one user. (default: viewer), allowed values: `viewer`, `editor` |
+| `SYNC_MODE`                  | no         | Synchronization mode to use. Synchronization mode helps synchronizing changes in external libraries structures to Immich after albums have already been created. Possible Modes: <br>`0` = do nothing<br>`1` = Delete any empty albums<br>`2` =  Delete offline assets AND any empty albums<br>(default: `0`)<br>Refer to [Dealing with External Library Changes](#dealing-with-external-library-changes). |
+| `ALBUM_ORDER`                | no         | Set sorting order for newly created albums to newest (`desc`) or oldest (`asc`) file first, Immich defaults to newest file first, allowed values: `asc`, `desc` |
+| `FIND_ASSETS_IN_ALBUMS`      | no         | By default, the script only finds assets that are not assigned to any album yet. Set this option to make the script discover assets that are already part of an album and handle them as usual. If --find-archived-assets is set as well, both options apply. (default: `False`)<br>Refer to [Assets in Multiple Albums](#assets-in-multiple-albums). |
+| `PATH_FILTER`                | no         | A colon `:` separated list of literals or glob-style patterns to filter assets before album name creation. (default: ``)<br>Refer to [Filtering](#filtering). |
+| `SET_ALBUM_THUMBNAIL`        | no         | Set first/last/random image as thumbnail (based on image creation timestamp) for newly created albums or albums assets have been added to.<br> Allowed values: `first`,`last`,`random`,`random-filtered`,`random-all`<br>If set to `random-filtered`, thumbnails are shuffled for all albums whose assets would not be filtered out or ignored by the `IGNORE` or `PATH_FILTER` options, even if no assets were added during the run. If set to random-all, the thumbnails for ALL albums will be shuffled on every run. (default: `None`)<br>Refer to [Setting Album Thumbnails](#setting-album-thumbnails). |
+| `ARCHIVE`                    | no         | Set this option to automatically archive all assets that were newly added to albums.<br>If this option is set in combination with `MODE` = `CLEANUP` or `DELETE_ALL`, archived images of deleted albums will be unarchived.<br>Archiving hides the assets from Immich's timeline. (default: `False`)<br>Refer to [Automatic Archiving](#automatic-archiving). |
+| `FIND_ARCHIVED_ASSETS`       | no         | By default, the script only finds assets that are not archived in Immich. Set this option make the script discover assets that are already archived. If -A/--find-assets-in-albums is set as well, both options apply. (default: `False`)<br>Refer to [Automatic Archiving](#automatic-archiving). |
+| `READ_ALBUM_PROPERTIES`      | no         | Set to `True` to enable discovery of `.albumprops` files in root paths, allowing to set different album properties for different albums. (default: `False`)<br>Refer to [Setting Album-Fine Properties](#setting-album-fine-properties). |
+| `API_TIMEOUT`                | no         | Timeout when requesting Immich API in seconds (default: `20`) |
+| `COMMENTS_AND_LIKES`         | no         | Set to `1` to explicitly enable Comments & Likes functionality for all albums this script adds assets to, set to `0` to disable. If not set, this setting is left alone by the script. |
+| `UPDATE_ALBUM_PROPS_MODE`    | no         | Change how album properties are updated whenever new assets are added to an album. Album properties can either come from script arguments or the `.albumprops` file. Possible values: <br>`0` = Do not change album properties.<br> `1` = Only override album properties but do not change the share status.<br> `2` = Override album properties and share status, this will remove all users from the album which are not in the SHARE_WITH list. |
+| `ALBUM_NAME_POST_REGEX1..10` | no         | Up to 10 numbered environment variables `ALBUM_NAME_POST_REGEX1` to `ALBUM_NAME_POST_REGEX10` for album name post processing with regular expressions.<br> Refer to [Album Name Regex](#album-name-regex) |
 
 #### Run the container with Docker
 
@@ -457,7 +458,10 @@ Consider the following folder structure:
 
 As a last step it is possible to run search and replace on Album Names. This can be repetitive with the following syntax: `-R PATTERN [REPLACEMENT] [-R PATTERN [REPLACEMENT]]` (equal to `--album-name-post-regex`)
   * PATTERN should be an regex
-  * REPLACMENT is optional default ''
+  * REPLACEMENT is optional default ''
+The search and replace operations are performed in the sequence the patterns and replacements are passed to the script.
+
+For Docker, these patterns are passed in numbered environment variables starting with `ALBUM_NAME_POST_REGEX1` up to `ALBUM_NAME_POST_REGEX10`. These are passed to the script in ascending order.
 
 ### Regex Examples
 Consider the following folder structure where you have a YYYY/MMDD, YYYY/DD MMM or similar structure: 
@@ -468,13 +472,57 @@ Consider the following folder structure where you have a YYYY/MMDD, YYYY/DD MMM 
    └── 0408_Cycling_Holidays_in_the_Alps
 ```
 
-In a default way, the script would create Album as `2020 02 Feb My Birthday` and `2020 0408_Cycling_Holidays_in_the_Alps`. As we see, the Album Names gets pretty long and as immich extract EXIF dates, there is no need for these structed dates in the Album Name. Furthermore the underscores may be good for file operations but don't look nice in our Album Names. This can be accomplished with two Regex: 
+In a default way, the script would create Album as `2020 02 Feb My Birthday` and `2020 0408_Cycling_Holidays_in_the_Alps`.  
+As we see, the album names get pretty long and as Immich extracts EXIF dates, there is no need for these structed dates in album name. Furthermore, the underscores may be good for file operations but don't look nice in our album names. Cleaning up the album names can be accomplished with two regular expressions in sequence:
 
-`-R '[\d]+_|\d+\s\w{3}' -R '_' ' '`
+```bash
+python3 immich_auto_album.py /mnt/library http://localhost:2283/api <key> \
+  --album-levels 2 \
+  --album-separator '' \
+  --album-name-post-regex '[\d]+_|\d+\s\w{3}' \
+  --album-name-post-regex '_' ' '
+```
+The first pattern only specifies a regular expression and no replacement, which means any matching string will effectively be removed from the album name.  
+The second pattern specifies to replace underscores `_` with a blank ` `.  
+As a result, the album names will be `Cycling holidays in the Alps` and `My Birthday`.
 
-As a result, the Album Names will be `Cycling holidays in the Alps` and `My Birthday`
+>[!IMPORTANT]  
+>When using this feature with Docker, the regular expressions need to retain the single quotes `'`.
+>In `docker-compose`, backslashes must be escaped as well!
 
-This feature is suggested to be run as python script directly. ENV variables may cause some challanges. 
+Example when running from command line:
+```bash
+docker run \
+  -e ROOT_PATH="/external_libs/photos" \
+  -e API_URL=" http://localhost:2283/api" \
+  -e API_KEY="<key>" \
+  -e ALBUM_LEVELS="2" \
+  -e ALBUM_SEPARATOR="" \
+  -e ALBUM_NAME_POST_REGEX1="'[\d]+_|\d+\s\w{3}'" \
+  -e ALBUM_NAME_POST_REGEX2="'_' ' '"
+```
+
+Example when using `docker-compose`:
+```yaml
+---
+services:
+  immich-folder-album-creator:
+    container_name: immich_folder_album_creator
+    image: salvoxia/immich-folder-album-creator:latest
+    restart: unless-stopped
+    environment:
+      API_URL: http://immich_server:2283/api
+      API_KEY: <key>
+      ROOT_PATH: /external_libs/photos
+      ALBUM_LEVELS: 2
+      ALBUM_SEPARATOR: ""
+      # backslashes must be escaped in YAML
+      ALBUM_NAME_POST_REGEX1: "'[\\d]+_|\\d+\\s\\w{3}'"
+      ALBUM_NAME_POST_REGEX2: "'_' ' '"
+      LOG_LEVEL: DEBUG
+      CRON_EXPRESSION: "0 * * * *"
+      TZ: Europe/Berlin
+```
 
 
 ## Automatic Album Sharing
