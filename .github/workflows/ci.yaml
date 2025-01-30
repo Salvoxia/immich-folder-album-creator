@@ -1,10 +1,15 @@
 name: CI
 
-on: [push]
+'on':
+  pull_request:
+  push:
+    paths-ignore:
+      - 'README.md'
 
 jobs:
-  build:
+  lint:
     runs-on: ubuntu-latest
+    name: Lint
     strategy:
       matrix:
         python-version: ["3.10", "3.11", "3.12"]
