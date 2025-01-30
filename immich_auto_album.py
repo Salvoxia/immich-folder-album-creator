@@ -600,7 +600,8 @@ def parse_separated_strings(items: list[str]) -> dict:
             parsed_strings_dict[key] = value
     return parsed_strings_dict
 
-def create_album_name(asset_path_chunks: list[str], album_separator: str, album_name_post_regex: list = [str]) -> str:
+# pylint: disable=R0912
+def create_album_name(asset_path_chunks: list[str], album_separator: str, album_name_postprocess_regex: list) -> str:
     """
     Create album names from provided path_chunks string array.
 
@@ -608,8 +609,10 @@ def create_album_name(asset_path_chunks: list[str], album_separator: str, album_
     generate album names either by level range or absolute album levels. If multiple
     album path chunks are used for album names they are separated by album_separator.
 
-    album_name_post_regex is list of pairs of regex and replace, this is optional
+    album_name_postprocess_regex is list of pairs of regex and replace, this is optional
     """
+    if album_name_postprocess_regex is None:
+        album_name_postprocess_regex = [str]
 
     album_name_chunks = ()
     logging.debug("path chunks = %s", list(asset_path_chunks))
@@ -654,15 +657,15 @@ def create_album_name(asset_path_chunks: list[str], album_separator: str, album_
 
     # final album name before regex
     album_name = album_separator.join(album_name_chunks)
-    logging.debug(f"Album Name {album_name}")
+    logging.debug("Album Name %s", album_name)
 
     # apply regex if any
-    if album_name_post_regex:
-        for pattern, *repl in album_name_post_regex:
+    if album_name_postprocess_regex:
+        for pattern, *repl in album_name_postprocess_regex:
             # If no replacement string provided, default to empty string
             replace = repl[0] if repl else ''
-            album_name = re.sub(pattern, replace, album_name)    
-            logging.debug(f"Album Post Regex s/{pattern}/{replace}/g --> {album_name}")
+            album_name = re.sub(pattern, replace, album_name)
+            logging.debug("Album Post Regex s/%s/%s/g --> %s", pattern, replace, album_name)
 
     return album_name.strip()
 
