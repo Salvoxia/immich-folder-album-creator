@@ -611,8 +611,6 @@ def create_album_name(asset_path_chunks: list[str], album_separator: str, album_
 
     album_name_postprocess_regex is list of pairs of regex and replace, this is optional
     """
-    if album_name_postprocess_regex is None:
-        album_name_postprocess_regex = [str]
 
     album_name_chunks = ()
     logging.debug("path chunks = %s", list(asset_path_chunks))
