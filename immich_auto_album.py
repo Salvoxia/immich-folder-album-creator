@@ -9,9 +9,10 @@ import fnmatch
 import os
 import datetime
 from collections import defaultdict, OrderedDict
-import re
 import random
 from urllib.error import HTTPError
+
+import regex
 import yaml
 
 import urllib3
@@ -460,7 +461,7 @@ escaped_glob_tokens_to_re = OrderedDict((
     ('\\]', ']'),
 ))
 
-escaped_glob_replacement = re.compile('(%s)' % '|'.join(escaped_glob_tokens_to_re).replace('\\', '\\\\\\'))
+escaped_glob_replacement = regex.compile('(%s)' % '|'.join(escaped_glob_tokens_to_re).replace('\\', '\\\\\\'))
 
 def glob_to_re(pattern: str) -> str:
     """ 
@@ -475,7 +476,7 @@ def glob_to_re(pattern: str) -> str:
     ---------
         A regular expression matching the same strings as the provided GLOB pattern
     """
-    return escaped_glob_replacement.sub(lambda match: escaped_glob_tokens_to_re[match.group(0)], re.escape(pattern))
+    return escaped_glob_replacement.sub(lambda match: escaped_glob_tokens_to_re[match.group(0)], regex.escape(pattern))
 
 def read_file(file_path: str) -> str:
     """ 
@@ -662,7 +663,7 @@ def create_album_name(asset_path_chunks: list[str], album_separator: str, album_
         for pattern, *repl in album_name_postprocess_regex:
             # If no replacement string provided, default to empty string
             replace = repl[0] if repl else ''
-            album_name = re.sub(pattern, replace, album_name)
+            album_name = regex.sub(pattern, replace, album_name)
             logging.debug("Album Post Regex s/%s/%s/g --> %s", pattern, replace, album_name)
 
     return album_name.strip()
@@ -874,7 +875,7 @@ def is_path_ignored(path_to_check: str) -> bool:
         if len(path_filter_regex) > 0:
             any_match = False
             for path_filter_regex_entry in path_filter_regex:
-                if re.fullmatch(path_filter_regex_entry, path_to_check.replace(asset_root_path, '')):
+                if regex.fullmatch(path_filter_regex_entry, path_to_check.replace(asset_root_path, '')):
                     any_match = True
             if not any_match:
                 logging.debug("Ignoring path %s due to path_filter setting!", path_to_check)
@@ -882,7 +883,7 @@ def is_path_ignored(path_to_check: str) -> bool:
         # If the asset "survived" the path filter, check if it is in the ignore_albums argument
         if not is_path_ignored_result and len(ignore_albums_regex) > 0:
             for ignore_albums_regex_entry in ignore_albums_regex:
-                if re.fullmatch(ignore_albums_regex_entry, path_to_check.replace(asset_root_path, '')):
+                if regex.fullmatch(ignore_albums_regex_entry, path_to_check.replace(asset_root_path, '')):
                     is_path_ignored_result = True
                     logging.debug("Ignoring path %s due to ignore_albums setting!", path_to_check)
                     break
