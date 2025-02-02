@@ -46,7 +46,7 @@ fi
 
 ## parse ABLUM_NAME_POST_REGEX<n>
 # Split on newline only
-IFS=$(echo -en "\n\b")´
+IFS=$(echo -en "\n\b")
 album_name_post_regex_list=""
 # Support up to 10 regex patterns
 regex_max=10
@@ -58,7 +58,7 @@ do
         pattern=$(echo "^ALBUM_NAME_POST_REGEX${regex_no}+=.+")
         TEST=$(echo "${entry}" | grep -E "$pattern")
         if [ ! -z "${TEST}" ]; then
-            value=$(echo ${entry} |  cut -d'=' -f2)
+            value="${entry#*=}" # select everything after the first `=`
             album_name_post_regex_list="$album_name_post_regex_list --album-name-post-regex $value"
         fi
     done
