@@ -1835,8 +1835,8 @@ if not is_integer(album_levels):
             not is_integer(album_levels_range_split[1]),
             int(album_levels_range_split[0]) == 0,
             int(album_levels_range_split[1]) == 0,
-            (int(album_levels_range_split[1]) < 0 >= int(album_levels_range_split[0])),
-            (int(album_levels_range_split[0]) < 0 >= int(album_levels_range_split[1])),
+            (int(album_levels_range_split[1]) < 0 <= int(album_levels_range_split[0])),
+            (int(album_levels_range_split[0]) < 0 <= int(album_levels_range_split[1])),
             (int(album_levels_range_split[0]) < 0 and int(album_levels_range_split[1]) < 0 and int(album_levels_range_split[0]) > int(album_levels_range_split[1]))
         ]):
         logging.error(("Invalid album_levels range format! If a range should be set, the start level and end level must be separated by a comma like '<startLevel>,<endLevel>'. "
