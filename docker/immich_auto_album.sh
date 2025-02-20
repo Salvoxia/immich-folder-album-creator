@@ -90,7 +90,7 @@ if [ ! -z "$additional_root_paths" ]; then
 fi
 
 if [ ! -z "$ALBUM_LEVELS" ]; then
-    args="--album-levels=$ALBUM_LEVELS $args"
+    args="--album-levels=\"$ALBUM_LEVELS\" $args"
 fi
 
 if [ ! -z "$ALBUM_SEPARATOR" ]; then
