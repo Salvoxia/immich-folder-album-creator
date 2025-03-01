@@ -1026,7 +1026,7 @@ def update_album_shared_state(album_to_share: AlbumModel, unshare_users: bool) -
                 logging.warning("Error sharing album %s for users %s in role %s", album_to_share.get_final_name(), share_users, share_role_group)
                 logging.debug("Album share error: %s", ex)
 
-def unshare_album_with_user(album_id_to_unshare: str, unshare_user_id: str):
+def unshare_album_with_user(album_id_to_unshare: str, unshare_user_id: str) -> None:
     """
     Unshares the provided album with the provided user
 
@@ -1044,7 +1044,7 @@ def unshare_album_with_user(album_id_to_unshare: str, unshare_user_id: str):
     r = requests.delete(root_url+api_endpoint, **requests_kwargs, timeout=api_timeout)
     check_api_response(r)
 
-def update_album_share_user_role(album_id_to_share: str, share_user_id: str, share_user_role: str):
+def update_album_share_user_role(album_id_to_share: str, share_user_id: str, share_user_role: str) -> None:
     """
     Updates the user's share role for the provided album ID.
 
@@ -1072,7 +1072,7 @@ def update_album_share_user_role(album_id_to_share: str, share_user_id: str, sha
     r = requests.put(root_url+api_endpoint, json=data, **requests_kwargs, timeout=api_timeout)
     check_api_response(r)
 
-def share_album_with_user_and_role(album_id_to_share: str, user_ids_to_share_with: list[str], user_share_role: str):
+def share_album_with_user_and_role(album_id_to_share: str, user_ids_to_share_with: list[str], user_share_role: str) -> None:
     """
     Shares the album with the provided album_id with all provided share_user_ids
     using share_role as a role.
@@ -1110,7 +1110,7 @@ def share_album_with_user_and_role(album_id_to_share: str, user_ids_to_share_wit
     r = requests.put(root_url+api_endpoint, json=data, **requests_kwargs, timeout=api_timeout)
     check_api_response(r)
 
-def trigger_offline_asset_removal():
+def trigger_offline_asset_removal() -> None:
     """
     Removes offline assets.
 
@@ -1132,7 +1132,7 @@ def trigger_offline_asset_removal():
     else:
         trigger_offline_asset_removal_since_minor_version_116()
 
-def trigger_offline_asset_removal_since_minor_version_116():
+def trigger_offline_asset_removal_since_minor_version_116() -> None:
     """
     Synchronously deletes offline assets.
 
@@ -1148,7 +1148,8 @@ def trigger_offline_asset_removal_since_minor_version_116():
     # WARNING! This workaround must NOT be removed to keep compatibility with Immich v1.116.x to at
     # least v1.117.x (reported issue for v1.117.0, might be fixed with v1.118.0)!
     # If removed the assets for users of v1.116.0 - v1.117.x might be deleted completely!!!
-    trashed_assets = fetch_assets_with_options({'trashedAfter': '1970-01-01T00:00:00.000Z'})
+    # 2024/03/01: With Immich v1.128.0 isOffline filter is fixed. Remember to also request archived assets.
+    trashed_assets = fetch_assets_with_options({'isTrashed': True, 'isOffline': True, 'withArchived': True})
     #logging.debug("search results: %s", offline_assets)
 
     offline_assets = [asset for asset in trashed_assets if asset['isOffline']]
