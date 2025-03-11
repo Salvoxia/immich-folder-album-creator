@@ -723,6 +723,60 @@ def fetch_assets(is_not_in_album: bool, find_archived: bool) -> list:
 
     return fetch_assets_with_options({'isNotInAlbum': is_not_in_album, 'withArchived': find_archived})
 
+def check_for_and_remove_live_photo_video_components(asset_list: list[dict], is_not_in_album: bool, find_archived: bool) -> list[dict]:
+    """
+    Checks asset_list for any asset with file ending .mov. This is indicative of a possible video component
+    of an Apple Live Photo. There is display bug in the Immich iOS app that prevents live photos from being
+    show correctly if the static AND video component are added to the album. We only want to add the static component to an album,
+    so we need to filter out all video components belonging to a live photo. The static component has a property livePhotoVideoId set
+    with the asset ID of the video component.
+
+    Parameters
+    ----------
+        is_not_in_album : bool
+            Flag indicating whether to fetch only assets that are not part
+            of an album or not. If this and find_archived are True, we can assume asset_list is complete
+            and should contain any static components.
+        find_archived : bool
+            Flag indicating whether to only fetch assets that are archived. If this and is_not_in_album are 
+            True, we can assume asset_list is complete and should contain any static components.
+
+    Returns
+    ---------
+       An asset list without live photo video components
+    """
+    logging.info("Checking for live photo video components")
+    # Filter for all quicktime assets
+    asset_list_mov = [asset for asset in asset_list if asset['originalMimeType'] == 'video/quicktime']
+    
+    if len(asset_list_mov) == 0:
+        logging.debug("No live photo video components found")
+        return asset_list
+    
+    # If either is not True, we need to fetch all assets
+    if is_not_in_album or not find_archived:
+        logging.debug("Fetching all assets for live photo video component check")
+        full_asset_list = fetch_assets_with_options({'isNotInAlbum': False, 'withArchived': True})
+    else:
+        full_asset_list = asset_list
+    
+    # Find all assets with a live ID set
+    asset_list_with_live_id = [asset for asset in full_asset_list if asset['livePhotoVideoId'] is not None]
+    
+    # Find all video components
+    asset_list_video_components_ids = []
+    for asset_static_component in asset_list_with_live_id:
+        for asset_mov in asset_list_mov:
+            if asset_mov['id'] == asset_static_component['livePhotoVideoId']:
+                asset_list_video_components_ids.append(asset_mov['id'])
+                logging.debug("File %s is a video component of a live photo, removing from list", asset_mov['originalPath'])
+   
+    logging.info("Removing %s live photo video components from asset list", len(asset_list_video_components_ids))
+    # Remove all video components from the asset list
+    asset_list_without_video_components = [asset for asset in asset_list if asset['id'] not in asset_list_video_components_ids]
+    return asset_list_without_video_components
+
+
 def fetch_assets_with_options(search_options: dict) -> list:
     """
     Fetches assets from the Immich API using specific search options.
@@ -1908,6 +1962,9 @@ if mode == SCRIPT_MODE_CREATE:
     assets = fetch_assets(not find_assets_in_albums, find_archived_assets)
 else:
     assets = fetch_assets(False, True)
+
+# Remove live photo video components
+assets = check_for_and_remove_live_photo_video_components(assets, not find_assets_in_albums, find_archived_assets)
 logging.info("%d photos found", len(assets))
 
 
