@@ -748,21 +748,21 @@ def check_for_and_remove_live_photo_video_components(asset_list: list[dict], is_
     logging.info("Checking for live photo video components")
     # Filter for all quicktime assets
     asset_list_mov = [asset for asset in asset_list if asset['originalMimeType'] == 'video/quicktime']
-    
+
     if len(asset_list_mov) == 0:
         logging.debug("No live photo video components found")
         return asset_list
-    
+
     # If either is not True, we need to fetch all assets
     if is_not_in_album or not find_archived:
         logging.debug("Fetching all assets for live photo video component check")
         full_asset_list = fetch_assets_with_options({'isNotInAlbum': False, 'withArchived': True})
     else:
         full_asset_list = asset_list
-    
+
     # Find all assets with a live ID set
     asset_list_with_live_id = [asset for asset in full_asset_list if asset['livePhotoVideoId'] is not None]
-    
+
     # Find all video components
     asset_list_video_components_ids = []
     for asset_static_component in asset_list_with_live_id:
@@ -770,7 +770,7 @@ def check_for_and_remove_live_photo_video_components(asset_list: list[dict], is_
             if asset_mov['id'] == asset_static_component['livePhotoVideoId']:
                 asset_list_video_components_ids.append(asset_mov['id'])
                 logging.debug("File %s is a video component of a live photo, removing from list", asset_mov['originalPath'])
-   
+
     logging.info("Removing %s live photo video components from asset list", len(asset_list_video_components_ids))
     # Remove all video components from the asset list
     asset_list_without_video_components = [asset for asset in asset_list if asset['id'] not in asset_list_video_components_ids]
