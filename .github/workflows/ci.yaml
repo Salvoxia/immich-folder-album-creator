@@ -57,6 +57,12 @@ jobs:
             # set build-test tag for any branch not dev or the default one
             type=raw,value=build-test,enable=${{ github.ref != format('refs/heads/{0}', 'dev') && github.ref != format('refs/heads/{0}', github.event.repository.default_branch) }},branch=dev
 
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
       - name: Login to GHCR
         uses: docker/login-action@v3
         with:
