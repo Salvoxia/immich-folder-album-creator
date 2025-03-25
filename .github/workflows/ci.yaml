@@ -74,7 +74,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          platforms: linux/arm64/v8,linux/amd64
+          platforms: linux/arm/v7,linux/arm64/v8,linux/amd64
           # Push only for default branch or dev branch
           push: ${{ github.ref == format('refs/heads/{0}', github.event.repository.default_branch) || github.ref == format('refs/heads/{0}', 'dev') }}
           tags: ${{ steps.meta.outputs.tags }}
