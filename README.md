@@ -413,11 +413,11 @@ The following wild-cards are supported:
 
 ### Ignoring Assets
 The option `-i / --ignore` can be specified multiple times for each literal or glob-style path pattern.  
-When using Docker, the environment variable `IGNORE` accepts a semicolon-separated `:` list of literals or glob-style patterns. If an image's path **below the root path** matches the pattern, it will be ignored.  
+When using Docker, the environment variable `IGNORE` accepts a colon-separated `:` list of literals or glob-style patterns. If an image's path **below the root path** matches the pattern, it will be ignored.  
 
 ### Filtering for Assets
 The option `-f / ---path-filter` can be specified multiple times for each literal or glob-style path pattern. 
-When using Docker, the environment variable `PATH_FILTER` accepts a semicolon-separated `:` of literals or glob-style patterns. If an image's path **below the root path** does **NOT** match the pattern, it will be ignored.
+When using Docker, the environment variable `PATH_FILTER` accepts a colon-separated `:` of literals or glob-style patterns. If an image's path **below the root path** does **NOT** match the pattern, it will be ignored.
 
 > [!TIP]  
 > When working with path filters, consider setting the `-A / --find-assets-in-albums` option or Docker environment variable `FIND_ASSETS_IN_ALBUMS` for the script to discover assets that are already part of an album. That way, assets can be added to multiple albums by the script. Refer to the [Assets in Multiple Albums](#assets-in-multiple-albums) section for more information.
