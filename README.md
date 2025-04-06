@@ -792,7 +792,7 @@ Option `1` leaves it up to the user to clear up "offline" assets by emptying the
 Option `2` will first delete all "offline" assets automatically, then do the same with any empty albums left.  
 
 > [!IMPORTANT]  
-> Some version after v1.116.0 changed the API so that offline assets can no longer be discovered. Thus, `Sync Mode = 2` is not working at the moment. A [Github Issue](https://github.com/immich-app/immich/issues/13161) for Immich has been opened.
+> For Immich v1.116.0 - v1.127.x finding offline assets has been broken. Immich fixed the issue with v1.128.0.
 
 > [!IMPORTANT]  
 > If your library is on a network share or external drive that might be prone to not being available all the time, avoid using `Sync Mode = 2`.
