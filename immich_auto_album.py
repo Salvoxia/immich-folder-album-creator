@@ -747,7 +747,7 @@ def check_for_and_remove_live_photo_video_components(asset_list: list[dict], is_
     """
     logging.info("Checking for live photo video components")
     # Filter for all quicktime assets
-    asset_list_mov = [asset for asset in asset_list if asset['originalMimeType'] == 'video/quicktime']
+    asset_list_mov = [asset for asset in asset_list if 'video' in asset['originalMimeType']]
 
     if len(asset_list_mov) == 0:
         logging.debug("No live photo video components found")
