@@ -830,7 +830,7 @@ def fetch_albums():
     return r.json()
 
 def get_album_id_by_name(album_name):
-    """ simply returns the album id with if the name matches"""
+    """ simply returns the album id if the name matches"""
     for album in albums:
         if album['albumName'] == album_name:
             return album['id']
@@ -849,7 +849,7 @@ def fetch_album_info(album_id_for_info: str):
 
     api_endpoint = f'albums/{album_id_for_info}'
 
-    r = requests.get(root_url + api_endpoint, **requests_kwargs, timeout=api_timeout)
+    r = requests.get(root_url+api_endpoint, **requests_kwargs, timeout=api_timeout)
     check_api_response(r)
     return r.json()
 
