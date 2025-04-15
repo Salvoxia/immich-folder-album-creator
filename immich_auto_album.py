@@ -829,11 +829,11 @@ def fetch_albums():
     check_api_response(r)
     return r.json()
 
-def get_album_id_by_name(album_name):
+def get_album_id_by_name(albums: list[dict], album_name: str, ) -> str:
     """ simply returns the album id if the name matches"""
-    for album in albums:
+    for _ in albums:
         if album['albumName'] == album_name:
-            return album['id']
+            return _['id']
     return None
 
 def fetch_album_info(album_id_for_info: str):
@@ -1998,7 +1998,7 @@ logging.info("%d existing albums identified", len(albums))
 
 for album in albums_to_create.values():
     # fetch the id if same album name exist
-    album.id = get_album_id_by_name(album.get_final_name())
+    album.id = get_album_id_by_name(albums, album.get_final_name())
 
 # mode CLEANUP
 if mode == SCRIPT_MODE_CLEANUP:
