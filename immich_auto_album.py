@@ -829,9 +829,9 @@ def fetch_albums():
     check_api_response(r)
     return r.json()
 
-def get_album_id_by_name(albums: list[dict], album_name: str, ) -> str:
+def get_album_id_by_name(albums_list: list[dict], album_name: str, ) -> str:
     """ simply returns the album id if the name matches"""
-    for _ in albums:
+    for _ in albums_list:
         if album['albumName'] == album_name:
             return _['id']
     return None
