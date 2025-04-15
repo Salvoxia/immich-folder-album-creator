@@ -829,6 +829,13 @@ def fetch_albums():
     check_api_response(r)
     return r.json()
 
+def get_album_id_by_name(album_name):
+    """ simply returns the album id with if the name matches"""
+    for album in albums:
+        if album['albumName'] == album_name:
+            return album['id']
+    return None
+
 def fetch_album_info(album_id_for_info: str):
     """
     Fetches information about a specific album
@@ -842,7 +849,7 @@ def fetch_album_info(album_id_for_info: str):
 
     api_endpoint = f'albums/{album_id_for_info}'
 
-    r = requests.get(root_url+api_endpoint, **requests_kwargs, timeout=api_timeout)
+    r = requests.get(root_url + api_endpoint, **requests_kwargs, timeout=api_timeout)
     check_api_response(r)
     return r.json()
 
@@ -1987,13 +1994,11 @@ if not unattended and mode == SCRIPT_MODE_CREATE:
 logging.info("Listing existing albums on immich")
 
 albums = fetch_albums()
-album_to_id = {album['albumName']:album['id'] for album in albums }
 logging.info("%d existing albums identified", len(albums))
-# Set album ID for existing albums
+
 for album in albums_to_create.values():
-    if album.get_final_name() in album_to_id:
-        # Album already exists, just get the ID
-        album.id = album_to_id[album.get_final_name()]
+    # fetch the id if same album name exist
+    album.id = get_album_id_by_name(album.get_final_name())
 
 # mode CLEANUP
 if mode == SCRIPT_MODE_CLEANUP:
@@ -2013,19 +2018,16 @@ users = fetch_users()
 logging.debug("Found users: %s", users)
 
 # mode CREATE
-logging.info("Creating albums if needed")
+logging.info("Create / Append to Albums")
 created_albums = []
 # List for gathering all asset UUIDs for later archiving
 asset_uuids_added = []
 for album in albums_to_create.values():
-    if not album.get_final_name() in album_to_id:
-        # Create album
+    # Create album if inexistent:
+    if not album.id:
         album.id = create_album(album.get_final_name())
-        album_to_id[album.get_final_name()] = album.id
         created_albums.append(album)
         logging.info('Album %s added!', album.get_final_name())
-    else:
-        album.id = album_to_id[album.get_final_name()]
 
     logging.info("Adding assets to album %s", album.get_final_name())
     assets_added = add_assets_to_album(album.id, album.get_asset_uuids())
