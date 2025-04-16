@@ -970,8 +970,16 @@ def add_assets_to_album(assets_add_album_id: str, asset_list: list[str]) -> list
 
     # Divide our assets into chunks of number_of_images_per_request,
     # So the API can cope
+    assets_to_add = []
+    for _ in assets:
+        for _asset in asset_list:
+            if _['id'] == _asset:
+                assets_to_add.append(_)
+                break
+    logging.debug("Added assets to album: %s", assets_to_add)
     assets_chunked = list(divide_chunks(asset_list, number_of_images_per_request))
     asset_list_added = []
+    
     for assets_chunk in assets_chunked:
         data = {'ids':assets_chunk}
         r = requests.put(root_url+api_endpoint+f'/{assets_add_album_id}/assets', json=data, **requests_kwargs, timeout=api_timeout)
