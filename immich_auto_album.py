@@ -847,8 +847,8 @@ def fetch_albums(track_assent_paths=True) -> dict:
     check_api_response(r)
     albums = r.json()
 
-    # in case we care don't want to track the original paths of the assets
-    if track_assent_paths:
+    # in case don't want to merge folders, we need to track the original paths of the assets
+    if not merge_folder:
         for album in albums:
             album_detail = fetch_album_info(album['id'])
 
@@ -1679,7 +1679,7 @@ def build_album_list(asset_list : list[dict], root_path_list : list[str], album_
         del path_chunks[-1]
         album_name = create_album_name(path_chunks, album_level_separator, album_name_post_regex)
         if len(album_name) > 0:
-            logging.info("Asset '%s' -> Album '%s'", asset_to_add['originalPath'], album_name)
+            logging.debug("Asset '%s' -> Album '%s'", asset_to_add['originalPath'], album_name)
             
             # Check if album properties exist for this album
             album_props_template = album_props_templates.get(album_name)
@@ -2076,13 +2076,13 @@ for album in albums_to_create:
     if not album.id:
         album.id = create_album(album.get_final_name())
         created_albums.append(album)
-        logging.info('Album %s added!', album.get_final_name())
+        logging.info('Album %s added %s', album.get_final_name(),album.id)
 
-    logging.info("Adding assets to album %s", album.get_final_name())
+    logging.info("Adding assets to album %s %s", album.get_final_name(), album.id)
     assets_added = add_assets_to_album(album.id, album.get_asset_uuids())
     if len(assets_added) > 0:
         asset_uuids_added += assets_added
-        logging.info("%d new assets added to %s", len(assets_added), album.get_final_name())
+        logging.info("%d new assets added to %s %s", len(assets_added), album.get_final_name(), album.id)
 
     # Update album properties depending on mode or if newly created
     if update_album_props_mode > 0 or (album in created_albums):
