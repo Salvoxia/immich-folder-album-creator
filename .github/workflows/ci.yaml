@@ -2,9 +2,6 @@ name: CI
 
 'on':
   pull_request:
-  push:
-    paths-ignore:
-      - 'README.md'
 
 jobs:
   lint:
@@ -63,25 +60,12 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Login to GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.repository_owner }}
-          password: ${{ secrets.REGISTRY_TOKEN }}
-
-      - name: Login to Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Build and push
+      - name: Build only
         uses: docker/build-push-action@v5
         with:
           context: .
           platforms: linux/arm/v7,linux/arm64/v8,linux/amd64
           # Push only for default branch or dev branch
-          push: ${{ github.ref == format('refs/heads/{0}', github.event.repository.default_branch) || github.ref == format('refs/heads/{0}', 'dev') }}
+          push: false
           tags: ${{ steps.meta.outputs.tags }}
   
