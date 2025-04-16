@@ -1,4 +1,3 @@
-
 """Python script for creating albums in Immich from folder names in an external library."""
 
 from typing import Tuple
@@ -69,7 +68,7 @@ class AlbumModel:
     # This list is used for album model merging and validation
     ALBUM_PROPERTIES_VARIABLES = ['override_name', 'description', 'share_with', 'thumbnail_setting', 'sort_order', 'archive', 'comments_and_likes_enabled']
 
-    def __init__(self, name : str):
+    def __init__(self, name: str):
         # The album ID, set after it was created
         self.id = None
         # The album name
@@ -88,8 +87,23 @@ class AlbumModel:
         self.sort_order = None
         # Boolean indicating whether assets in this album should be archived after adding
         self.archive = None
-        # Boolean indicating whether assets in this albums can be commented on and liked
+        # Boolean indicating whether assets in this album can be commented on and liked
         self.comments_and_likes_enabled = None
+        # A set of unique paths in this album
+        self.albumPaths = set()
+
+    def add_asset(self, asset: dict):
+        """
+        Adds an asset to the album and updates the albumPaths with the asset's directory.
+
+        Parameters
+        ----------
+        asset : dict
+            The asset to add, must contain the key 'originalPath'.
+        """
+        self.assets.append(asset)
+        asset_path = os.path.dirname(asset['originalPath'])
+        self.albumPaths.add(asset_path)
 
     def get_album_properties_dict(self) -> dict:
         """
@@ -820,21 +834,34 @@ def fetch_assets_with_options(search_options: dict) -> list:
     return assets_found
 
 
-def fetch_albums():
-    """Fetches albums from the Immich API"""
+def fetch_albums(track_assent_paths=True) -> dict:
+    """Fetches albums from the Immich API, we enrich the album data with the paths"""
 
     api_endpoint = 'albums'
 
+    if albums := read_yaml('.albums_cache.yaml'):
+        logging.info(f"Loaded albums {len(albums)} from cache")
+        return albums
+
     r = requests.get(root_url+api_endpoint, **requests_kwargs, timeout=api_timeout)
     check_api_response(r)
-    return r.json()
+    albums = r.json()
 
-def get_album_id_by_name(albums_list: list[dict], album_name: str, ) -> str:
-    """ simply returns the album id if the name matches"""
-    for _ in albums_list:
-        if album['albumName'] == album_name:
-            return _['id']
-    return None
+    # in case we care don't want to track the original paths of the assets
+    if track_assent_paths:
+        for album in albums:
+            album_detail = fetch_album_info(album['id'])
+
+            album['albumPaths'] = list({os.path.dirname(asset['originalPath']) for asset in album_detail['assets']})
+
+            # just log if multiple paths...
+            if len(album['albumPaths']) > 1:
+                logging.info("Album '%s' is made out of %d Folders", album['albumName'], len(album['albumPaths']))
+                logging.debug("Paths: %s", ','.join(album['albumPaths']))
+
+    write_yaml(albums, '.albums_cache.yaml')
+    return albums
+
 
 def fetch_album_info(album_id_for_info: str):
     """
@@ -1613,24 +1640,24 @@ def set_album_properties_in_model(album_model_to_update: AlbumModel):
 
 def build_album_list(asset_list : list[dict], root_path_list : list[str], album_props_templates: dict) -> dict:
     """
-    Builds a list of album models, enriched with assets assigned to each album.
-    Returns a dict where the key is the album name and the value is the model.
-    Attention!
+        Builds a list of album models, enriched with assets assigned to each album.
+        Returns a list of AlbumModel objects.
+        Attention!
 
-    Parameters
-    ----------
-        asset_list : list[dict]
-            List of assets dictionaries fetched from Immich API
-        root_path_list : list[str]
-            List of root paths to use for album creation
-        album_props_templates: dict
-            Dictionary mapping an album name to album properties
+        Parameters
+        ----------
+            asset_list : list[dict]
+                List of assets dictionaries fetched from Immich API
+            root_path_list : list[str]
+                List of root paths to use for album creation
+            album_props_templates: dict
+                Dictionary mapping an album name to album properties
 
-    Returns
-    ---------
-        A dict with album names as keys and an AlbumModel as value
+        Returns
+        ---------
+            A list of AlbumModel objects
     """
-    album_models = defaultdict(list)
+    album_models = []
     for asset_to_add in asset_list:
         asset_path = asset_to_add['originalPath']
         # This method will log the ignore reason, so no need to log anything again.
@@ -1652,32 +1679,34 @@ def build_album_list(asset_list : list[dict], root_path_list : list[str], album_
         del path_chunks[-1]
         album_name = create_album_name(path_chunks, album_level_separator, album_name_post_regex)
         if len(album_name) > 0:
-            # First check if there are album properties for this album
-            if album_name in album_props_templates:
-                album_props_template = album_props_templates[album_name]
-                # Check if these album properties have already been used to create a new AlbumModel,
-                # if so, reuse!
-                if album_props_template.get_final_name() in album_models:
-                    new_album_model = album_models[album_props_template.get_final_name()]
-                else:
-                    new_album_model = AlbumModel(album_name)
-                    # Apply album properties from set options
-                    set_album_properties_in_model(new_album_model)
-                    # Check if we have album properties read from file
-                    # merge new album model with the one defined in our file, overriding any
-                    # pre-existing properties
-                    new_album_model.merge_from(album_props_template, AlbumModel.ALBUM_MERGE_MODE_OVERRIDE)
-            # There are no album properties, create a new AlbumModel from scratch
-            elif album_name not in album_models:
+            logging.info("Asset '%s' -> Album '%s'", asset_to_add['originalPath'], album_name)
+            
+            # Check if album properties exist for this album
+            album_props_template = album_props_templates.get(album_name)
+
+            # check if we have an existing album in this run. In case we we don't want to have merged albums, we compare the Asset Path to the albumPaths Attribute
+            existing_album_model = next(
+                (a for a in album_models if a.name == album_name and (merge_folder or os.path.dirname(asset_to_add['originalPath']) in a.albumPaths)),
+                None
+            )
+
+            if existing_album_model is None:
+                # Create a new AlbumModel if no existing one is found
+                logging.debug("New Album '%s'?", album_name)
                 new_album_model = AlbumModel(album_name)
-                # Apply album properties from set options
                 set_album_properties_in_model(new_album_model)
-            # Reuse previously created AlbumModel
+                if album_props_template:
+                    new_album_model.merge_from(album_props_template, AlbumModel.ALBUM_MERGE_MODE_OVERRIDE)
+                album_models.append(new_album_model)
             else:
-                new_album_model = album_models[album_name]
+                # Merge properties into the existing AlbumModel
+                logging.debug("Reuse Album '%s' with %i assets (in this run)", existing_album_model.name, len(existing_album_model.assets))
+                new_album_model = existing_album_model
+                if album_props_template:
+                    new_album_model.merge_from(album_props_template, AlbumModel.ALBUM_MERGE_MODE_OVERRIDE)
+
             # Add asset to album model
-            new_album_model.assets.append(asset_to_add)
-            album_models[new_album_model.get_final_name()] = new_album_model
+            new_album_model.add_asset(asset_to_add)
         else:
             logging.warning("Got empty album name for asset path %s, check your album_level settings!", asset_path)
     return album_models
@@ -1704,6 +1733,19 @@ def find_user_by_name_or_email(name_or_email: str, user_list: list[dict]) -> dic
         # Search by name or mail address
         if name_or_email in (user['name'], user['email']):
             return user
+    return None
+
+def write_yaml(data, file):
+    with open(file, 'w') as file:
+        yaml.dump(data, file)
+
+def read_yaml(file,max_age_min=60):
+    if os.path.exists(file):
+        file_age = datetime.datetime.now() - datetime.datetime.fromtimestamp(os.path.getmtime(file))
+        if file_age.total_seconds() > max_age_min*60:
+            return None
+        with open(file, 'r', encoding='utf-8') as cache_file:
+            return yaml.safe_load(cache_file)
     return None
 
 parser = argparse.ArgumentParser(description="Create Immich Albums from an external library path based on the top level folders",
@@ -1790,6 +1832,8 @@ parser.add_argument("--update-album-props-mode", type=int, choices=[0, 1, 2], de
                             0 = Do not change album properties.
                             1 = Only override album properties but do not change the share status.
                             2 = Override album properties and share status, this will remove all users from the album which are not in the SHARE_WITH list.""")
+parser.add_argument("--dont-merge-folder", action="store_true",
+                    help="If set, multiple albums with the same name will be created for different folders.")
 
 
 args = vars(parser.parse_args())
@@ -1832,6 +1876,7 @@ if comments_and_likes_disabled and comments_and_likes_enabled:
     logging.fatal("Arguments --comments-and-likes-enabled and --comments-and-likes-disabled cannot be used together! Choose one!")
     sys.exit(1)
 update_album_props_mode = args["update_album_props_mode"]
+merge_folder = not args["dont_merge_folder"] #invert non breaking default is to merge folders
 
 # Override unattended if we're running in destructive mode
 if mode != SCRIPT_MODE_CREATE:
@@ -1869,6 +1914,7 @@ logging.debug("api_timeout = %s", api_timeout)
 logging.debug("comments_and_likes_enabled = %s", comments_and_likes_enabled)
 logging.debug("comments_and_likes_disabled = %s", comments_and_likes_disabled)
 logging.debug("update_album_props_mode = %d", update_album_props_mode)
+logging.debug("merge_folder = %d", merge_folder)
 
 # Verify album levels
 if is_integer(album_levels) and album_levels == 0:
@@ -1978,10 +2024,10 @@ logging.info("%d photos found", len(assets))
 
 logging.info("Sorting assets to corresponding albums using folder name")
 albums_to_create = build_album_list(assets, root_paths, album_properties_templates)
-albums_to_create = dict(sorted(albums_to_create.items(), key=lambda item: item[0]))
 
-logging.info("%d albums identified", len(albums_to_create))
-logging.info("Album list: %s", list(albums_to_create.keys()))
+logging.info("%d new/modified albums identified", len(albums_to_create))
+for album in albums_to_create:
+    logging.info(" - Album %s, Assets %i, Paths %s", album.name, len(album.assets),list(album.albumPaths))
 
 if not unattended and mode == SCRIPT_MODE_CREATE:
     if is_docker:
@@ -1996,9 +2042,12 @@ logging.info("Listing existing albums on immich")
 albums = fetch_albums()
 logging.info("%d existing albums identified", len(albums))
 
-for album in albums_to_create.values():
-    # fetch the id if same album name exist
-    album.id = get_album_id_by_name(albums, album.get_final_name())
+for album in albums_to_create:
+    # fetch the id if same album name exist, if won't merge, compare if atleast (?) one albumPaths is the same
+    album.id = next(
+        (
+            a['id'] for a in albums if album.name == a['albumName'] and (merge_folder or any(path in a['albumPaths'] for path in album.albumPaths))), 
+        None)
 
 # mode CLEANUP
 if mode == SCRIPT_MODE_CLEANUP:
@@ -2022,7 +2071,7 @@ logging.info("Create / Append to Albums")
 created_albums = []
 # List for gathering all asset UUIDs for later archiving
 asset_uuids_added = []
-for album in albums_to_create.values():
+for album in albums_to_create:
     # Create album if inexistent:
     if not album.id:
         album.id = create_album(album.get_final_name())
@@ -2049,6 +2098,10 @@ for album in albums_to_create.values():
         update_album_shared_state(album, True)
 
 logging.info("%d albums created", len(created_albums))
+
+if created_albums:
+    #flush cash
+    write_yaml(None, '.albums_cache.yaml')
 
 # Archive assets
 if archive and len(asset_uuids_added) > 0:
