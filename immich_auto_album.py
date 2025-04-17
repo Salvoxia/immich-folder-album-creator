@@ -832,7 +832,7 @@ def fetch_albums():
 def get_album_id_by_name(albums_list: list[dict], album_name: str, ) -> str:
     """ simply returns the album id if the name matches"""
     for _ in albums_list:
-        if album['albumName'] == album_name:
+        if _['albumName'] == album_name:
             return _['id']
     return None
 
