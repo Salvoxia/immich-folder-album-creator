@@ -323,7 +323,8 @@ def build_album_properties_templates() -> dict:
         # remove last item from path chunks, which is the file name
         del path_chunks[-1]
         album_name = create_album_name(path_chunks, album_level_separator, album_name_post_regex)
-
+        if album_name is None:
+            continue
         try:
             # Parse the album properties into an album model
             album_props_template = AlbumModel.parse_album_properties_file(album_properties_file_path)
@@ -611,6 +612,10 @@ def create_album_name(asset_path_chunks: list[str], album_separator: str, album_
     album path chunks are used for album names they are separated by album_separator.
 
     album_name_postprocess_regex is list of pairs of regex and replace, this is optional
+
+    Returns
+    -------
+        The created album name or None if the album levels range does not apply to the path chunks.
     """
 
     album_name_chunks = ()
@@ -622,6 +627,10 @@ def create_album_name(asset_path_chunks: list[str], album_separator: str, album_
             album_levels_end_level_capped =  album_levels_range_arr[1]+1
             album_levels_start_level_capped *= -1
         else:
+            # If our start range is already out of range of our path chunks, do not create an album from that.
+            if len(asset_path_chunks)-1 < album_levels_range_arr[0]:
+                logging.debug("Skipping asset chunks since out of range: %s", asset_path_chunks)
+                return None
             album_levels_start_level_capped = min(len(asset_path_chunks)-1, album_levels_range_arr[0])
             # Add 1 to album_levels_end_level_capped to include the end index, which is what the user intended to. It's not a problem
             # if the end index is out of bounds.
@@ -747,7 +756,7 @@ def check_for_and_remove_live_photo_video_components(asset_list: list[dict], is_
     """
     logging.info("Checking for live photo video components")
     # Filter for all quicktime assets
-    asset_list_mov = [asset for asset in asset_list if asset['originalMimeType'] == 'video/quicktime']
+    asset_list_mov = [asset for asset in asset_list if 'video' in asset['originalMimeType']]
 
     if len(asset_list_mov) == 0:
         logging.debug("No live photo video components found")
@@ -977,8 +986,16 @@ def add_assets_to_album(assets_add_album_id: str, asset_list: list[str]) -> list
 
     # Divide our assets into chunks of number_of_images_per_request,
     # So the API can cope
+    assets_to_add = []
+    for _ in assets:
+        for _asset in asset_list:
+            if _['id'] == _asset:
+                assets_to_add.append(_)
+                break
+    logging.debug("Added assets to album: %s", assets_to_add)
     assets_chunked = list(divide_chunks(asset_list, number_of_images_per_request))
     asset_list_added = []
+
     for assets_chunk in assets_chunked:
         data = {'ids':assets_chunk}
         r = requests.put(root_url+api_endpoint+f'/{assets_add_album_id}/assets', json=data, **requests_kwargs, timeout=api_timeout)
@@ -1651,6 +1668,10 @@ def build_album_list(asset_list : list[dict], root_path_list : list[str], album_
         # remove last item from path chunks, which is the file name
         del path_chunks[-1]
         album_name = create_album_name(path_chunks, album_level_separator, album_name_post_regex)
+        # Silently skip album, create_album_name already did debug logging
+        if album_name is None:
+            continue
+
         if len(album_name) > 0:
             # First check if there are album properties for this album
             if album_name in album_props_templates:
