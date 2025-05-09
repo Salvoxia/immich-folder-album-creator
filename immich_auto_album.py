@@ -323,7 +323,8 @@ def build_album_properties_templates() -> dict:
         # remove last item from path chunks, which is the file name
         del path_chunks[-1]
         album_name = create_album_name(path_chunks, album_level_separator, album_name_post_regex)
-
+        if album_name is None:
+            continue
         try:
             # Parse the album properties into an album model
             album_props_template = AlbumModel.parse_album_properties_file(album_properties_file_path)
@@ -611,6 +612,10 @@ def create_album_name(asset_path_chunks: list[str], album_separator: str, album_
     album path chunks are used for album names they are separated by album_separator.
 
     album_name_postprocess_regex is list of pairs of regex and replace, this is optional
+
+    Returns
+    -------
+        The created album name or None if the album levels range does not apply to the path chunks.
     """
 
     album_name_chunks = ()
@@ -622,6 +627,10 @@ def create_album_name(asset_path_chunks: list[str], album_separator: str, album_
             album_levels_end_level_capped =  album_levels_range_arr[1]+1
             album_levels_start_level_capped *= -1
         else:
+            # If our start range is already out of range of our path chunks, do not create an album from that.
+            if len(asset_path_chunks)-1 < album_levels_range_arr[0]:
+                logging.debug("Skipping asset chunks since out of range: %s", asset_path_chunks)
+                return None
             album_levels_start_level_capped = min(len(asset_path_chunks)-1, album_levels_range_arr[0])
             # Add 1 to album_levels_end_level_capped to include the end index, which is what the user intended to. It's not a problem
             # if the end index is out of bounds.
@@ -1652,6 +1661,10 @@ def build_album_list(asset_list : list[dict], root_path_list : list[str], album_
         # remove last item from path chunks, which is the file name
         del path_chunks[-1]
         album_name = create_album_name(path_chunks, album_level_separator, album_name_post_regex)
+        # Silently skip album, create_album_name already did debug logging
+        if album_name is None:
+            continue
+
         if len(album_name) > 0:
             # First check if there are album properties for this album
             if album_name in album_props_templates:
