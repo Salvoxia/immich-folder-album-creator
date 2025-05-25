@@ -161,8 +161,13 @@ if [ ! -z "$SET_ALBUM_THUMBNAIL" ]; then
     args="--set-album-thumbnail \"$SET_ALBUM_THUMBNAIL\" $args"
 fi
 
+# Deprecated, will be removed in future release
 if [ ! -z "$ARCHIVE" ]; then
     args="--archive $args"
+fi
+
+if [ ! -z "$VISIBILITY" ]; then
+    args="--visibility=\"$VISIBILITY\" $args"
 fi
 
 if [ ! -z "$READ_ALBUM_PROPERTIES" ]; then

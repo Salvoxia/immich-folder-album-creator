@@ -67,7 +67,7 @@ class AlbumModel:
     ALBUM_MERGE_MODE_OVERRIDE = 3
     # List of class attribute names that are relevant for album properties handling
     # This list is used for album model merging and validation
-    ALBUM_PROPERTIES_VARIABLES = ['override_name', 'description', 'share_with', 'thumbnail_setting', 'sort_order', 'archive', 'comments_and_likes_enabled']
+    ALBUM_PROPERTIES_VARIABLES = ['override_name', 'description', 'share_with', 'thumbnail_setting', 'sort_order', 'archive', 'visibility', 'comments_and_likes_enabled']
 
     def __init__(self, name : str):
         # The album ID, set after it was created
@@ -87,7 +87,10 @@ class AlbumModel:
         # Sorting order for this album, 'asc' or 'desc'
         self.sort_order = None
         # Boolean indicating whether assets in this album should be archived after adding
+        # Deprecated, use visibility = archive instead!
         self.archive = None
+        # String indicating asset visibility, allowed values: archive, hidden, locked, timeline
+        self.visibility = None
         # Boolean indicating whether assets in this albums can be commented on and liked
         self.comments_and_likes_enabled = None
 
@@ -238,6 +241,12 @@ class AlbumModel:
                     if album_prop_name in album_properties:
                         album_props_template_vars[album_prop_name] = album_properties[album_prop_name]
 
+                # Backward compatibility, remove when archive is removed:
+                if album_props_template.archive is not None:
+                    logging.warning("Found deprecated property archive in %s! This will be removed in the future, use visibility: archive instead!", album_properties_file_path)
+                    if album_props_template.visibility is None:
+                        album_props_template.visibility = 'archive'
+                #  End backward compatibility
                 return album_props_template
 
         return None
@@ -709,7 +718,7 @@ def fetch_server_version() -> dict:
     return server_version
 
 
-def fetch_assets(is_not_in_album: bool, find_archived: bool) -> list:
+def fetch_assets(is_not_in_album: bool, visibility_options: list[str]) -> list:
     """
     Fetches assets from the Immich API.
 
@@ -722,15 +731,21 @@ def fetch_assets(is_not_in_album: bool, find_archived: bool) -> list:
             Flag indicating whether to fetch only assets that are not part
             of an album or not. If set to False, will find images in albums and 
             not part of albums
-        find_archived : bool
-            Flag indicating whether to only fetch assets that are archived. If set to False,
-            will find archived and unarchived images
+        visibility_options : list[str]
+            A list of visibility options to find and return assets with
     Returns
     ---------
         An array of asset objects
     """
+    if version['major'] == 1 and version ['minor'] < 133:
+        return fetch_assets_with_options({'isNotInAlbum': is_not_in_album, 'withArchived': 'archive' in visibility_options})
 
-    return fetch_assets_with_options({'isNotInAlbum': is_not_in_album, 'withArchived': find_archived})
+    asset_list = fetch_assets_with_options({'isNotInAlbum': is_not_in_album})
+    for visiblity_option in visibility_options:
+        # Do not fetch agin for 'timeline', that's the default!
+        if visiblity_option != 'timeline':
+            asset_list += fetch_assets_with_options({'isNotInAlbum': is_not_in_album, 'visibility': visiblity_option})
+    return asset_list
 
 def check_for_and_remove_live_photo_video_components(asset_list: list[dict], is_not_in_album: bool, find_archived: bool) -> list[dict]:
     """
@@ -765,7 +780,11 @@ def check_for_and_remove_live_photo_video_components(asset_list: list[dict], is_
     # If either is not True, we need to fetch all assets
     if is_not_in_album or not find_archived:
         logging.debug("Fetching all assets for live photo video component check")
-        full_asset_list = fetch_assets_with_options({'isNotInAlbum': False, 'withArchived': True})
+        if version['major'] == 1 and version ['minor'] < 133:
+            full_asset_list = fetch_assets_with_options({'isNotInAlbum': False, 'withArchived': True})
+        else:
+            full_asset_list = fetch_assets_with_options({'isNotInAlbum': False})
+            full_asset_list += fetch_assets_with_options({'isNotInAlbum': False, 'visibility': 'archive'})
     else:
         full_asset_list = asset_list
 
@@ -1433,27 +1452,35 @@ def update_album_properties(album_to_update: AlbumModel):
         response = requests.patch(root_url+api_endpoint, json=data, **requests_kwargs, timeout=api_timeout)
         check_api_response(response)
 
-def set_assets_archived(asset_ids_to_archive: list[str], is_archived: bool):
+def set_assets_visibility(asset_ids_for_visibility: list[str], visibility_setting: str):
     """
-    (Un-)Archives the assets identified by the passed list of UUIDs.
+    Sets the visibility of assets identified by the passed list of UUIDs.
 
     Parameters
     ----------
-        asset_ids_to_archive : list
-            A list of asset IDs to archive
-        isArchived : bool
-            Flag indicating whether to archive or unarchive the passed assets
+        asset_ids_for_visibility : list
+            A list of asset IDs to set visibility for
+        visibility : str
+            The visibility to set
    
     Raises
     ----------
         Exception if the API call fails
     """
     api_endpoint = 'assets'
-
-    data = {
-        "ids": asset_ids_to_archive,
-        "isArchived": is_archived
-    }
+    data = {"ids": asset_ids_for_visibility}
+    # Remove when minimum supported version is >= 133
+    if version['major'] == 1 and version ['minor'] < 133:
+        if visibility_setting is not None and visibility_setting not in ['archive', 'timeline']:
+            # Warnings have been logged earlier, silently abort
+            return
+        is_archived = True
+        if visibility_setting == 'timeline':
+            is_archived = False
+        data["isArchived"] = is_archived
+    # Up-to-date Immich Server versions
+    else:
+        data["visibility"] = visibility_setting
 
     r = requests.put(root_url+api_endpoint, json=data, **requests_kwargs, timeout=api_timeout)
     check_api_response(r)
@@ -1483,16 +1510,16 @@ def check_api_response(response: requests.Response):
             logging.error("API response did not contain a payload")
     response.raise_for_status()
 
-def delete_all_albums(unarchive_assets: bool, force_delete: bool):
+def delete_all_albums(assets_visibility: str, force_delete: bool):
     """
     Deletes all albums in Immich if force_delete is True. Otherwise lists all albums
     that would be deleted.
-    If unarchived_assets is set to true, all archived assets in deleted albums
-    will be unarchived.
+    If assets_visibility is set, all assets in deleted albums
+    will be set to that visibility.
 
     Parameters
     ----------
-        unarchive_assets : bool
+        assets_visibility : str
             Flag indicating whether to unarchive archived assets
         force_delete : bool
             Flag indicating whether to actually delete albums (True) or only to
@@ -1524,14 +1551,14 @@ def delete_all_albums(unarchive_assets: bool, force_delete: bool):
              # If the archived flag is set it means we need to unarchived all images of deleted albums;
             # In order to do so, we need to fetch all assets of the album we're going to delete
             assets_in_deleted_album = []
-            if unarchive_assets:
+            if assets_visibility is not None:
                 album_to_delete_info = fetch_album_info(album_to_delete['id'])
                 assets_in_deleted_album = album_to_delete_info['assets']
             logging.info("Deleted album %s", album_to_delete['albumName'])
             deleted_album_count += 1
-            if len(assets_in_deleted_album) > 0 and unarchive_assets:
-                set_assets_archived([asset['id'] for asset in assets_in_deleted_album], False)
-                logging.info("Unarchived %d assets", len(assets_in_deleted_album))
+            if len(assets_in_deleted_album) > 0 and assets_visibility is not None:
+                set_assets_visibility([asset['id'] for asset in assets_in_deleted_album], assets_visibility)
+                logging.info("Set visibility for %d assets to %s", len(assets_in_deleted_album), assets_visibility)
     logging.info("Deleted %d/%d albums", deleted_album_count, len(all_albums))
 
 def cleanup_albums(albums_to_delete: list[AlbumModel], force_delete: bool):
@@ -1573,16 +1600,18 @@ def cleanup_albums(albums_to_delete: list[AlbumModel], force_delete: bool):
         # If the archived flag is set it means we need to unarchived all images of deleted albums;
         # In order to do so, we need to fetch all assets of the album we're going to delete
         assets_in_album = []
-        if album_to_delete.archive:
+        # For cleanup, we only respect the global visibility flag to be able to either do not change
+        # visibility at all, or to override whatever might be set in .ablumprops and revert to something else
+        if visibility is not None:
             album_to_delete_info = fetch_album_info(album_to_delete.id)
             assets_in_album = album_to_delete_info['assets']
         if delete_album({'id': album_to_delete.id, 'albumName': album_to_delete.get_final_name()}):
             logging.info("Deleted album %s", album_to_delete.get_final_name())
             cpt += 1
             # Archive flag is set, so we need to unarchive assets
-            if album_to_delete.archive and len(assets_in_album) > 0:
-                set_assets_archived([asset['id'] for asset in assets_in_album], False)
-                logging.info("Unarchived %d assets", len(assets_in_album))
+            if visibility is not None and len(assets_in_album) > 0:
+                set_assets_visibility([asset['id'] for asset in assets_in_album], visibility)
+                logging.info("Set visibility for %d assets to %s", len(assets_in_album), visibility)
     return cpt
 
 
@@ -1615,8 +1644,8 @@ def set_album_properties_in_model(album_model_to_update: AlbumModel):
         album_model_to_update.thumbnail_setting = set_album_thumbnail
 
     # Archive setting
-    if archive:
-        album_model_to_update.archive = archive
+    if visibility is not None:
+        album_model_to_update.visibility = visibility
 
     # Sort Order
     if album_order:
@@ -1789,13 +1818,21 @@ parser.add_argument("--set-album-thumbnail", choices=ALBUM_THUMBNAIL_SETTINGS_GL
                             If set to """+ALBUM_THUMBNAIL_RANDOM_FILTERED+""", thumbnails are shuffled for all albums whose assets would not be
                             filtered out or ignored by the ignore or path-filter options, even if no assets were added during the run.
                             If set to """+ALBUM_THUMBNAIL_RANDOM_ALL+""", the thumbnails for ALL albums will be shuffled on every run.""")
+# Backward compatibility, remove when archive is removed
 parser.add_argument("-v", "--archive", action="store_true",
-                    help="""Set this option to automatically archive all assets that were newly added to albums.
+                    help="""DEPRECATED. Use --visibility=archive instead! This option will be removed in the future!
+                            Set this option to automatically archive all assets that were newly added to albums.
                             If this option is set in combination with --mode = CLEANUP or DELETE_ALL, archived images of deleted albums will be unarchived.
                             Archiving hides the assets from Immich's timeline.""")
+# End Backward compaibility
+parser.add_argument("--visibility", choices=['archive', 'hidden', 'locked', 'timeline'],
+                    help="""Set this option to automatically set the visibility of all assets that are discovered by the script and assigned to albums.
+                            Exception for value 'locked': Assets will not be added to any albums, but to the 'locked' folder only.
+                            Also applies if -m/--mode is set to CLEAN_UP or DELETE_ALL; then it affects all assets in the deleted albums.
+                            Always overrides -v/--archive.""")
 parser.add_argument("--find-archived-assets", action="store_true",
-                    help="""By default, the script only finds assets that are not archived in Immich.
-                            Set this option to make the script discover assets that are already archived.
+                    help="""By default, the script only finds assets with visibility set to 'timeline' (which is the default).
+                            Set this option to make the script discover assets with visibility 'archive' as well.
                             If -A/--find-assets-in-albums is set as well, both options apply.""")
 parser.add_argument("--read-album-properties", action="store_true",
                     help="""If set, the script tries to access all passed root paths and recursively search for .albumprops files in all contained folders.
@@ -1844,6 +1881,7 @@ find_assets_in_albums = args["find_assets_in_albums"]
 path_filter = args["path_filter"]
 set_album_thumbnail = args["set_album_thumbnail"]
 archive = args["archive"]
+visibility = args["visibility"]
 find_archived_assets = args["find_archived_assets"]
 read_album_properties = args["read_album_properties"]
 api_timeout = args["api_timeout"]
@@ -1854,10 +1892,17 @@ if comments_and_likes_disabled and comments_and_likes_enabled:
     sys.exit(1)
 update_album_props_mode = args["update_album_props_mode"]
 
-# Override unattended if we're running in destructive mode
 if mode != SCRIPT_MODE_CREATE:
+    # Override unattended if we're running in destructive mode
     # pylint: disable=C0103
     unattended = False
+
+# Backward compatibility, remove when archive is removed
+if visibility is None and archive:
+    # pylint: disable=C0103
+    visibility = 'archive'
+    logging.warning('-v/--archive is DEPRECATED! Use --visibility=archive instead! This option will be removed in the future!')
+# End Backward compaibility
 
 is_docker = os.environ.get(ENV_IS_DOCKER, False)
 
@@ -1883,7 +1928,10 @@ logging.debug("sync_mode = %d", sync_mode)
 logging.debug("find_assets_in_albums = %s", find_assets_in_albums)
 logging.debug("path_filter = %s", path_filter)
 logging.debug("set_album_thumbnail = %s", set_album_thumbnail)
+# Backward compatibility, remove when archive is removed
 logging.debug("archive = %s", archive)
+# End Backward compaibility
+logging.debug("visibility = %s", visibility)
 logging.debug("find_archived_assets = %s", find_archived_assets)
 logging.debug("read_album_properties = %s", read_album_properties)
 logging.debug("api_timeout = %s", api_timeout)
@@ -1970,10 +2018,9 @@ if version['major'] == 1 and version ['minor'] < 106:
     logging.fatal("This script only works with Immich Server v1.106.0 and newer! Update Immich Server or use script version 0.8.1!")
     sys.exit(1)
 
-
 # Special case: Run Mode DELETE_ALL albums
 if mode == SCRIPT_MODE_DELETE_ALL:
-    delete_all_albums(archive, delete_confirm)
+    delete_all_albums(visibility, delete_confirm)
     sys.exit(0)
 
 album_properties_templates = {}
@@ -1987,9 +2034,9 @@ logging.info("Requesting all assets")
 # only request images that are not in any album if we are running in CREATE mode,
 # otherwise we need all images, even if they are part of an album
 if mode == SCRIPT_MODE_CREATE:
-    assets = fetch_assets(not find_assets_in_albums, find_archived_assets)
+    assets = fetch_assets(not find_assets_in_albums, ['archive'] if find_archived_assets else [])
 else:
-    assets = fetch_assets(False, True)
+    assets = fetch_assets(False, ['archive'])
 
 # Remove live photo video components
 assets = check_for_and_remove_live_photo_video_components(assets, not find_assets_in_albums, find_archived_assets)
@@ -2000,6 +2047,12 @@ logging.info("%d photos found", len(assets))
 logging.info("Sorting assets to corresponding albums using folder name")
 albums_to_create = build_album_list(assets, root_paths, album_properties_templates)
 albums_to_create = dict(sorted(albums_to_create.items(), key=lambda item: item[0]))
+
+if version['major'] == 1 and version ['minor'] < 133:
+    albums_with_visibility = [album_check_to_check for album_check_to_check in albums_to_create.values()
+                              if album_check_to_check.visibility is not None and album_check_to_check.visibility != 'archive']
+    if len(albums_with_visibility) > 0:
+        logging.warning("Option 'visibility' is only supported in Immich Server v1.133.x and newer! Option will be ignored!")
 
 logging.info("%d albums identified", len(albums_to_create))
 logging.info("Album list: %s", list(albums_to_create.keys()))
@@ -2044,6 +2097,13 @@ created_albums = []
 # List for gathering all asset UUIDs for later archiving
 asset_uuids_added = []
 for album in albums_to_create.values():
+    # Special case: Add assets to Locked folder
+    # Locked assets cannot be part of an album, so don't create albums in the first place
+    if album.visibility == 'locked':
+        set_assets_visibility(album.get_asset_uuids(), album.visibility)
+        logging.info("Added %d assets to locked folder", len(album.get_asset_uuids()))
+        continue
+
     # Create album if inexistent:
     if not album.id:
         album.id = create_album(album.get_final_name())
@@ -2055,6 +2115,11 @@ for album in albums_to_create.values():
     if len(assets_added) > 0:
         asset_uuids_added += assets_added
         logging.info("%d new assets added to %s", len(assets_added), album.get_final_name())
+
+    # Set assets visibility
+    if album.visibility is not None:
+        set_assets_visibility(assets_added, album.visibility)
+        logging.info("Set visibility for %d assets to %s", len(assets_added), album.visibility)
 
     # Update album properties depending on mode or if newly created
     if update_album_props_mode > 0 or (album in created_albums):
@@ -2070,11 +2135,6 @@ for album in albums_to_create.values():
         update_album_shared_state(album, True)
 
 logging.info("%d albums created", len(created_albums))
-
-# Archive assets
-if archive and len(asset_uuids_added) > 0:
-    set_assets_archived(asset_uuids_added, True)
-    logging.info("Archived %d assets", len(asset_uuids_added))
 
 # Perform album cover randomization
 if set_album_thumbnail == ALBUM_THUMBNAIL_RANDOM_ALL:
