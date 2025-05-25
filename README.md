@@ -792,6 +792,20 @@ By combining `--find-archived-assets`/`FIND_ARCHIVED_ASSETS=true` with `--visibi
 >[!WARNING]  
 >If the script is used to delete albums using `--mode=CLEANUP` or `--mode=DELETE_ALL` with the `--archive` option set, the script will not respect [album-fine properties](#setting-album-fine-properties) for visibility but only the global option passed when running it in that mode! That way you can decide what visibility to set for assets after their albums have been deleted.
 
+### Locked Folder Considerations
+When setting `--visibility`/`VISIBILITY` to `locked`, the script will move all discovered assets to the Locked Folder, removing them from any albums they might already be part of. The affected assets are determined by the following options/environment variables:
+  - `--find-archived-assets`/`FIND_ARCHIVED_ASSETS`
+  - `--find-assets-in-albums`/`FIND_ASSETS_IN_ALBUMS`
+  - `--ignore`/`IGNORE`
+  - `--path-filter`/`PATH_FILTER`
+
+> [!CAUTION]  
+> When running with `--find-assets-in-albums`/`FIND_ASSETS_IN_ALBUMS` and `--visibility`/`VISIBILITY` set to `locked`, the script will move all assets for matching albums to the locked folder, leaving empty albums behind.
+When also running with `--sync-mode`/`SYNC_MODE` set to `1` or `2`, those empty albums will be deleted after that as well!
+
+Removing assets from the locked folder and making it available to the script again must be done using the Immich User Interface.
+
+
 ## Dealing with External Library Changes
 
 Due to their nature, external libraries may be changed by the user without Immich having any say in it.  
