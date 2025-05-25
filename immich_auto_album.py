@@ -244,7 +244,7 @@ class AlbumModel:
                 # Backward compatibility, remove when archive is removed:
                 if album_props_template.archive is not None:
                     logging.warning("Found deprecated property archive in %s! This will be removed in the future, use visibility: archive instead!", album_properties_file_path)
-                    if album_props_template.visibility == None:
+                    if album_props_template.visibility is None:
                         album_props_template.visibility = 'archive'
                 #  End backward compatibility
                 return album_props_template
@@ -739,13 +739,13 @@ def fetch_assets(is_not_in_album: bool, visibility_options: list[str]) -> list:
     """
     if version['major'] == 1 and version ['minor'] < 133:
         return fetch_assets_with_options({'isNotInAlbum': is_not_in_album, 'withArchived': 'archive' in visibility_options})
-    else:
-        asset_list = fetch_assets_with_options({'isNotInAlbum': is_not_in_album})
-        for visiblity_option in visibility_options:
-            # Do not fetch agin for 'timeline', that's the default!
-            if visiblity_option != 'timeline':
-                asset_list += fetch_assets_with_options({'isNotInAlbum': is_not_in_album, 'visibility': visiblity_option})
-        return asset_list
+
+    asset_list = fetch_assets_with_options({'isNotInAlbum': is_not_in_album})
+    for visiblity_option in visibility_options:
+        # Do not fetch agin for 'timeline', that's the default!
+        if visiblity_option != 'timeline':
+            asset_list += fetch_assets_with_options({'isNotInAlbum': is_not_in_album, 'visibility': visiblity_option})
+    return asset_list
 
 def check_for_and_remove_live_photo_video_components(asset_list: list[dict], is_not_in_album: bool, find_archived: bool) -> list[dict]:
     """
@@ -1452,7 +1452,7 @@ def update_album_properties(album_to_update: AlbumModel):
         response = requests.patch(root_url+api_endpoint, json=data, **requests_kwargs, timeout=api_timeout)
         check_api_response(response)
 
-def set_assets_visibility(asset_ids_for_visibility: list[str], visibility: str):
+def set_assets_visibility(asset_ids_for_visibility: list[str], visibility_setting: str):
     """
     Sets the visibility of assets identified by the passed list of UUIDs.
 
@@ -1468,22 +1468,20 @@ def set_assets_visibility(asset_ids_for_visibility: list[str], visibility: str):
         Exception if the API call fails
     """
     api_endpoint = 'assets'
-    data = dict()
-    data["ids"] = asset_ids_for_visibility
+    data = {"ids": asset_ids_for_visibility}
     # Remove when minimum supported version is >= 133
     if version['major'] == 1 and version ['minor'] < 133:
-        if visibility is not None and visibility not in ['archive', 'timeline']:
+        if visibility_setting is not None and visibility_setting not in ['archive', 'timeline']:
             # Warnings have been logged earlier, silently abort
             return
-        else:
-            is_archived = True
-            if visibility == 'timeline':
-                is_archived = False
-            data["isArchived"] = is_archived
+        is_archived = True
+        if visibility_setting == 'timeline':
+            is_archived = False
+        data["isArchived"] = is_archived
     # Up-to-date Immich Server versions
     else:
-        data["visibility"] = visibility
-    
+        data["visibility"] = visibility_setting
+
     r = requests.put(root_url+api_endpoint, json=data, **requests_kwargs, timeout=api_timeout)
     check_api_response(r)
 
@@ -1826,7 +1824,7 @@ parser.add_argument("-v", "--archive", action="store_true",
                             Set this option to automatically archive all assets that were newly added to albums.
                             If this option is set in combination with --mode = CLEANUP or DELETE_ALL, archived images of deleted albums will be unarchived.
                             Archiving hides the assets from Immich's timeline.""")
-# End Backward compaibility 
+# End Backward compaibility
 parser.add_argument("--visibility", choices=['archive', 'hidden', 'locked', 'timeline'],
                     help="""Set this option to automatically set the visibility of all assets that are discovered by the script and assigned to albums.
                             Exception for value 'locked': Assets will not be added to any albums, but to the 'locked' folder only.
@@ -1900,10 +1898,11 @@ if mode != SCRIPT_MODE_CREATE:
     unattended = False
 
 # Backward compatibility, remove when archive is removed
-if visibility == None and archive:
+if visibility is None and archive:
+    # pylint: disable=C0103
     visibility = 'archive'
     logging.warning('-v/--archive is DEPRECATED! Use --visibility=archive instead! This option will be removed in the future!')
-# End Backward compaibility 
+# End Backward compaibility
 
 is_docker = os.environ.get(ENV_IS_DOCKER, False)
 
@@ -1931,7 +1930,7 @@ logging.debug("path_filter = %s", path_filter)
 logging.debug("set_album_thumbnail = %s", set_album_thumbnail)
 # Backward compatibility, remove when archive is removed
 logging.debug("archive = %s", archive)
-# End Backward compaibility 
+# End Backward compaibility
 logging.debug("visibility = %s", visibility)
 logging.debug("find_archived_assets = %s", find_archived_assets)
 logging.debug("read_album_properties = %s", read_album_properties)
@@ -2050,7 +2049,8 @@ albums_to_create = build_album_list(assets, root_paths, album_properties_templat
 albums_to_create = dict(sorted(albums_to_create.items(), key=lambda item: item[0]))
 
 if version['major'] == 1 and version ['minor'] < 133:
-    albums_with_visibility = [album_check_to_check for album_check_to_check in albums_to_create.values() if album_check_to_check.visibility is not None and album_check_to_check.visibility != 'archive']
+    albums_with_visibility = [album_check_to_check for album_check_to_check in albums_to_create.values()
+                              if album_check_to_check.visibility is not None and album_check_to_check.visibility != 'archive']
     if len(albums_with_visibility) > 0:
         logging.warning("Option 'visibility' is only supported in Immich Server v1.133.x and newer! Option will be ignored!")
 
@@ -2099,11 +2099,11 @@ asset_uuids_added = []
 for album in albums_to_create.values():
     # Special case: Add assets to Locked folder
     # Locked assets cannot be part of an album, so don't create albums in the first place
-    if(album.visibility == 'locked'):
+    if album.visibility == 'locked':
         set_assets_visibility(album.get_asset_uuids(), album.visibility)
         logging.info("Added %d assets to locked folder", len(album.get_asset_uuids()))
         continue
-    
+
     # Create album if inexistent:
     if not album.id:
         album.id = create_album(album.get_final_name())
@@ -2117,7 +2117,7 @@ for album in albums_to_create.values():
         logging.info("%d new assets added to %s", len(assets_added), album.get_final_name())
 
     # Set assets visibility
-    if(album.visibility is not None):
+    if album.visibility is not None:
         set_assets_visibility(assets_added, album.visibility)
         logging.info("Set visibility for %d assets to %s", len(assets_added), album.visibility)
 
