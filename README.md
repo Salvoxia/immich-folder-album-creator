@@ -355,7 +355,7 @@ Albums created for `root_path = /external_libs/photos/Birthdays`:
  - `2020` (containing all images from `2020` itself, if any)
  - `2020 02 Feb` (containing all images from `2020/02 Feb` itself, `2020/02 Feb/Vacation` and `2020/02 Aug/Vacation`)
  - `Birthdays John` (containing all images from `Birthdays/John`)
- - `Birthdays Jane` (containing all images from `Birthdays/John`)
+ - `Birthdays Jane` (containing all images from `Birthdays/Jane`)
  - `Skiing 2023`
 
  Albums created for `root_path = /external_libs/photos`, `--album-levels = 3` and `--album-separator " - "` :
