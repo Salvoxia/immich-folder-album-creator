@@ -1685,19 +1685,19 @@ def set_album_properties_in_model(album_model_to_update: AlbumModel):
         album_model_to_update.comments_and_likes_enabled = False
 
 def album_core_path(asset_path : str, album_level ,root_path_list : list[str] ):
-
+    """ returns the core path of an album """
     for root_path in root_path_list:
         if asset_path.startswith(root_path):
-            if type(album_level) == int:
+            if isinstance(album_level,int):
                 path_chunks = asset_path[len(root_path):].split('/')
                 if album_level < 0:
                     return '/'.join(path_chunks[album_level:])
                 else:
                     return '/'.join(path_chunks[:album_level-1])
-            if type(album_level) == list:
+            if isinstance(album_level,list):
                 #range not implemented yet
                 pass
-            else:    
+            else:
                 return asset_path[len(root_path):]
     return asset_path
 
@@ -1751,8 +1751,6 @@ def build_album_list(asset_list : list[dict], root_path_list : list[str], album_
 
             # Check if album properties exist for this album
             album_props_template = album_props_templates.get(album_name)
-            album_levels_int
-            core_path = album_core_path(asset_to_add['originalPath'], album_levels, root_path_list)
             # check if we have an existing album in this run. In case we we don't want to have merged albums, we compare the Asset Path to the album_paths Attribute
             existing_album_model = next(
                 (a for a in album_models if a.name == album_name and (merge_folder or album_core_path(asset_to_add['originalPath'], album_levels, root_path_list) in a.album_paths)),
@@ -2126,7 +2124,7 @@ logging.info("Sorting assets to corresponding albums using folder name")
 albums_to_create = build_album_list(assets, root_paths, album_properties_templates)
 
 if version['major'] == 1 and version ['minor'] < 133:
-    albums_with_visibility = [album_check_to_check for album_check_to_check in albums_to_create.values()
+    albums_with_visibility = [album_check_to_check for album_check_to_check in albums_to_create
                               if album_check_to_check.visibility is not None and album_check_to_check.visibility != 'archive']
     if len(albums_with_visibility) > 0:
         logging.warning("Option 'visibility' is only supported in Immich Server v1.133.x and newer! Option will be ignored!")
@@ -2178,7 +2176,7 @@ logging.info("Create / Append to Albums")
 created_albums = []
 # List for gathering all asset UUIDs for later archiving
 asset_uuids_added = []
-for album in albums_to_create.values():
+for album in albums_to_create:
     # Special case: Add assets to Locked folder
     # Locked assets cannot be part of an album, so don't create albums in the first place
     if album.visibility == 'locked':
@@ -2226,11 +2224,6 @@ logging.info("%d albums created", len(created_albums))
 if created_albums:
     #flush cash
     write_yaml(None, '.albums_cache.yaml')
-
-# Archive assets
-if archive and len(asset_uuids_added) > 0:
-    set_assets_archived(asset_uuids_added, True)
-    logging.info("Archived %d assets", len(asset_uuids_added))
 
 # Perform album cover randomization
 if set_album_thumbnail == ALBUM_THUMBNAIL_RANDOM_ALL:
