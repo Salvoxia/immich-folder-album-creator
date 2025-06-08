@@ -11,7 +11,7 @@ This is a python script designed to automatically create albums in [Immich](http
 This is useful for automatically creating and populating albums for external libraries.
 Using the provided docker image, the script can simply be added to the Immich compose stack and run along the rest of Immich's containers.
 
-__Current compatibility:__ Immich v1.106.1 - v1.131.x
+__Current compatibility:__ Immich v1.106.1 - v1.134.x
 
 ### Disclaimer
 This script is mostly based on the following original script: [REDVM/immich_auto_album.py](https://gist.github.com/REDVM/d8b3830b2802db881f5b59033cf35702)
@@ -50,7 +50,7 @@ This script is mostly based on the following original script: [REDVM/immich_auto
     - [Property Precedence](#property-precedence)
   - [Mass Updating Album Properties](#mass-updating-album-properties)
     - [Examples:](#examples)
-  - [Automatic Archiving](#automatic-archiving)
+  - [Asset Visibility & Locked Folder](#asset-visibility--locked-folder)
   - [Dealing with External Library Changes](#dealing-with-external-library-changes)
     - [`docker-compose` example passing the API key as environment variable](#docker-compose-example-passing-the-api-key-as-environment-variable)
     - [`docker-compose` example using a secrets file for the API key](#docker-compose-example-using-a-secrets-file-for-the-api-key)
@@ -128,11 +128,13 @@ options:
   --set-album-thumbnail {first,last,random,random-all,random-filtered}
                         Set first/last/random image as thumbnail for newly created albums or albums assets have been added to. If set to random-filtered, thumbnails are shuffled for all albums whose assets would not be filtered out or
                         ignored by the ignore or path-filter options, even if no assets were added during the run. If set to random-all, the thumbnails for ALL albums will be shuffled on every run. (default: None)
-  -v, --archive         Set this option to automatically archive all assets that were newly added to albums. If this option is set in combination with --mode = CLEANUP or DELETE_ALL, archived images of deleted albums will be unarchived.
-                        Archiving hides the assets from Immich's timeline. (default: False)
+  -v, --archive         DEPRECATED. Use --visibility=archive instead! This option will be removed in the future! Set this option to automatically archive all assets that were newly added to albums. If this option is set in combination with --mode = CLEANUP or DELETE_ALL, archived images of
+                        deleted albums will be unarchived. Archiving hides the assets from Immich's timeline. (default: False)
+  --visibility {archive,hidden,locked,timeline}
+                        Set this option to automatically set the visibility of all assets that are discovered by the script and assigned to albums. Exception for value 'locked': Assets will not be added to any albums, but to the 'locked' folder only. Also applies if -m/--mode is set to
+                        CLEAN_UP or DELETE_ALL; then it affects all assets in the deleted albums. Always overrides -v/--archive. (default: None)
   --find-archived-assets
-                        By default, the script only finds assets that are not archived in Immich. Set this option to make the script discover assets that are already archived. If -A/--find-assets-in-albums is set as well, both options
-                        apply. (default: False)
+                        By default, the script only finds assets with visibility set to 'timeline' (which is the default). Set this option to make the script discover assets with visibility 'archive' as well. If -A/--find-assets-in-albums is set as well, both options apply. (default: False)
   --read-album-properties
                         If set, the script tries to access all passed root paths and recursively search for .albumprops files in all contained folders. These properties will be used to set custom options on an per-album level. Check the
                         readme for a complete documentation. (default: False)
@@ -200,8 +202,9 @@ The environment variables are analogous to the script's command line arguments.
 | `FIND_ASSETS_IN_ALBUMS`      | no         | By default, the script only finds assets that are not assigned to any album yet. Set this option to make the script discover assets that are already part of an album and handle them as usual. If --find-archived-assets is set as well, both options apply. (default: `False`)<br>Refer to [Assets in Multiple Albums](#assets-in-multiple-albums). |
 | `PATH_FILTER`                | no         | A colon `:` separated list of literals or glob-style patterns to filter assets before album name creation. (default: ``)<br>Refer to [Filtering](#filtering). |
 | `SET_ALBUM_THUMBNAIL`        | no         | Set first/last/random image as thumbnail (based on image creation timestamp) for newly created albums or albums assets have been added to.<br> Allowed values: `first`,`last`,`random`,`random-filtered`,`random-all`<br>If set to `random-filtered`, thumbnails are shuffled for all albums whose assets would not be filtered out or ignored by the `IGNORE` or `PATH_FILTER` options, even if no assets were added during the run. If set to random-all, the thumbnails for ALL albums will be shuffled on every run. (default: `None`)<br>Refer to [Setting Album Thumbnails](#setting-album-thumbnails). |
-| `ARCHIVE`                    | no         | Set this option to automatically archive all assets that were newly added to albums.<br>If this option is set in combination with `MODE` = `CLEANUP` or `DELETE_ALL`, archived images of deleted albums will be unarchived.<br>Archiving hides the assets from Immich's timeline. (default: `False`)<br>Refer to [Automatic Archiving](#automatic-archiving). |
-| `FIND_ARCHIVED_ASSETS`       | no         | By default, the script only finds assets that are not archived in Immich. Set this option make the script discover assets that are already archived. If -A/--find-assets-in-albums is set as well, both options apply. (default: `False`)<br>Refer to [Automatic Archiving](#automatic-archiving). |
+| `ARCHIVE`                    | no         | __DEPRECATED! Use `VISIBILITY` instead! This option will be removed in the future!__<br>Set this option to automatically archive all assets that were newly added to albums.<br>If this option is set in combination with `MODE` = `CLEANUP` or `DELETE_ALL`, archived images of deleted albums will be unarchived.<br>Archiving hides the assets from Immich's timeline. (default: `False`)<br>Refer to [Asset Visibility & Locked Folder](#asset-visibility-locked-folder). |
+| `VISIBILITY`                 | no         | Set this option to automatically set the visibility of all assets that are discovered by the script and assigned to albums.<br>Exception for value 'locked': Assets will not be added to any albums, but to the 'locked' folder only.<br>Also applies if `MODE` is set to CLEAN_UP or DELETE_ALL; then it affects all assets in the deleted albums.<br>Always overrides `ARCHIVE`. (default: `None`)<br>Refer to [Asset Visibility & Locked Folder](#asset-visibility-locked-folder). |
+| `FIND_ARCHIVED_ASSETS`       | no         | By default, the script only finds assets with visibility set to 'timeline' (which is the default). Set this option to make the script discover assets with visibility 'archive' as well. If -A/--find-assets-in-albums is set as well, both options apply. (default: `False`)<br>Refer to [Asset Visibility & Locked Folder](#asset-visibility--locked-folder). |
 | `READ_ALBUM_PROPERTIES`      | no         | Set to `True` to enable discovery of `.albumprops` files in root paths, allowing to set different album properties for different albums. (default: `False`)<br>Refer to [Setting Album-Fine Properties](#setting-album-fine-properties). |
 | `API_TIMEOUT`                | no         | Timeout when requesting Immich API in seconds (default: `20`) |
 | `COMMENTS_AND_LIKES`         | no         | Set to `1` to explicitly enable Comments & Likes functionality for all albums this script adds assets to, set to `0` to disable. If not set, this setting is left alone by the script. |
@@ -352,7 +355,7 @@ Albums created for `root_path = /external_libs/photos/Birthdays`:
  - `2020` (containing all images from `2020` itself, if any)
  - `2020 02 Feb` (containing all images from `2020/02 Feb` itself, `2020/02 Feb/Vacation` and `2020/02 Aug/Vacation`)
  - `Birthdays John` (containing all images from `Birthdays/John`)
- - `Birthdays Jane` (containing all images from `Birthdays/John`)
+ - `Birthdays Jane` (containing all images from `Birthdays/Jane`)
  - `Skiing 2023`
 
  Albums created for `root_path = /external_libs/photos`, `--album-levels = 3` and `--album-separator " - "` :
@@ -685,8 +688,8 @@ share_with:
 thumbnail_setting: "first"
 # Sort order in album, valid values: asc, desc
 sort_oder: "desc"
-# Flag indicating whether to archive images added to this album, valid values: true, false
-archive: true
+# Set the visibility of assets that are getting added to that album, valid values: archive, hidden, locked, timeline
+visibility: 'timeline'
 # Flag indicating whether assets in this albums can be commented on and liked
 comments_and_likes_enabled: false
 ```
@@ -714,6 +717,13 @@ share_with:
     role: editor
 ```
 If the script is called with `--share-with "Mom"` and `--archive`, the album created from the folder the file above resides in will only be shared with user `Dad` using `editor` permissions, and assets will be archived. All other albums will be shared with user `Mom` (using `viewer` permissions, as defined by default) and assets will be archived.
+
+### Example: Always add files in a specific folder to Immich Locked Folder
+
+In order to always add files incoming to a specific external library folder to Immich's Locked Folder, add the following `.albumprops` file to that folder:
+```yaml
+visibility: 'locked'
+```
 
 ## Mass Updating Album Properties
 
@@ -763,17 +773,38 @@ By applying `--path-filter` and/or `--ignore` options, it is possible to get a m
     ```
 
 
-## Automatic Archiving
+## Asset Visibility & Locked Folder
 
-In Immich, 'archiving' an image means to hide it from the main timeline.  
-This script is capable of automatically archiving images it added to albums during the run to hide them from the timeline. To achieve this, run the script with option `--archive` or Docker environment variable `ARCHIVE=true`.  
+In Immich, may be 'archived' meaning they are hidden from the main timeline and only show up in their respective albums and the 'Archive' in the sidebar menu. Immich v1.133.0 also introduced the concept of a locked folder. The user must enter a PIN code to access the contents of that locked folder. Assets that are moved to the locked folder cannot be part of any albums and naturally are not displayed in the timeline.
 
+This script supports both concepts with the option/environment variable `--visibility`/`VISIBILITY`. Allowed values are:
+  - `archive`: Assets are archived after getting added to an album
+  - `locked`: No albums get created, but all discovered assets after filtering are moved to the locked folder
+  - `timeline`: All assets are shown in the timeline after getting added to an album
+
+Visibility may be on an per-album basis using [Album Properties](#setting-album-fine-properties).
 >[!IMPORTANT]  
 >Archiving images has the side effect that they are no longer detected by the script with default options. This means that if an album that was created with the `--archive` option set is deleted from the Immich user interface, the script will no longer find the images even though they are no longer assigned to an album.  
 To make the script find also archived images, run the script with the option `--find-archived-assets` or Docker environment variable `FIND_ARCHIVED_ASSETS=true`.
 
+By combining `--find-archived-assets`/`FIND_ARCHIVED_ASSETS=true` with `--visibility timeline`/`VISIBILITY timeline`, archived assets can be 'un-archived'.
+
 >[!WARNING]  
->If the script is used to delete albums using `--mode=CLEANUP` or `--mode=DELETE_ALL` with the `--archive` option set, the script will automatically unarchive all assets of deleted albums to revert them to their prior state. If you manually archived selected assets in albums, this will be reverted!
+>If the script is used to delete albums using `--mode=CLEANUP` or `--mode=DELETE_ALL` with the `--archive` option set, the script will not respect [album-fine properties](#setting-album-fine-properties) for visibility but only the global option passed when running it in that mode! That way you can decide what visibility to set for assets after their albums have been deleted.
+
+### Locked Folder Considerations
+When setting `--visibility`/`VISIBILITY` to `locked`, the script will move all discovered assets to the Locked Folder, removing them from any albums they might already be part of. The affected assets are determined by the following options/environment variables:
+  - `--find-archived-assets`/`FIND_ARCHIVED_ASSETS`
+  - `--find-assets-in-albums`/`FIND_ASSETS_IN_ALBUMS`
+  - `--ignore`/`IGNORE`
+  - `--path-filter`/`PATH_FILTER`
+
+> [!CAUTION]  
+> When running with `--find-assets-in-albums`/`FIND_ASSETS_IN_ALBUMS` and `--visibility`/`VISIBILITY` set to `locked`, the script will move all assets for matching albums to the locked folder, leaving empty albums behind.
+When also running with `--sync-mode`/`SYNC_MODE` set to `1` or `2`, those empty albums will be deleted after that as well!
+
+Removing assets from the locked folder and making it available to the script again must be done using the Immich User Interface.
+
 
 ## Dealing with External Library Changes
 
