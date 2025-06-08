@@ -1638,6 +1638,24 @@ def set_album_properties_in_model(album_model_to_update: AlbumModel):
     elif comments_and_likes_disabled:
         album_model_to_update.comments_and_likes_enabled = False
 
+def album_core_path(asset_path : str, album_level ,root_path_list : list[str] ):
+
+    for root_path in root_path_list:
+        if asset_path.startswith(root_path):
+            if type(album_level) == int:
+                path_chunks = asset_path[len(root_path):].split('/')
+                if album_level < 0:
+                    return '/'.join(path_chunks[album_level:])
+                else:
+                    return '/'.join(path_chunks[:album_level-1])
+            if type(album_level) == list:
+                #range not implemented yet
+                pass
+            else:    
+                return asset_path[len(root_path):]
+    return asset_path
+
+
 def build_album_list(asset_list : list[dict], root_path_list : list[str], album_props_templates: dict) -> dict:
     """
         Builds a list of album models, enriched with assets assigned to each album.
@@ -1683,10 +1701,11 @@ def build_album_list(asset_list : list[dict], root_path_list : list[str], album_
 
             # Check if album properties exist for this album
             album_props_template = album_props_templates.get(album_name)
-
+            album_levels_int
+            core_path = album_core_path(asset_to_add['originalPath'], album_levels, root_path_list)
             # check if we have an existing album in this run. In case we we don't want to have merged albums, we compare the Asset Path to the album_paths Attribute
             existing_album_model = next(
-                (a for a in album_models if a.name == album_name and (merge_folder or os.path.dirname(asset_to_add['originalPath']) in a.album_paths)),
+                (a for a in album_models if a.name == album_name and (merge_folder or album_core_path(asset_to_add['originalPath'], album_levels, root_path_list) in a.album_paths)),
                 None
             )
 
@@ -2010,16 +2029,20 @@ if read_album_properties:
     for album_properties_path, album_properties_template in album_properties_templates.items():
         logging.debug("Albumprops: %s -> %s", album_properties_path, album_properties_template)
 
-logging.info("Requesting all assets")
-# only request images that are not in any album if we are running in CREATE mode,
-# otherwise we need all images, even if they are part of an album
-if mode == SCRIPT_MODE_CREATE:
-    assets = fetch_assets(not find_assets_in_albums, find_archived_assets)
+if assets := read_yaml('.assets_cache.yaml'):
+    logging.info("Loaded Assets %s from cache", len(assets))
 else:
-    assets = fetch_assets(False, True)
+    logging.info("Requesting all assets")
+    # only request images that are not in any album if we are running in CREATE mode,
+    # otherwise we need all images, even if they are part of an album
+    if mode == SCRIPT_MODE_CREATE:
+        assets = fetch_assets(not find_assets_in_albums, find_archived_assets)
+    else:
+        assets = fetch_assets(False, True)
 
-# Remove live photo video components
-assets = check_for_and_remove_live_photo_video_components(assets, not find_assets_in_albums, find_archived_assets)
+    # Remove live photo video components
+    assets = check_for_and_remove_live_photo_video_components(assets, not find_assets_in_albums, find_archived_assets)
+    write_yaml(assets, '.assets_cache.yaml')
 logging.info("%d photos found", len(assets))
 
 
