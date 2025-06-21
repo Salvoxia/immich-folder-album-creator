@@ -297,6 +297,8 @@ services:
     restart: unless-stopped
     volumes:
      - /path/to/secret/file:/immich_api_key.secret:ro
+     # mount needed for .albumprops to work
+     - /path/to/my/photos:/external_libs/photos
     environment:
       API_URL: http://immich_server:2283/api
       API_KEY_FILE: /immich_api_key.secret
