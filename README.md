@@ -21,6 +21,7 @@ This script is mostly based on the following original script: [REDVM/immich_auto
     - [Disclaimer](#disclaimer)
   - [Table of Contents](#table-of-contents)
   - [Usage](#usage)
+    - [Creating an API Key](#creating-an-api-key)
     - [Bare Python Script](#bare-python-script)
     - [Docker](#docker)
       - [Environment Variables](#environment-variables)
@@ -56,6 +57,19 @@ This script is mostly based on the following original script: [REDVM/immich_auto
     - [`docker-compose` example using a secrets file for the API key](#docker-compose-example-using-a-secrets-file-for-the-api-key)
 
 ## Usage
+### Creating an API Key
+Regardless of how the script will be used later ([Bare Python Script](#bare-python-script) or [Docker](#docker)), an API Key is required for each user the script should be used for.
+Since Immich Server v1.135.x, creating API keys allows the user to specify permissions. The following permissions are required for the script to work with any possible option:
+  - `asset`
+    - `asset.delete`
+  - `album`
+    - `album.create`
+    - `album.read`
+    - `album.update`
+    - `album.delete`
+    - `album.addAsset`
+    - `album.share`
+
 ### Bare Python Script
 1. Download the script and its requirements
     ```bash
