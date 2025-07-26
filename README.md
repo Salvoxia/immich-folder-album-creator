@@ -11,7 +11,7 @@ This is a python script designed to automatically create albums in [Immich](http
 This is useful for automatically creating and populating albums for external libraries.
 Using the provided docker image, the script can simply be added to the Immich compose stack and run along the rest of Immich's containers.
 
-__Current compatibility:__ Immich v1.106.1 - v1.135.x
+__Current compatibility:__ Immich v1.106.1 - v1.136.x
 
 ### Disclaimer
 This script is mostly based on the following original script: [REDVM/immich_auto_album.py](https://gist.github.com/REDVM/d8b3830b2802db881f5b59033cf35702)
@@ -60,6 +60,8 @@ This script is mostly based on the following original script: [REDVM/immich_auto
 ### Creating an API Key
 Regardless of how the script will be used later ([Bare Python Script](#bare-python-script) or [Docker](#docker)), an API Key is required for each user the script should be used for.
 Since Immich Server v1.135.x, creating API keys allows the user to specify permissions. The following permissions are required for the script to work with any possible option:
+> [!IMPORTANT]
+> The API Key permissions listed below are sufficient only for Immich Server v1.135.x. Since v1.136.0, API calls for which no explicit permission exists in Immich are no longer accessilble for API keys that do not have all permissions. Hopefully, permissions will get more granular in the future and will cover all API calls this script uses. For now, API keys must be created with all permissions for the script to work.
   - `asset`
     - `asset.delete`
   - `album`
