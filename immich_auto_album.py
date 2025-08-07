@@ -68,6 +68,9 @@ class AlbumModel:
     # List of class attribute names that are relevant for album properties handling
     # This list is used for album model merging and validation
     ALBUM_PROPERTIES_VARIABLES = ['override_name', 'description', 'share_with', 'thumbnail_setting', 'sort_order', 'archive', 'visibility', 'comments_and_likes_enabled']
+    
+    # List of class attribute names that are relevant for inheritance
+    ALBUM_INHERITANCE_VARIABLES = ['inherit', 'inherit_properties']
 
     def __init__(self, name : str):
         # The album ID, set after it was created
@@ -93,6 +96,10 @@ class AlbumModel:
         self.visibility = None
         # Boolean indicating whether assets in this albums can be commented on and liked
         self.comments_and_likes_enabled = None
+        # Boolean indicating whether properties should be inherited down the directory tree
+        self.inherit = None
+        # List of property names that should be inherited
+        self.inherit_properties = None
 
     def get_album_properties_dict(self) -> dict:
         """
@@ -199,6 +206,49 @@ class AlbumModel:
                         raise AlbumMergeException(f"Attempting to override {prop_name} in {self.name} with {other_attribs[prop_name]}")
                     own_attribs[prop_name] = other_attribs[prop_name]
 
+    def merge_inherited_share_with(self, inherited_share_with: list) -> list:
+        """
+        Merges inherited share_with settings with current share_with settings.
+        Handles special share_with inheritance logic:
+        - Users can be added from parent folders
+        - Users can be removed by setting role to 'none'
+        - User roles can be modified if they exist in parent folders
+
+        Parameters
+        ----------
+        inherited_share_with : list
+            List of inherited share_with settings from parent folders
+
+        Returns
+        -------
+        list
+            Merged share_with list
+        """
+        if not inherited_share_with:
+            return self.share_with if self.share_with else []
+        
+        if not self.share_with:
+            return inherited_share_with
+        
+        # Create a dict to track users by name/email for easier manipulation
+        user_roles = {}
+        
+        # Add inherited users first
+        for inherited_user in inherited_share_with:
+            user_roles[inherited_user['user']] = inherited_user['role']
+        
+        # Apply current folder's share_with settings
+        for current_user in self.share_with:
+            if current_user['role'] == 'none':
+                # Remove user from sharing
+                user_roles.pop(current_user['user'], None)
+            else:
+                # Add or modify user role
+                user_roles[current_user['user']] = current_user['role']
+        
+        # Convert back to list format
+        return [{'user': user, 'role': role} for user, role in user_roles.items()]
+
 
     def get_final_name(self) -> str:
         """ 
@@ -237,9 +287,16 @@ class AlbumModel:
             if album_properties:
                 album_props_template = AlbumModel(None)
                 album_props_template_vars = vars(album_props_template)
+                
+                # Parse standard album properties
                 for album_prop_name in AlbumModel.ALBUM_PROPERTIES_VARIABLES:
                     if album_prop_name in album_properties:
                         album_props_template_vars[album_prop_name] = album_properties[album_prop_name]
+
+                # Parse inheritance properties
+                for inheritance_prop_name in AlbumModel.ALBUM_INHERITANCE_VARIABLES:
+                    if inheritance_prop_name in album_properties:
+                        album_props_template_vars[inheritance_prop_name] = album_properties[inheritance_prop_name]
 
                 # Backward compatibility, remove when archive is removed:
                 if album_props_template.archive is not None:
@@ -432,6 +489,200 @@ def check_for_and_log_incompatible_properties(model1: AlbumModel, model2: AlbumM
             logging.fatal(incompatible_prop)
         return True
     return False
+
+def build_inheritance_chain_for_album_path(album_path: str, root_path: str, albumprops_cache: dict) -> list[AlbumModel]:
+    """
+    Builds the inheritance chain for a given album path by walking up the directory tree
+    and finding all .albumprops files with inherit=True.
+
+    Parameters
+    ----------
+    album_path : str
+        The full path to the album directory
+    root_path : str  
+        The root path to stop the inheritance chain at
+    albumprops_cache : dict
+        Dictionary mapping .albumprops file paths to AlbumModel objects
+
+    Returns
+    -------
+    list[AlbumModel]
+        List of AlbumModel objects in inheritance order (root to current)
+    """
+    inheritance_chain = []
+    current_path = os.path.normpath(album_path)
+    root_path = os.path.normpath(root_path)
+    
+    # Walk up the directory tree until we reach the root path
+    while current_path != root_path and len(current_path) > len(root_path):
+        albumprops_path = os.path.join(current_path, ALBUMPROPS_FILE_NAME)
+        
+        if albumprops_path in albumprops_cache:
+            album_model = albumprops_cache[albumprops_path]
+            inheritance_chain.insert(0, album_model)  # Insert at beginning for correct order
+            
+            # If this level doesn't have inherit=True, stop the inheritance chain
+            if not album_model.inherit:
+                break
+        
+        # Move up one directory level
+        parent_path = os.path.dirname(current_path)
+        if parent_path == current_path:  # Reached filesystem root
+            break
+        current_path = parent_path
+    
+    return inheritance_chain
+
+def apply_inheritance_to_album_model(album_model: AlbumModel, inheritance_chain: list[AlbumModel]) -> AlbumModel:
+    """
+    Applies inheritance from the inheritance chain to the given album model.
+
+    Parameters
+    ----------
+    album_model : AlbumModel
+        The target album model to apply inheritance to (can be None if no local .albumprops)
+    inheritance_chain : list[AlbumModel]
+        List of AlbumModel objects in inheritance order (root to current, excluding current)
+
+    Returns
+    -------
+    AlbumModel
+        The album model with inherited properties applied
+    """
+    if not inheritance_chain:
+        return album_model
+    
+    # Create a new model to hold inherited properties
+    if album_model:
+        inherited_model = AlbumModel(album_model.name)
+        # Copy all properties from the original model first
+        for prop_name in AlbumModel.ALBUM_PROPERTIES_VARIABLES + AlbumModel.ALBUM_INHERITANCE_VARIABLES:
+            setattr(inherited_model, prop_name, getattr(album_model, prop_name))
+        inherited_model.id = album_model.id
+        inherited_model.assets = album_model.assets
+    else:
+        inherited_model = AlbumModel(None)
+    
+    inherited_share_with = []
+    
+    # Apply inheritance from root to current (inheritance_chain is already in correct order)
+    for parent_model in inheritance_chain:
+        if not parent_model.inherit_properties:
+            # If no inherit_properties specified, inherit all properties
+            inherit_props = AlbumModel.ALBUM_PROPERTIES_VARIABLES
+        else:
+            inherit_props = parent_model.inherit_properties
+        
+        # Apply inherited properties
+        parent_attribs = vars(parent_model)
+        inherited_attribs = vars(inherited_model)
+        
+        for prop_name in inherit_props:
+            if prop_name in AlbumModel.ALBUM_PROPERTIES_VARIABLES and parent_attribs[prop_name] is not None:
+                if prop_name == 'share_with':
+                    # Special handling for share_with - accumulate users
+                    if parent_attribs[prop_name]:
+                        inherited_share_with.extend(parent_attribs[prop_name])
+                else:
+                    # For other properties, only set if not already set (parent properties have lower precedence)
+                    if inherited_attribs[prop_name] is None:
+                        inherited_attribs[prop_name] = parent_attribs[prop_name]
+    
+    # Apply accumulated inherited share_with if the current model doesn't have share_with
+    if inherited_share_with and not inherited_model.share_with:
+        inherited_model.share_with = inherited_share_with
+    elif inherited_share_with and inherited_model.share_with:
+        # Merge inherited and current share_with using the special merge logic
+        temp_model = AlbumModel(None)
+        temp_model.share_with = inherited_share_with
+        inherited_model.share_with = inherited_model.merge_inherited_share_with(inherited_model.share_with)
+    
+    return inherited_model
+
+def build_albumprops_cache() -> dict:
+    """
+    Builds a cache of all .albumprops files found in root paths.
+    
+    Returns
+    -------
+    dict
+        Dictionary mapping .albumprops file paths to AlbumModel objects
+    """
+    albumprops_files = find_albumprops_files(root_paths)
+    albumprops_path_to_model = {}
+    
+    # Parse all .albumprops files
+    for albumprops_path in albumprops_files:
+        if is_path_ignored(albumprops_path):
+            continue
+            
+        try:
+            album_model = AlbumModel.parse_album_properties_file(albumprops_path)
+            if album_model:
+                albumprops_path_to_model[albumprops_path] = album_model
+                logging.debug("Loaded .albumprops from %s", albumprops_path)
+        except yaml.YAMLError as ex:
+            logging.error("Could not parse album properties file %s: %s", albumprops_path, ex)
+    
+    return albumprops_path_to_model
+
+def get_album_properties_with_inheritance(album_name: str, album_path: str, root_path: str, albumprops_cache: dict) -> AlbumModel:
+    """
+    Gets the album properties for an album, applying inheritance from parent folders.
+    
+    Parameters
+    ----------
+    album_name : str
+        The name of the album
+    album_path : str
+        The full path to the album directory
+    root_path : str
+        The root path for this album
+    albumprops_cache : dict
+        Dictionary mapping .albumprops file paths to AlbumModel objects
+        
+    Returns
+    -------
+    AlbumModel
+        The album model with inheritance applied, or None if no properties found
+    """
+    # Check if the album directory has its own .albumprops file
+    albumprops_path = os.path.join(album_path, ALBUMPROPS_FILE_NAME)
+    local_album_model = None
+    
+    logging.debug("Checking for album properties: album_path=%s, albumprops_path=%s", album_path, albumprops_path)
+    
+    if albumprops_path in albumprops_cache:
+        local_album_model = albumprops_cache[albumprops_path]
+        local_album_model.name = album_name
+        logging.debug("Found local .albumprops for album '%s'", album_name)
+    
+    # Build inheritance chain (excluding the current level)
+    inheritance_chain = build_inheritance_chain_for_album_path(album_path, root_path, albumprops_cache)
+    
+    # Remove the current level from inheritance chain if it exists
+    if inheritance_chain and albumprops_path in albumprops_cache:
+        current_model = albumprops_cache[albumprops_path]
+        if inheritance_chain and inheritance_chain[-1] is current_model:
+            inheritance_chain = inheritance_chain[:-1]
+    
+    logging.debug("Inheritance chain for album '%s' has %d levels", album_name, len(inheritance_chain))
+    
+    # Apply inheritance
+    if inheritance_chain or local_album_model:
+        final_model = apply_inheritance_to_album_model(local_album_model, inheritance_chain)
+        if final_model and final_model.name is None:
+            final_model.name = album_name
+        
+        # Log final properties for this album
+        if final_model and (inheritance_chain or local_album_model):
+            logging.info("Final album properties for '%s' (with inheritance): %s", album_name, final_model)
+        
+        return final_model
+    
+    return None
+
+    return None
 
 def is_integer(string_to_test: str) -> bool:
     """ 
@@ -1657,7 +1908,7 @@ def set_album_properties_in_model(album_model_to_update: AlbumModel):
     elif comments_and_likes_disabled:
         album_model_to_update.comments_and_likes_enabled = False
 
-def build_album_list(asset_list : list[dict], root_path_list : list[str], album_props_templates: dict) -> dict:
+def build_album_list(asset_list : list[dict], root_path_list : list[str], album_props_templates: dict, albumprops_cache: dict = None) -> dict:
     """
     Builds a list of album models, enriched with assets assigned to each album.
     Returns a dict where the key is the album name and the value is the model.
@@ -1671,12 +1922,16 @@ def build_album_list(asset_list : list[dict], root_path_list : list[str], album_
             List of root paths to use for album creation
         album_props_templates: dict
             Dictionary mapping an album name to album properties
+        albumprops_cache: dict
+            Dictionary mapping .albumprops file paths to AlbumModel objects (for inheritance)
 
     Returns
     ---------
         A dict with album names as keys and an AlbumModel as value
     """
     album_models = defaultdict(list)
+    logged_albums = set()  # Track which albums we've already logged properties for
+    
     for asset_to_add in asset_list:
         asset_path = asset_to_add['originalPath']
         # This method will log the ignore reason, so no need to log anything again.
@@ -1702,29 +1957,54 @@ def build_album_list(asset_list : list[dict], root_path_list : list[str], album_
             continue
 
         if len(album_name) > 0:
-            # First check if there are album properties for this album
-            if album_name in album_props_templates:
-                album_props_template = album_props_templates[album_name]
-                # Check if these album properties have already been used to create a new AlbumModel,
-                # if so, reuse!
-                if album_props_template.get_final_name() in album_models:
-                    new_album_model = album_models[album_props_template.get_final_name()]
-                else:
-                    new_album_model = AlbumModel(album_name)
-                    # Apply album properties from set options
-                    set_album_properties_in_model(new_album_model)
-                    # Check if we have album properties read from file
-                    # merge new album model with the one defined in our file, overriding any
-                    # pre-existing properties
-                    new_album_model.merge_from(album_props_template, AlbumModel.ALBUM_MERGE_MODE_OVERRIDE)
-            # There are no album properties, create a new AlbumModel from scratch
-            elif album_name not in album_models:
+            # Check if we already created this album model
+            final_album_name = album_name
+            
+            # Check for album properties with inheritance if albumprops_cache is provided
+            inherited_album_model = None
+            if albumprops_cache:
+                # Reconstruct the full album directory path
+                album_dir_path = os.path.join(asset_root_path, *path_chunks)
+                inherited_album_model = get_album_properties_with_inheritance(album_name, album_dir_path, asset_root_path, albumprops_cache)
+                if inherited_album_model and inherited_album_model.override_name:
+                    final_album_name = inherited_album_model.override_name
+            
+            # Check if there are traditional album properties for this album (backward compatibility)
+            album_props_template = album_props_templates.get(album_name)
+            if album_props_template and album_props_template.override_name:
+                final_album_name = album_props_template.override_name
+            
+            # Check if we already have this album model
+            if final_album_name in album_models:
+                new_album_model = album_models[final_album_name]
+            else:
                 new_album_model = AlbumModel(album_name)
                 # Apply album properties from set options
                 set_album_properties_in_model(new_album_model)
-            # Reuse previously created AlbumModel
-            else:
-                new_album_model = album_models[album_name]
+                
+                # Apply inherited properties if available
+                if inherited_album_model:
+                    new_album_model.merge_from(inherited_album_model, AlbumModel.ALBUM_MERGE_MODE_OVERRIDE)
+                    
+                    # Log final album properties (only once per album)
+                    if album_name not in logged_albums:
+                        logging.info("Final album properties for '%s' (with inheritance): %s", album_name, new_album_model)
+                        logged_albums.add(album_name)
+                        
+                # Apply traditional album properties if available (backward compatibility)
+                elif album_props_template:
+                    new_album_model.merge_from(album_props_template, AlbumModel.ALBUM_MERGE_MODE_OVERRIDE)
+                    
+                    # Log final album properties (only once per album)
+                    if album_name not in logged_albums:
+                        logging.info("Final album properties for '%s': %s", album_name, new_album_model)
+                        logged_albums.add(album_name)
+                else:
+                    # Log final album properties for albums without .albumprops (only once per album)
+                    if album_name not in logged_albums:
+                        logging.info("Final album properties for '%s': %s", album_name, new_album_model)
+                        logged_albums.add(album_name)
+                        
             # Add asset to album model
             new_album_model.assets.append(asset_to_add)
             album_models[new_album_model.get_final_name()] = new_album_model
@@ -2024,8 +2304,11 @@ if mode == SCRIPT_MODE_DELETE_ALL:
     sys.exit(0)
 
 album_properties_templates = {}
+albumprops_cache = {}
 if read_album_properties:
-    logging.debug("Albumprops: Finding, parsing and merging %s files", ALBUMPROPS_FILE_NAME)
+    logging.debug("Albumprops: Finding, parsing and loading %s files with inheritance support", ALBUMPROPS_FILE_NAME)
+    albumprops_cache = build_albumprops_cache()
+    # Keep the old templates for backward compatibility with existing logic that expects album name keys
     album_properties_templates = build_album_properties_templates()
     for album_properties_path, album_properties_template in album_properties_templates.items():
         logging.debug("Albumprops: %s -> %s", album_properties_path, album_properties_template)
@@ -2045,7 +2328,7 @@ logging.info("%d photos found", len(assets))
 
 
 logging.info("Sorting assets to corresponding albums using folder name")
-albums_to_create = build_album_list(assets, root_paths, album_properties_templates)
+albums_to_create = build_album_list(assets, root_paths, album_properties_templates, albumprops_cache)
 albums_to_create = dict(sorted(albums_to_create.items(), key=lambda item: item[0]))
 
 if version['major'] == 1 and version ['minor'] < 133:
