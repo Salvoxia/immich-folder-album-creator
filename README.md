@@ -703,8 +703,10 @@ share_with:
   # or provide user mail address
   - user: "user2@example.org"
     role: "viewer"
+  # role is optional and defaults to "viewer" if not specified
+  - user: "user3@example.org"
   # Special role "none" can be used to remove inherited users
-  - user: "user3"
+  - user: "user4"
     role: "none"
 # Set album thumbnail, valid values: first, last, random or fully qualified path of an asset that is (or will be) assigned to the album
 thumbnail_setting: "first"

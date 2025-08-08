@@ -1312,13 +1312,15 @@ def update_album_shared_state(album_to_share: AlbumModel, unshare_users: bool) -
     # Parse and prepare expected share roles
     # List all share users by share role
     share_users_to_roles_expected = {}
-    for share_user in album.share_with:
+    for share_user in album_to_share.share_with:
         # Find the user by configured name or email
         share_user_in_immich = find_user_by_name_or_email(share_user['user'], users)
         if not share_user_in_immich:
-            logging.warning("User %s to share album %s with does not exist!", share_user['user'], album.get_final_name())
+            logging.warning("User %s to share album %s with does not exist!", share_user['user'], album_to_share.get_final_name())
             continue
-        share_users_to_roles_expected[share_user_in_immich['id']] = share_user['role']
+        # Use 'viewer' as default role if not specified
+        share_role = share_user.get('role', 'viewer')
+        share_users_to_roles_expected[share_user_in_immich['id']] = share_role
 
     # No users to share with and unsharing is disabled?
     if len(share_users_to_roles_expected) == 0 and not unshare_users:
