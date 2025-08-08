@@ -1979,6 +1979,19 @@ def build_album_list(asset_list : list[dict], root_path_list : list[str], album_
             # Check if we already have this album model
             if final_album_name in album_models:
                 new_album_model = album_models[final_album_name]
+                
+                # Merge properties when adding assets to an existing album with same final name
+                if inherited_album_model:
+                    # For properties like share_with, we need to merge them properly
+                    if inherited_album_model.share_with:
+                        merged_share_with = new_album_model.merge_inherited_share_with(inherited_album_model.share_with)
+                        new_album_model.share_with = merged_share_with
+                    
+                    # For other properties, only update if not already set (preserve first album's properties as base)
+                    temp_model = AlbumModel(new_album_model.name)
+                    temp_model.merge_from(inherited_album_model, AlbumModel.ALBUM_MERGE_MODE_EXCLUSIVE)
+                    new_album_model.merge_from(temp_model, AlbumModel.ALBUM_MERGE_MODE_EXCLUSIVE)
+                        
             else:
                 new_album_model = AlbumModel(album_name)
                 # Apply album properties from set options
@@ -1989,23 +2002,23 @@ def build_album_list(asset_list : list[dict], root_path_list : list[str], album_
                     new_album_model.merge_from(inherited_album_model, AlbumModel.ALBUM_MERGE_MODE_OVERRIDE)
                     
                     # Log final album properties (only once per album)
-                    if album_name not in logged_albums:
-                        logging.info("Final album properties for '%s' (with inheritance): %s", album_name, new_album_model)
-                        logged_albums.add(album_name)
+                    if final_album_name not in logged_albums:
+                        logging.info("Final album properties for '%s' (with inheritance): %s", final_album_name, new_album_model)
+                        logged_albums.add(final_album_name)
                         
                 # Apply traditional album properties if available (backward compatibility)
                 elif album_props_template:
                     new_album_model.merge_from(album_props_template, AlbumModel.ALBUM_MERGE_MODE_OVERRIDE)
                     
                     # Log final album properties (only once per album)
-                    if album_name not in logged_albums:
-                        logging.info("Final album properties for '%s': %s", album_name, new_album_model)
-                        logged_albums.add(album_name)
+                    if final_album_name not in logged_albums:
+                        logging.info("Final album properties for '%s': %s", final_album_name, new_album_model)
+                        logged_albums.add(final_album_name)
                 else:
                     # Log final album properties for albums without .albumprops (only once per album)
-                    if album_name not in logged_albums:
-                        logging.info("Final album properties for '%s': %s", album_name, new_album_model)
-                        logged_albums.add(album_name)
+                    if final_album_name not in logged_albums:
+                        logging.info("Final album properties for '%s': %s", final_album_name, new_album_model)
+                        logged_albums.add(final_album_name)
                         
             # Add asset to album model
             new_album_model.assets.append(asset_to_add)
