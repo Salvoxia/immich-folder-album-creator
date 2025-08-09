@@ -211,8 +211,9 @@ class AlbumModel:
         Merges inherited share_with settings with current share_with settings.
         Handles special share_with inheritance logic:
         - Users can be added from parent folders
-        - Users can be removed by setting role to 'none'
-        - User roles can be modified if they exist in parent folders
+        - Users can be removed by setting role to 'none' (and once removed, cannot be re-added)
+        - User roles follow most restrictive policy: viewer is more restrictive than editor
+        - Most restrictive role wins when there are conflicts
 
         Parameters
         ----------
@@ -232,19 +233,35 @@ class AlbumModel:
         
         # Create a dict to track users by name/email for easier manipulation
         user_roles = {}
+        users_set_to_none = set()  # Track users that have been explicitly set to 'none'
         
         # Add inherited users first
         for inherited_user in inherited_share_with:
-            user_roles[inherited_user['user']] = inherited_user['role']
+            if inherited_user['role'] == 'none':
+                users_set_to_none.add(inherited_user['user'])
+            else:
+                user_roles[inherited_user['user']] = inherited_user['role']
         
         # Apply current folder's share_with settings
         for current_user in self.share_with:
             if current_user['role'] == 'none':
-                # Remove user from sharing
+                # Remove user from sharing and mark as explicitly set to none
                 user_roles.pop(current_user['user'], None)
-            else:
-                # Add or modify user role
-                user_roles[current_user['user']] = current_user['role']
+                users_set_to_none.add(current_user['user'])
+            elif current_user['user'] not in users_set_to_none:
+                # Only add/modify user if they haven't been set to 'none'
+                if current_user['user'] in user_roles:
+                    # Apply most restrictive role: viewer is more restrictive than editor
+                    current_role = user_roles[current_user['user']]
+                    new_role = current_user['role']
+                    
+                    if current_role == 'viewer' or new_role == 'viewer':
+                        user_roles[current_user['user']] = 'viewer'
+                    else:
+                        user_roles[current_user['user']] = new_role
+                else:
+                    # Add new user with their role
+                    user_roles[current_user['user']] = current_user['role']
         
         # Convert back to list format
         return [{'user': user, 'role': role} for user, role in user_roles.items()]
@@ -1983,15 +2000,15 @@ def build_album_list(asset_list : list[dict], root_path_list : list[str], album_
                 # Merge properties when adding assets to an existing album with same final name
                 if inherited_album_model:
                     # For share_with, we need to accumulate all users from all directories
+                    # using the most restrictive role policy
                     if inherited_album_model.share_with:
-                        # Create a combined list that preserves existing share_with and adds new users
-                        combined_share_with = list(new_album_model.share_with) if new_album_model.share_with else []
-                        combined_share_with.extend(inherited_album_model.share_with)
+                        # Create a temporary model to merge the new share_with settings
+                        # with the already accumulated settings in the existing album
+                        temp_merge_model = AlbumModel(new_album_model.name)
+                        temp_merge_model.share_with = new_album_model.share_with if new_album_model.share_with else []
                         
-                        # Use the merge logic to properly handle user conflicts and roles
-                        temp_model = AlbumModel(new_album_model.name)
-                        temp_model.share_with = combined_share_with
-                        new_album_model.share_with = temp_model.merge_inherited_share_with([])
+                        # Use the merge logic to properly handle user conflicts, roles, and 'none' users
+                        new_album_model.share_with = temp_merge_model.merge_inherited_share_with(inherited_album_model.share_with)
                     
                     # For other properties, only update if not already set (preserve first album's properties as base)
                     temp_model = AlbumModel(new_album_model.name)
