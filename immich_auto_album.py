@@ -1982,16 +1982,25 @@ def build_album_list(asset_list : list[dict], root_path_list : list[str], album_
                 
                 # Merge properties when adding assets to an existing album with same final name
                 if inherited_album_model:
-                    # For properties like share_with, we need to merge them properly
+                    # For share_with, we need to accumulate all users from all directories
                     if inherited_album_model.share_with:
-                        merged_share_with = new_album_model.merge_inherited_share_with(inherited_album_model.share_with)
-                        new_album_model.share_with = merged_share_with
+                        # Create a combined list that preserves existing share_with and adds new users
+                        combined_share_with = list(new_album_model.share_with) if new_album_model.share_with else []
+                        combined_share_with.extend(inherited_album_model.share_with)
+                        
+                        # Use the merge logic to properly handle user conflicts and roles
+                        temp_model = AlbumModel(new_album_model.name)
+                        temp_model.share_with = combined_share_with
+                        new_album_model.share_with = temp_model.merge_inherited_share_with([])
                     
                     # For other properties, only update if not already set (preserve first album's properties as base)
                     temp_model = AlbumModel(new_album_model.name)
-                    temp_model.merge_from(inherited_album_model, AlbumModel.ALBUM_MERGE_MODE_EXCLUSIVE)
+                    # Copy only non-share_with properties to avoid overwriting our accumulated share_with
+                    for prop_name in AlbumModel.ALBUM_PROPERTIES_VARIABLES:
+                        if prop_name != 'share_with' and getattr(inherited_album_model, prop_name) is not None:
+                            setattr(temp_model, prop_name, getattr(inherited_album_model, prop_name))
                     new_album_model.merge_from(temp_model, AlbumModel.ALBUM_MERGE_MODE_EXCLUSIVE)
-                        
+
             else:
                 new_album_model = AlbumModel(album_name)
                 # Apply album properties from set options
