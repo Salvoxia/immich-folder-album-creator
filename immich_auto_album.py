@@ -8,7 +8,7 @@ import sys
 import fnmatch
 import os
 import datetime
-from collections import defaultdict, OrderedDict
+from collections import OrderedDict
 import random
 from urllib.error import HTTPError
 
@@ -68,7 +68,7 @@ class AlbumModel:
     # List of class attribute names that are relevant for album properties handling
     # This list is used for album model merging and validation
     ALBUM_PROPERTIES_VARIABLES = ['override_name', 'description', 'share_with', 'thumbnail_setting', 'sort_order', 'archive', 'visibility', 'comments_and_likes_enabled']
-    
+
     # List of class attribute names that are relevant for inheritance
     ALBUM_INHERITANCE_VARIABLES = ['inherit', 'inherit_properties']
 
@@ -127,7 +127,7 @@ class AlbumModel:
         return str(self.get_album_properties_dict())
 
     def get_asset_uuids(self) -> list:
-        """ 
+        """
         Gathers UUIDs of all assets and returns them
 
         Returns
@@ -137,20 +137,20 @@ class AlbumModel:
         return [asset_to_add['id'] for asset_to_add in self.assets]
 
     def find_incompatible_properties(self, other) -> list[str]:
-        """ 
-        Checks whether this Album Model and the other album model are compatible in terms of 
+        """
+        Checks whether this Album Model and the other album model are compatible in terms of
         describing the same album for creation in a way that no album properties are in conflict
         with each other.
         All properties must either bei the same or not present in both objects, except for
           - id
           - name
           - assets
-        
+
         Parameters
         ----------
         other : AlbumModel
             The other album model to check against
-        
+
         Returns
         ---------
             A list of string representations for incompatible properties. The list is empty
@@ -168,7 +168,7 @@ class AlbumModel:
         return incompatible_props
 
     def merge_from(self, other, merge_mode: int):
-        """ 
+        """
         Merges properties of other in self. The only properties not
         considered for merging are
           - id
@@ -227,21 +227,21 @@ class AlbumModel:
         """
         if not inherited_share_with:
             return self.share_with if self.share_with else []
-        
+
         if not self.share_with:
             return inherited_share_with
-        
+
         # Create a dict to track users by name/email for easier manipulation
         user_roles = {}
         users_set_to_none = set()  # Track users that have been explicitly set to 'none'
-        
+
         # Add inherited users first
         for inherited_user in inherited_share_with:
             if inherited_user['role'] == 'none':
                 users_set_to_none.add(inherited_user['user'])
             else:
                 user_roles[inherited_user['user']] = inherited_user['role']
-        
+
         # Apply current folder's share_with settings
         for current_user in self.share_with:
             if current_user['role'] == 'none':
@@ -254,7 +254,7 @@ class AlbumModel:
                     # Apply most restrictive role: viewer is more restrictive than editor
                     current_role = user_roles[current_user['user']]
                     new_role = current_user['role']
-                    
+
                     if current_role == 'viewer' or new_role == 'viewer':
                         user_roles[current_user['user']] = 'viewer'
                     else:
@@ -262,16 +262,15 @@ class AlbumModel:
                 else:
                     # Add new user with their role
                     user_roles[current_user['user']] = current_user['role']
-        
+
         # Convert back to list format
         return [{'user': user, 'role': role} for user, role in user_roles.items()]
 
-
     def get_final_name(self) -> str:
-        """ 
+        """
         Gets the album model's name to use when talking to Immich, i.e.
         returns override_name if set, otherwise name.
-        
+
         Returns
         ---------
             override_name if set, otherwise name
@@ -282,14 +281,14 @@ class AlbumModel:
 
     @staticmethod
     def parse_album_properties_file(album_properties_file_path: str):
-        """ 
+        """
         Parses the provided album properties file into an AlbumModel
 
         Parameters
         ----------
             album_properties_file_path : str
                 The fully qualified path to a valid album properties file
-        
+
         Returns
         ---------
             An AlbumModel that represents the album properties
@@ -304,7 +303,7 @@ class AlbumModel:
             if album_properties:
                 album_props_template = AlbumModel(None)
                 album_props_template_vars = vars(album_props_template)
-                
+
                 # Parse standard album properties
                 for album_prop_name in AlbumModel.ALBUM_PROPERTIES_VARIABLES:
                     if album_prop_name in album_properties:
@@ -326,14 +325,14 @@ class AlbumModel:
         return None
 
 def find_albumprops_files(paths: list[str]) -> list[str]:
-    """ 
+    """
     Recursively finds all album properties files in all passed paths.
 
     Parameters
     ----------
         paths : list[str]
             A list of paths to search for album properties files
-    
+
     Returns
     ---------
         A list of paths with all album properties files
@@ -353,7 +352,7 @@ def find_albumprops_files(paths: list[str]) -> list[str]:
 def identify_root_path(path: str, root_path_list: list[str]) -> str:
     """
     Identifies which root path is the parent of the provided path.
-    
+
     :param path: The path to find the root path for
     :type path: str
     :param root_path_list: The list of root paths to get the one path is a child of from
@@ -367,7 +366,7 @@ def identify_root_path(path: str, root_path_list: list[str]) -> str:
     return None
 
 def build_album_properties_templates() -> dict:
-    """ 
+    """
     Searches all root paths for album properties files,
     applies ignore/filtering mechanisms, parses the files,
     creates AlbumModel objects from them, performs validations and returns
@@ -375,7 +374,7 @@ def build_album_properties_templates() -> dict:
     to the album model file.
     If a fatal error occurs during processing of album properties files (i.e. two files encountered targeting the same album with incompatible properties), the
     program exits.
-    
+
     Returns
     ---------
         A dictionary mapping mapping the album name (generated from the path the album properties file was found in)
@@ -442,7 +441,7 @@ def build_album_properties_templates() -> dict:
     return album_props_templates
 
 def validate_album_props_templates(album_props_templates: list[AlbumModel], album_name_to_album_properties_file_path: dict):
-    """ 
+    """
     Validates the provided list of album properties.
     Specifically, checks that if multiple album properties files specify the same override_name, all other specified properties
     are the same as well.
@@ -516,7 +515,7 @@ def build_inheritance_chain_for_album_path(album_path: str, root_path: str, albu
     ----------
     album_path : str
         The full path to the album directory
-    root_path : str  
+    root_path : str
         The root path to stop the inheritance chain at
     albumprops_cache : dict
         Dictionary mapping .albumprops file paths to AlbumModel objects
@@ -529,25 +528,25 @@ def build_inheritance_chain_for_album_path(album_path: str, root_path: str, albu
     inheritance_chain = []
     current_path = os.path.normpath(album_path)
     root_path = os.path.normpath(root_path)
-    
+
     # Walk up the directory tree until we reach the root path
     while current_path != root_path and len(current_path) > len(root_path):
         albumprops_path = os.path.join(current_path, ALBUMPROPS_FILE_NAME)
-        
+
         if albumprops_path in albumprops_cache:
             album_model = albumprops_cache[albumprops_path]
             inheritance_chain.insert(0, album_model)  # Insert at beginning for correct order
-            
+
             # If this level doesn't have inherit=True, stop the inheritance chain
             if not album_model.inherit:
                 break
-        
+
         # Move up one directory level
         parent_path = os.path.dirname(current_path)
         if parent_path == current_path:  # Reached filesystem root
             break
         current_path = parent_path
-    
+
     return inheritance_chain
 
 def apply_inheritance_to_album_model(album_model: AlbumModel, inheritance_chain: list[AlbumModel]) -> AlbumModel:
@@ -568,7 +567,7 @@ def apply_inheritance_to_album_model(album_model: AlbumModel, inheritance_chain:
     """
     if not inheritance_chain:
         return album_model
-    
+
     # Create a new model to hold inherited properties
     if album_model:
         inherited_model = AlbumModel(album_model.name)
@@ -579,9 +578,9 @@ def apply_inheritance_to_album_model(album_model: AlbumModel, inheritance_chain:
         inherited_model.assets = album_model.assets
     else:
         inherited_model = AlbumModel(None)
-    
+
     inherited_share_with = []
-    
+
     # Apply inheritance from root to current (inheritance_chain is already in correct order)
     for parent_model in inheritance_chain:
         if not parent_model.inherit_properties:
@@ -589,11 +588,11 @@ def apply_inheritance_to_album_model(album_model: AlbumModel, inheritance_chain:
             inherit_props = AlbumModel.ALBUM_PROPERTIES_VARIABLES
         else:
             inherit_props = parent_model.inherit_properties
-        
+
         # Apply inherited properties
         parent_attribs = vars(parent_model)
         inherited_attribs = vars(inherited_model)
-        
+
         for prop_name in inherit_props:
             if prop_name in AlbumModel.ALBUM_PROPERTIES_VARIABLES and parent_attribs[prop_name] is not None:
                 if prop_name == 'share_with':
@@ -604,7 +603,7 @@ def apply_inheritance_to_album_model(album_model: AlbumModel, inheritance_chain:
                     # For other properties, only set if not already set (parent properties have lower precedence)
                     if inherited_attribs[prop_name] is None:
                         inherited_attribs[prop_name] = parent_attribs[prop_name]
-    
+
     # Apply accumulated inherited share_with if the current model doesn't have share_with
     if inherited_share_with and not inherited_model.share_with:
         inherited_model.share_with = inherited_share_with
@@ -613,13 +612,13 @@ def apply_inheritance_to_album_model(album_model: AlbumModel, inheritance_chain:
         temp_model = AlbumModel(None)
         temp_model.share_with = inherited_share_with
         inherited_model.share_with = inherited_model.merge_inherited_share_with(inherited_model.share_with)
-    
+
     return inherited_model
 
 def build_albumprops_cache() -> dict:
     """
     Builds a cache of all .albumprops files found in root paths.
-    
+
     Returns
     -------
     dict
@@ -627,12 +626,12 @@ def build_albumprops_cache() -> dict:
     """
     albumprops_files = find_albumprops_files(root_paths)
     albumprops_path_to_model = {}
-    
+
     # Parse all .albumprops files
     for albumprops_path in albumprops_files:
         if is_path_ignored(albumprops_path):
             continue
-            
+
         try:
             album_model = AlbumModel.parse_album_properties_file(albumprops_path)
             if album_model:
@@ -640,13 +639,13 @@ def build_albumprops_cache() -> dict:
                 logging.debug("Loaded .albumprops from %s", albumprops_path)
         except yaml.YAMLError as ex:
             logging.error("Could not parse album properties file %s: %s", albumprops_path, ex)
-    
+
     return albumprops_path_to_model
 
 def get_album_properties_with_inheritance(album_name: str, album_path: str, root_path: str, albumprops_cache: dict) -> AlbumModel:
     """
     Gets the album properties for an album, applying inheritance from parent folders.
-    
+
     Parameters
     ----------
     album_name : str
@@ -657,7 +656,7 @@ def get_album_properties_with_inheritance(album_name: str, album_path: str, root
         The root path for this album
     albumprops_cache : dict
         Dictionary mapping .albumprops file paths to AlbumModel objects
-        
+
     Returns
     -------
     AlbumModel
@@ -666,45 +665,43 @@ def get_album_properties_with_inheritance(album_name: str, album_path: str, root
     # Check if the album directory has its own .albumprops file
     albumprops_path = os.path.join(album_path, ALBUMPROPS_FILE_NAME)
     local_album_model = None
-    
+
     logging.debug("Checking for album properties: album_path=%s, albumprops_path=%s", album_path, albumprops_path)
-    
+
     if albumprops_path in albumprops_cache:
         local_album_model = albumprops_cache[albumprops_path]
         local_album_model.name = album_name
         logging.debug("Found local .albumprops for album '%s'", album_name)
-    
+
     # Build inheritance chain (excluding the current level)
     inheritance_chain = build_inheritance_chain_for_album_path(album_path, root_path, albumprops_cache)
-    
+
     # Remove the current level from inheritance chain if it exists
     if inheritance_chain and albumprops_path in albumprops_cache:
         current_model = albumprops_cache[albumprops_path]
         if inheritance_chain and inheritance_chain[-1] is current_model:
             inheritance_chain = inheritance_chain[:-1]
-    
+
     logging.debug("Inheritance chain for album '%s' has %d levels", album_name, len(inheritance_chain))
-    
+
     # Apply inheritance
     if inheritance_chain or local_album_model:
         final_model = apply_inheritance_to_album_model(local_album_model, inheritance_chain)
         if final_model and final_model.name is None:
             final_model.name = album_name
-        
+
         # Log final properties for this album
         if final_model and (inheritance_chain or local_album_model):
             logging.info("Final album properties for '%s' (with inheritance): %s", album_name, final_model)
-        
+
         return final_model
-    
-    return None
 
     return None
 
 def is_integer(string_to_test: str) -> bool:
-    """ 
+    """
     Trying to deal with python's isnumeric() function
-    not recognizing negative numbers, tests whether the provided 
+    not recognizing negative numbers, tests whether the provided
     string is an integer or not.
 
     Parameters
@@ -742,7 +739,7 @@ escaped_glob_tokens_to_re = OrderedDict((
 escaped_glob_replacement = regex.compile('(%s)' % '|'.join(escaped_glob_tokens_to_re).replace('\\', '\\\\\\'))
 
 def glob_to_re(pattern: str) -> str:
-    """ 
+    """
     Converts the provided GLOB pattern to
     a regular expression.
 
@@ -757,7 +754,7 @@ def glob_to_re(pattern: str) -> str:
     return escaped_glob_replacement.sub(lambda match: escaped_glob_tokens_to_re[match.group(0)], regex.escape(pattern))
 
 def read_file(file_path: str) -> str:
-    """ 
+    """
     Reads and returns the contents of the provided file.
 
     Parameters
@@ -776,7 +773,7 @@ def read_file(file_path: str) -> str:
         return secret_file.read().strip()
 
 def read_api_key_from_file(file_path: str) -> str:
-    """ 
+    """
     Reads the API key from the provided file
 
     Parameters
@@ -796,7 +793,7 @@ def read_api_key_from_file(file_path: str) -> str:
     return None
 
 def determine_api_key(api_key_source: str, key_type: str) -> str:
-    """ 
+    """
     Determines the API key base on key_type.
     For key_type 'literal', api_key_source is returned as is.
     For key'type 'file', api_key_source is a path to a file containing the API key,
@@ -821,10 +818,10 @@ def determine_api_key(api_key_source: str, key_type: str) -> str:
     return None
 
 def expand_to_glob(expr: str) -> str:
-    """ 
+    """
     Expands the passed expression to a glob-style
     expression if it doesn't contain neither a slash nor an asterisk.
-    The resulting glob-style expression matches any path that contains the 
+    The resulting glob-style expression matches any path that contains the
     original expression anywhere.
 
     Parameters
@@ -852,7 +849,7 @@ def divide_chunks(full_list: list, chunk_size: int):
 def parse_separated_string(separated_string: str, separator: str) -> Tuple[str, str]:
     """
     Parse a key, value pair, separated by the provided separator.
-    
+
     That's the reverse of ShellArgs.
     On the command line (argparse) a declaration will typically look like:
         foo=hello
@@ -960,10 +957,10 @@ def fetch_server_version() -> dict:
 
     If the API endpoint for getting the server version cannot be reached,
     raises HTTPError
-    
+
     Returns
     -------
-        Dictionary with keys 
+        Dictionary with keys
             - major
             - minor
             - patch
@@ -992,12 +989,12 @@ def fetch_assets(is_not_in_album: bool, visibility_options: list[str]) -> list:
 
     Uses the /search/meta-data call. Much more efficient than the legacy method
     since this call allows to filter for assets that are not in an album only.
-    
+
     Parameters
     ----------
         is_not_in_album : bool
             Flag indicating whether to fetch only assets that are not part
-            of an album or not. If set to False, will find images in albums and 
+            of an album or not. If set to False, will find images in albums and
             not part of albums
         visibility_options : list[str]
             A list of visibility options to find and return assets with
@@ -1030,7 +1027,7 @@ def check_for_and_remove_live_photo_video_components(asset_list: list[dict], is_
             of an album or not. If this and find_archived are True, we can assume asset_list is complete
             and should contain any static components.
         find_archived : bool
-            Flag indicating whether to only fetch assets that are archived. If this and is_not_in_album are 
+            Flag indicating whether to only fetch assets that are archived. If this and is_not_in_album are
             True, we can assume asset_list is complete and should contain any static components.
 
     Returns
@@ -1077,7 +1074,7 @@ def fetch_assets_with_options(search_options: dict) -> list:
     """
     Fetches assets from the Immich API using specific search options.
     The search options directly correspond to the body used for the search API request.
-    
+
     Parameters
     ----------
         search_options: dict
@@ -1152,7 +1149,7 @@ def fetch_album_info(album_id_for_info: str):
 def delete_album(album_delete: dict):
     """
     Deletes an album identified by album_to_delete['id']
-    
+
     If the album could not be deleted, logs an error.
 
     Parameters
@@ -1180,7 +1177,7 @@ def delete_album(album_delete: dict):
 def create_album(album_name_to_create: str) -> str:
     """
     Creates an album with the provided name and returns the ID of the created album
-    
+
 
     Parameters
     ----------
@@ -1190,7 +1187,7 @@ def create_album(album_name_to_create: str) -> str:
     Returns
     ---------
         True if the album was deleted, otherwise False
-    
+
     Raises
     ----------
         Exception if the API call failed
@@ -1216,7 +1213,7 @@ def is_path_ignored(path_to_check: str) -> bool:
     ----------
         asset_to_check : dict
             The asset to check if it must be ignored or not. Must have the key 'originalPath'.
-    Returns 
+    Returns
     ----------
         True if the asset must be ignored, otherwise False
     """
@@ -1256,7 +1253,7 @@ def add_assets_to_album(assets_add_album_id: str, asset_list: list[str]) -> list
     and one API call is performed per chunk.
     Only logs errors and successes.
 
-    Returns 
+    Returns
 
     Parameters
     ----------
@@ -1425,12 +1422,12 @@ def update_album_share_user_role(album_id_to_share: str, share_user_id: str, sha
             The share role to update the user to
     Raises
     ----------
-        AssertionError if user_share_role contains an invalid value  
+        AssertionError if user_share_role contains an invalid value
         HTTPError if the API call fails
     """
     api_endpoint = f'albums/{album_id_to_share}/user/{share_user_id}'
 
-    assert share_role in SHARE_ROLES
+    assert share_user_role in SHARE_ROLES
 
     data = {
         'role': share_user_role
@@ -1455,12 +1452,12 @@ def share_album_with_user_and_role(album_id_to_share: str, user_ids_to_share_wit
             "viewer" or "editor"
     Raises
     ----------
-        AssertionError if user_share_role contains an invalid value  
+        AssertionError if user_share_role contains an invalid value
         HTTPError if the API call fails
     """
     api_endpoint = f'albums/{album_id_to_share}/users'
 
-    assert share_role in SHARE_ROLES
+    assert user_share_role in SHARE_ROLES
 
     # build payload
     album_users = []
@@ -1528,7 +1525,6 @@ def trigger_offline_asset_removal_since_minor_version_116() -> None:
     else:
         logging.info("No offline assets found!")
 
-
 def delete_assets(assets_to_delete: list, force: bool):
     """
     Deletes the provided assets from Immich.
@@ -1555,17 +1551,15 @@ def delete_assets(assets_to_delete: list, force: bool):
     r = requests.delete(root_url+api_endpoint, json=data, **requests_kwargs, timeout=api_timeout)
     check_api_response(r)
 
-
-
 def trigger_offline_asset_removal_pre_minor_version_116():
     """
     Triggers Offline Asset Removal Job.
     Only supported in Immich prior v1.116.0.
     Requires the script to run with an Administrator level API key.
-    
+
     Works by fetching all libraries and triggering the Offline Asset Removal job
     one by one.
-    
+
     Raises
     ----------
         HTTPError if the API call fails
@@ -1577,7 +1571,7 @@ def trigger_offline_asset_removal_pre_minor_version_116():
 def fetch_libraries() -> list[dict]:
     """
     Queries and returns all libraries
-    
+
     Raises
     ----------
         Exception if any API call fails
@@ -1620,7 +1614,7 @@ def set_album_thumb(thumbnail_album_id: str, thumbnail_asset_id: str):
             The ID of the album for which to set the thumbnail
         thumbnail_asset_id : str
             The ID of the asset to be set as thumbnail
-            
+
     Raises
     ----------
         Exception if the API call fails
@@ -1635,14 +1629,14 @@ def set_album_thumb(thumbnail_album_id: str, thumbnail_asset_id: str):
 def choose_thumbnail(thumbnail_setting: str, thumbnail_asset_list: list[dict]) -> str:
     """
     Tries to find an asset to use as thumbnail depending on thumbnail_setting.
-    
+
     Parameters
     ----------
         thumbnail_setting : str
             Either a fully qualified asset path or one of 'first', 'last', 'random', 'random-filtered'
         asset_list: list[dict]
             A list of assets to choose a thumbnail from, based on thumbnail_setting
-            
+
     Returns
     ----------
         An Immich asset dict or None if no thumbnail was found based on thumbnail_setting
@@ -1673,7 +1667,6 @@ def choose_thumbnail(thumbnail_setting: str, thumbnail_asset_list: list[dict]) -
     # Case: Invalid thumbnail_setting
     return None
 
-
 def update_album_properties(album_to_update: AlbumModel):
     """
     Sets album properties in Immich to the properties of the AlbumModel
@@ -1682,7 +1675,7 @@ def update_album_properties(album_to_update: AlbumModel):
     ----------
         album_to_update : AlbumModel
             The album model to use for updating the album
-            
+
     Raises
     ----------
         Exception if the API call fails
@@ -1701,15 +1694,15 @@ def update_album_properties(album_to_update: AlbumModel):
             logging.info("Using asset %s as thumbnail for album %s", thumbnail_asset['originalPath'], album_to_update.get_final_name())
             data['albumThumbnailAssetId'] = thumbnail_asset['id']
         else:
-            logging.warning("Unable to determine thumbnail for setting '%s' in album %s", album.thumbnail_setting, album.get_final_name())
+            logging.warning("Unable to determine thumbnail for setting '%s' in album %s", album_to_update.thumbnail_setting, album_to_update.get_final_name())
 
     # Description
     if album_to_update.description:
-        data['description'] = album.description
+        data['description'] = album_to_update.description
 
     # Sorting Order
     if album_to_update.sort_order:
-        data['order'] = album.sort_order
+        data['order'] = album_to_update.sort_order
 
     # Comments / Likes enabled
     if album_to_update.comments_and_likes_enabled is not None:
@@ -1732,7 +1725,7 @@ def set_assets_visibility(asset_ids_for_visibility: list[str], visibility_settin
             A list of asset IDs to set visibility for
         visibility : str
             The visibility to set
-   
+
     Raises
     ----------
         Exception if the API call fails
@@ -1766,7 +1759,7 @@ def check_api_response(response: requests.Response):
             A list of asset IDs to archive
         isArchived : bool
             Flag indicating whether to archive or unarchive the passed assets
-   
+
     Raises
     ----------
         HTTPError if the API call fails
@@ -1794,7 +1787,7 @@ def delete_all_albums(assets_visibility: str, force_delete: bool):
         force_delete : bool
             Flag indicating whether to actually delete albums (True) or only to
             perform a dry-run (False)
-   
+
     Raises
     ----------
         HTTPError if the API call fails
@@ -1849,7 +1842,7 @@ def cleanup_albums(albums_to_delete: list[AlbumModel], force_delete: bool):
     Returns
     ----------
         Number of successfully deleted albums
-   
+
     Raises
     ----------
         HTTPError if the API call fails
@@ -1888,7 +1881,7 @@ def cleanup_albums(albums_to_delete: list[AlbumModel], force_delete: bool):
 def set_album_properties_in_model(album_model_to_update: AlbumModel):
     """
     Sets the album_model's properties based on script options set.
-    
+
     Parameters
     ----------
         album_model : AlbumModel
@@ -1898,14 +1891,14 @@ def set_album_properties_in_model(album_model_to_update: AlbumModel):
     if share_with:
         for album_share_user in share_with:
             # Resolve share user-specific share role syntax <name>=<role>
-            share_user_name, share_user_role = parse_separated_string(album_share_user, '=')
+            share_user_name, share_user_role_local = parse_separated_string(album_share_user, '=')
             # Fallback to default
-            if share_user_role is None:
-                share_user_role = share_role
+            if share_user_role_local is None:
+                share_user_role_local = share_role
 
             album_share_with = {
                 'user': share_user_name,
-                'role': share_user_role
+                'role': share_user_role_local
             }
             album_model_to_update.share_with.append(album_share_with)
 
@@ -1948,9 +1941,9 @@ def build_album_list(asset_list : list[dict], root_path_list : list[str], album_
     ---------
         A dict with album names as keys and an AlbumModel as value
     """
-    album_models = defaultdict(list)
+    album_models = {}
     logged_albums = set()  # Track which albums we've already logged properties for
-    
+
     for asset_to_add in asset_list:
         asset_path = asset_to_add['originalPath']
         # This method will log the ignore reason, so no need to log anything again.
@@ -1978,7 +1971,7 @@ def build_album_list(asset_list : list[dict], root_path_list : list[str], album_
         if len(album_name) > 0:
             # Check if we already created this album model
             final_album_name = album_name
-            
+
             # Check for album properties with inheritance if albumprops_cache is provided
             inherited_album_model = None
             if albumprops_cache:
@@ -1987,16 +1980,16 @@ def build_album_list(asset_list : list[dict], root_path_list : list[str], album_
                 inherited_album_model = get_album_properties_with_inheritance(album_name, album_dir_path, asset_root_path, albumprops_cache)
                 if inherited_album_model and inherited_album_model.override_name:
                     final_album_name = inherited_album_model.override_name
-            
+
             # Check if there are traditional album properties for this album (backward compatibility)
             album_props_template = album_props_templates.get(album_name)
             if album_props_template and album_props_template.override_name:
                 final_album_name = album_props_template.override_name
-            
+
             # Check if we already have this album model
             if final_album_name in album_models:
                 new_album_model = album_models[final_album_name]
-                
+
                 # Merge properties when adding assets to an existing album with same final name
                 if inherited_album_model:
                     # For share_with, we need to accumulate all users from all directories
@@ -2006,10 +1999,10 @@ def build_album_list(asset_list : list[dict], root_path_list : list[str], album_
                         # with the already accumulated settings in the existing album
                         temp_merge_model = AlbumModel(new_album_model.name)
                         temp_merge_model.share_with = new_album_model.share_with if new_album_model.share_with else []
-                        
+
                         # Use the merge logic to properly handle user conflicts, roles, and 'none' users
                         new_album_model.share_with = temp_merge_model.merge_inherited_share_with(inherited_album_model.share_with)
-                    
+
                     # For other properties, only update if not already set (preserve first album's properties as base)
                     temp_model = AlbumModel(new_album_model.name)
                     # Copy only non-share_with properties to avoid overwriting our accumulated share_with
@@ -2022,20 +2015,20 @@ def build_album_list(asset_list : list[dict], root_path_list : list[str], album_
                 new_album_model = AlbumModel(album_name)
                 # Apply album properties from set options
                 set_album_properties_in_model(new_album_model)
-                
+
                 # Apply inherited properties if available
                 if inherited_album_model:
                     new_album_model.merge_from(inherited_album_model, AlbumModel.ALBUM_MERGE_MODE_OVERRIDE)
-                    
+
                     # Log final album properties (only once per album)
                     if final_album_name not in logged_albums:
                         logging.info("Final album properties for '%s' (with inheritance): %s", final_album_name, new_album_model)
                         logged_albums.add(final_album_name)
-                        
+
                 # Apply traditional album properties if available (backward compatibility)
                 elif album_props_template:
                     new_album_model.merge_from(album_props_template, AlbumModel.ALBUM_MERGE_MODE_OVERRIDE)
-                    
+
                     # Log final album properties (only once per album)
                     if final_album_name not in logged_albums:
                         logging.info("Final album properties for '%s': %s", final_album_name, new_album_model)
@@ -2045,7 +2038,7 @@ def build_album_list(asset_list : list[dict], root_path_list : list[str], album_
                     if final_album_name not in logged_albums:
                         logging.info("Final album properties for '%s': %s", final_album_name, new_album_model)
                         logged_albums.add(final_album_name)
-                        
+
             # Add asset to album model
             new_album_model.assets.append(asset_to_add)
             album_models[new_album_model.get_final_name()] = new_album_model
@@ -2088,8 +2081,8 @@ parser.add_argument("-r", "--root-path", action="append",
 parser.add_argument("-u", "--unattended", action="store_true", help="Do not ask for user confirmation after identifying albums. Set this flag to run script as a cronjob.")
 parser.add_argument("-a", "--album-levels", default="1", type=str,
                     help="""Number of sub-folders or range of sub-folder levels below the root path used for album name creation.
-                            Positive numbers start from top of the folder structure, negative numbers from the bottom. Cannot be 0. 
-                            If a range should be set, the start level and end level must be separated by a comma like '<startLevel>,<endLevel>'. 
+                            Positive numbers start from top of the folder structure, negative numbers from the bottom. Cannot be 0.
+                            If a range should be set, the start level and end level must be separated by a comma like '<startLevel>,<endLevel>'.
                             If negative levels are used in a range, <startLevel> must be less than or equal to <endLevel>.""")
 parser.add_argument("-s", "--album-separator", default=" ", type=str,
                     help="Separator string to use for compound album names created from nested folders. Only effective if -a is set to a value > 1")
@@ -2106,10 +2099,10 @@ parser.add_argument("-i", "--ignore", action="append",
                             This filter is evaluated after any values passed with --path-filter. May be specified multiple times.""")
 parser.add_argument("-m", "--mode", default=SCRIPT_MODE_CREATE, choices=[SCRIPT_MODE_CREATE, SCRIPT_MODE_CLEANUP, SCRIPT_MODE_DELETE_ALL],
                     help="""Mode for the script to run with.
-                            CREATE = Create albums based on folder names and provided arguments; 
-                            CLEANUP = Create album names based on current images and script arguments, but delete albums if they exist; 
-                            DELETE_ALL = Delete all albums. 
-                            If the mode is anything but CREATE, --unattended does not have any effect. 
+                            CREATE = Create albums based on folder names and provided arguments;
+                            CLEANUP = Create album names based on current images and script arguments, but delete albums if they exist;
+                            DELETE_ALL = Delete all albums.
+                            If the mode is anything but CREATE, --unattended does not have any effect.
                             Only performs deletion if -d/--delete-confirm option is set, otherwise only performs a dry-run.""")
 parser.add_argument("-d", "--delete-confirm", action="store_true",
                     help="""Confirm deletion of albums when running in mode """+SCRIPT_MODE_CLEANUP+""" or """+SCRIPT_MODE_DELETE_ALL+""".
@@ -2366,8 +2359,6 @@ else:
 assets = check_for_and_remove_live_photo_video_components(assets, not find_assets_in_albums, find_archived_assets)
 logging.info("%d photos found", len(assets))
 
-
-
 logging.info("Sorting assets to corresponding albums using folder name")
 albums_to_create = build_album_list(assets, root_paths, album_properties_templates, albumprops_cache)
 albums_to_create = dict(sorted(albums_to_create.items(), key=lambda item: item[0]))
@@ -2474,7 +2465,6 @@ if set_album_thumbnail == ALBUM_THUMBNAIL_RANDOM_ALL:
         album_model.thumbnail_setting = 'random'
         # Update album properties (which will only pick a random thumbnail and set it, no other properties are changed)
         update_album_properties(album_model)
-
 
 # Perform sync mode action: Trigger offline asset removal
 if sync_mode == 2:
