@@ -1,4 +1,3 @@
-
 """Python script for creating albums in Immich from folder names in an external library."""
 
 from typing import Tuple
@@ -506,7 +505,7 @@ def check_for_and_log_incompatible_properties(model1: AlbumModel, model2: AlbumM
         return True
     return False
 
-def build_inheritance_chain_for_album_path(album_path: str, root_path: str, albumprops_cache: dict) -> list[AlbumModel]:
+def build_inheritance_chain_for_album_path(album_path: str, root_path: str, albumprops_cache_param: dict) -> list[AlbumModel]:
     """
     Builds the inheritance chain for a given album path by walking up the directory tree
     and finding all .albumprops files with inherit=True.
@@ -533,8 +532,8 @@ def build_inheritance_chain_for_album_path(album_path: str, root_path: str, albu
     while current_path != root_path and len(current_path) > len(root_path):
         albumprops_path = os.path.join(current_path, ALBUMPROPS_FILE_NAME)
 
-        if albumprops_path in albumprops_cache:
-            album_model = albumprops_cache[albumprops_path]
+        if albumprops_path in albumprops_cache_param:
+            album_model = albumprops_cache_param[albumprops_path]
             inheritance_chain.insert(0, album_model)  # Insert at beginning for correct order
 
             # If this level doesn't have inherit=True, stop the inheritance chain
@@ -549,7 +548,8 @@ def build_inheritance_chain_for_album_path(album_path: str, root_path: str, albu
 
     return inheritance_chain
 
-def apply_inheritance_to_album_model(album_model: AlbumModel, inheritance_chain: list[AlbumModel]) -> AlbumModel:
+# pylint: disable=R0912
+def apply_inheritance_to_album_model(album_model_param: AlbumModel, inheritance_chain: list[AlbumModel]) -> AlbumModel:
     """
     Applies inheritance from the inheritance chain to the given album model.
 
@@ -566,16 +566,16 @@ def apply_inheritance_to_album_model(album_model: AlbumModel, inheritance_chain:
         The album model with inherited properties applied
     """
     if not inheritance_chain:
-        return album_model
+        return album_model_param
 
     # Create a new model to hold inherited properties
-    if album_model:
-        inherited_model = AlbumModel(album_model.name)
+    if album_model_param:
+        inherited_model = AlbumModel(album_model_param.name)
         # Copy all properties from the original model first
         for prop_name in AlbumModel.ALBUM_PROPERTIES_VARIABLES + AlbumModel.ALBUM_INHERITANCE_VARIABLES:
-            setattr(inherited_model, prop_name, getattr(album_model, prop_name))
-        inherited_model.id = album_model.id
-        inherited_model.assets = album_model.assets
+            setattr(inherited_model, prop_name, getattr(album_model_param, prop_name))
+        inherited_model.id = album_model_param.id
+        inherited_model.assets = album_model_param.assets
     else:
         inherited_model = AlbumModel(None)
 
@@ -625,7 +625,7 @@ def build_albumprops_cache() -> dict:
         Dictionary mapping .albumprops file paths to AlbumModel objects
     """
     albumprops_files = find_albumprops_files(root_paths)
-    albumprops_path_to_model = {}
+    albumprops_path_to_model_dict = {}
 
     # Parse all .albumprops files
     for albumprops_path in albumprops_files:
@@ -635,14 +635,14 @@ def build_albumprops_cache() -> dict:
         try:
             album_model = AlbumModel.parse_album_properties_file(albumprops_path)
             if album_model:
-                albumprops_path_to_model[albumprops_path] = album_model
+                albumprops_path_to_model_dict[albumprops_path] = album_model
                 logging.debug("Loaded .albumprops from %s", albumprops_path)
         except yaml.YAMLError as ex:
             logging.error("Could not parse album properties file %s: %s", albumprops_path, ex)
 
-    return albumprops_path_to_model
+    return albumprops_path_to_model_dict
 
-def get_album_properties_with_inheritance(album_name: str, album_path: str, root_path: str, albumprops_cache: dict) -> AlbumModel:
+def get_album_properties_with_inheritance(album_name: str, album_path: str, root_path: str, albumprops_cache_param: dict) -> AlbumModel:
     """
     Gets the album properties for an album, applying inheritance from parent folders.
 
@@ -668,17 +668,17 @@ def get_album_properties_with_inheritance(album_name: str, album_path: str, root
 
     logging.debug("Checking for album properties: album_path=%s, albumprops_path=%s", album_path, albumprops_path)
 
-    if albumprops_path in albumprops_cache:
-        local_album_model = albumprops_cache[albumprops_path]
+    if albumprops_path in albumprops_cache_param:
+        local_album_model = albumprops_cache_param[albumprops_path]
         local_album_model.name = album_name
         logging.debug("Found local .albumprops for album '%s'", album_name)
 
     # Build inheritance chain (excluding the current level)
-    inheritance_chain = build_inheritance_chain_for_album_path(album_path, root_path, albumprops_cache)
+    inheritance_chain = build_inheritance_chain_for_album_path(album_path, root_path, albumprops_cache_param)
 
     # Remove the current level from inheritance chain if it exists
-    if inheritance_chain and albumprops_path in albumprops_cache:
-        current_model = albumprops_cache[albumprops_path]
+    if inheritance_chain and albumprops_path in albumprops_cache_param:
+        current_model = albumprops_cache_param[albumprops_path]
         if inheritance_chain and inheritance_chain[-1] is current_model:
             inheritance_chain = inheritance_chain[:-1]
 
@@ -1877,7 +1877,7 @@ def cleanup_albums(albums_to_delete: list[AlbumModel], force_delete: bool):
                 logging.info("Set visibility for %d assets to %s", len(assets_in_album), visibility)
     return cpt
 
-
+# pylint: disable=R0914
 def set_album_properties_in_model(album_model_to_update: AlbumModel):
     """
     Sets the album_model's properties based on script options set.
@@ -1920,7 +1920,8 @@ def set_album_properties_in_model(album_model_to_update: AlbumModel):
     elif comments_and_likes_disabled:
         album_model_to_update.comments_and_likes_enabled = False
 
-def build_album_list(asset_list : list[dict], root_path_list : list[str], album_props_templates: dict, albumprops_cache: dict = None) -> dict:
+# pylint: disable=R0914,R1702,R0915
+def build_album_list(asset_list : list[dict], root_path_list : list[str], album_props_templates: dict, albumprops_cache_param: dict = None) -> dict:
     """
     Builds a list of album models, enriched with assets assigned to each album.
     Returns a dict where the key is the album name and the value is the model.
@@ -1974,10 +1975,10 @@ def build_album_list(asset_list : list[dict], root_path_list : list[str], album_
 
             # Check for album properties with inheritance if albumprops_cache is provided
             inherited_album_model = None
-            if albumprops_cache:
+            if albumprops_cache_param:
                 # Reconstruct the full album directory path
                 album_dir_path = os.path.join(asset_root_path, *path_chunks)
-                inherited_album_model = get_album_properties_with_inheritance(album_name, album_dir_path, asset_root_path, albumprops_cache)
+                inherited_album_model = get_album_properties_with_inheritance(album_name, album_dir_path, asset_root_path, albumprops_cache_param)
                 if inherited_album_model and inherited_album_model.override_name:
                     final_album_name = inherited_album_model.override_name
 
