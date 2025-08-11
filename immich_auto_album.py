@@ -1,5 +1,7 @@
 """Python script for creating albums in Immich from folder names in an external library."""
 
+# pylint: disable=too-many-lines
+
 from typing import Tuple
 import argparse
 import logging
@@ -529,7 +531,7 @@ def build_inheritance_chain_for_album_path(album_path: str, root_path: str, albu
     root_path = os.path.normpath(root_path)
 
     # Walk up the directory tree until we reach the root path
-    while current_path != root_path and len(current_path) > len(root_path):
+    while len(current_path) >= len(root_path):
         albumprops_path = os.path.join(current_path, ALBUMPROPS_FILE_NAME)
 
         if albumprops_path in albumprops_cache_param:
@@ -539,6 +541,10 @@ def build_inheritance_chain_for_album_path(album_path: str, root_path: str, albu
             # If this level doesn't have inherit=True, stop the inheritance chain
             if not album_model_local.inherit:
                 break
+
+        # If we've reached the root path, stop
+        if current_path == root_path:
+            break
 
         # Move up one directory level
         parent_path = os.path.dirname(current_path)
