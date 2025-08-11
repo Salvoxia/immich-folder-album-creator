@@ -703,6 +703,11 @@ share_with:
   # or provide user mail address
   - user: "user2@example.org"
     role: "viewer"
+  # role is optional and defaults to "viewer" if not specified
+  - user: "user3@example.org"
+  # Special role "none" can be used to remove inherited users
+  - user: "user4"
+    role: "none"
 # Set album thumbnail, valid values: first, last, random or fully qualified path of an asset that is (or will be) assigned to the album
 thumbnail_setting: "first"
 # Sort order in album, valid values: asc, desc
@@ -711,8 +716,216 @@ sort_oder: "desc"
 visibility: 'timeline'
 # Flag indicating whether assets in this albums can be commented on and liked
 comments_and_likes_enabled: false
+# Flag indicating whether properties should be inherited down the directory tree
+inherit: true
+# List of property names that should be inherited (if not specified, all properties are inherited)
+inherit_properties:
+  - "description"
+  - "share_with"
+  - "visibility"
 ```
 All properties are optional.
+
+#### Property Inheritance
+
+The script supports property inheritance from parent folders through the `inherit` and `inherit_properties` settings:
+
+- **`inherit: true`**: Enables inheritance of properties from parent `.albumprops` files
+- **`inherit_properties`**: Specifies which properties to inherit (if omitted, all properties are inherited)
+
+##### Inheritance Rules
+
+1. **Inheritance Chain**: Properties are inherited from the root path down to the current folder
+2. **Property Precedence**: Properties in deeper folders override those in parent folders
+3. **Inheritance Termination**: If a folder has `inherit: false` or no `inherit` property, while having a `.albumprops`.file, the inheritance chain stops at that folder
+
+##### Special `share_with` Inheritance
+
+The `share_with` property has special inheritance behavior:
+- **Addition**: Users from parent folders are automatically included
+- **Modification**: User roles can be changed by specifying the same user with a different role
+- **Removal**: Users can be removed by setting their role to `"none"`
+
+##### Album Merging Behavior
+
+When multiple directories use the same `override_name` and contribute to a single album, the following rules apply:
+
+1. **Most Restrictive Role Wins**: If the same user is specified with different roles across multiple directories, the most restrictive role is applied:
+   - `viewer` is more restrictive than `editor`
+   - Example: User specified as `editor` in one directory and `viewer` in another → final role is `viewer`
+
+2. **User Removal is Permanent**: If a user is set to `role: "none"` in any directory contributing to the album, they cannot be re-added by other directories:
+   - Once removed with `role: "none"`, the user is permanently excluded from that album
+   - Subsequent attempts to add the same user with any role will be ignored
+
+3. **User Accumulation**: Users from all contributing directories are combined, following the above precedence rules
+
+This ensures consistent and predictable behavior when multiple folder structures contribute to the same album via `override_name`.
+
+
+##### Inheritance Examples
+
+**Example 1: Basic Inheritance**
+
+`/photos/.albumprops`:
+```yaml
+inherit: true
+description: "Family photos"
+share_with:
+  - user: "dad"
+    role: "editor"
+```
+
+`/photos/2023/.albumprops`:
+```yaml
+inherit: true
+share_with:
+  - user: "mom"
+    role: "viewer"
+```
+
+Result for `/photos/2023/vacation/`:
+```yaml
+# - description: "Family photos" (inherited)
+# - share_with: dad (editor), mom (viewer)
+```
+
+**Example 2: Property Override and User Management**
+
+`/photos/.albumprops`:
+```yaml
+inherit: true
+description: "Family photos"
+visibility: "timeline"
+share_with:
+  - user: "dad"
+    role: "editor"
+  - user: "mom" 
+    role: "viewer"
+```
+
+`/photos/private/.albumprops`:
+```yaml
+inherit: true
+inherit_properties: ["description"]  # Only inherit description
+visibility: "archive"  # Override visibility
+share_with:
+  - user: "mom"
+    role: "none"  # Remove mom from sharing
+  - user: "admin"
+    role: "editor"  # Add admin
+```
+
+Result for `/photos/private/secrets/`:
+```yaml
+# - description: "Family photos" (inherited)
+# - visibility: "archive" (overridden, not inherited due to inherit_properties)
+# - share_with: dad (editor, inherited), admin (editor, added)
+# - mom is removed from sharing
+```
+
+**Example 3: Stopping Inheritance**
+
+`/photos/.albumprops`:
+```yaml
+inherit: true
+description: "Family photos"
+share_with:
+  - user: "family"
+    role: "viewer"
+```
+
+`/photos/work/.albumprops`:
+```yaml
+inherit: false  # Stop inheritance
+description: "Work photos"
+share_with:
+  - user: "colleague"
+    role: "editor"
+```
+
+Result for `/photos/work/project/`:
+```yaml
+# - description: "Work photos" (from /photos/work/, no inheritance)
+# - share_with: colleague (editor, no family member inherited)
+```
+
+**Example 4: Album Merging with `override_name`**
+
+`/photos/2023/Christmas/.albumprops`:
+```yaml
+override_name: "Family Photos"
+description: "Family photos"
+inherit: true
+share_with:
+  - user: "dad"
+    role: "editor"
+```
+
+`/photos/2023/Christmas/Cookies/.albumprops`:
+```yaml
+inherit: true
+share_with:
+  - user: "mom"
+    role: "viewer"
+```
+
+`/photos/2023/Vacation/.albumprops`:
+```yaml
+override_name: "Family Photos"
+description: "Family photos"
+share_with:
+  - user: "dad"
+    role: "viewer"  # More restrictive than editor
+```
+
+Result: Single album "Family Photos" containing all photos from all three directories:
+```yaml
+# - name: "Family Photos" (from override_name)
+# - description: "Family photos" (inherited/specified)
+# - share_with: dad (viewer - most restrictive wins), mom (viewer)
+```
+
+**Example 5: User Removal with `role: "none"`**
+
+`/photos/family/.albumprops`:
+```yaml
+override_name: "Shared Album"
+share_with:
+  - user: "dad"
+    role: "editor"
+  - user: "mom"
+    role: "viewer"
+  - user: "child"
+    role: "viewer"
+```
+
+`/photos/family/private/.albumprops`:
+```yaml
+override_name: "Shared Album"  # Same album name
+share_with:
+  - user: "child"
+    role: "none"  # Remove child from sharing
+  - user: "grandpa"
+    role: "editor"
+```
+
+`/photos/family/work/.albumprops`:
+```yaml
+override_name: "Shared Album"  # Same album name
+share_with:
+  - user: "child"
+    role: "viewer"  # This will be ignored - child was set to "none"
+  - user: "colleague"
+    role: "viewer"
+```
+
+Result: Single album "Shared Album" containing photos from all directories:
+```yaml
+# - name: "Shared Album"
+# - share_with: dad (editor), mom (viewer), grandpa (editor), colleague (viewer)
+# - child is permanently removed and cannot be re-added
+```
 
 >[!IMPORTANT]  
 >The `override_name` property makes it possible assign assets to an album that does not have anything to do with their folder name. That way, it is also possible to merge assets from different folders (even under different `root_paths`) into the same album.  
