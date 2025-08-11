@@ -533,11 +533,11 @@ def build_inheritance_chain_for_album_path(album_path: str, root_path: str, albu
         albumprops_path = os.path.join(current_path, ALBUMPROPS_FILE_NAME)
 
         if albumprops_path in albumprops_cache_param:
-            album_model = albumprops_cache_param[albumprops_path]
-            inheritance_chain.insert(0, album_model)  # Insert at beginning for correct order
+            album_model_local = albumprops_cache_param[albumprops_path]
+            inheritance_chain.insert(0, album_model_local)  # Insert at beginning for correct order
 
             # If this level doesn't have inherit=True, stop the inheritance chain
-            if not album_model.inherit:
+            if not album_model_local.inherit:
                 break
 
         # Move up one directory level
@@ -633,9 +633,9 @@ def build_albumprops_cache() -> dict:
             continue
 
         try:
-            album_model = AlbumModel.parse_album_properties_file(albumprops_path)
-            if album_model:
-                albumprops_path_to_model_dict[albumprops_path] = album_model
+            album_model_local = AlbumModel.parse_album_properties_file(albumprops_path)
+            if album_model_local:
+                albumprops_path_to_model_dict[albumprops_path] = album_model_local
                 logging.debug("Loaded .albumprops from %s", albumprops_path)
         except yaml.YAMLError as ex:
             logging.error("Could not parse album properties file %s: %s", albumprops_path, ex)
@@ -1305,7 +1305,7 @@ def fetch_users():
     return r.json()
 
 # Disable pylint for too many branches
-# pylint: disable=R0912
+# pylint: disable=R0912,R0914
 def update_album_shared_state(album_to_share: AlbumModel, unshare_users: bool) -> None:
     """
     Makes sure the album is shared with the users set in the model with the correct roles.
@@ -1333,8 +1333,8 @@ def update_album_shared_state(album_to_share: AlbumModel, unshare_users: bool) -
             logging.warning("User %s to share album %s with does not exist!", share_user['user'], album_to_share.get_final_name())
             continue
         # Use 'viewer' as default role if not specified
-        share_role = share_user.get('role', 'viewer')
-        share_users_to_roles_expected[share_user_in_immich['id']] = share_role
+        share_role_local = share_user.get('role', 'viewer')
+        share_users_to_roles_expected[share_user_in_immich['id']] = share_role_local
 
     # No users to share with and unsharing is disabled?
     if len(share_users_to_roles_expected) == 0 and not unshare_users:
