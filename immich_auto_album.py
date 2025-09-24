@@ -87,7 +87,7 @@ class ApiClient:
             yield full_list[j:j + chunk_size]
                 
     @staticmethod
-    def __check_api_response(response: requests.Response):
+    def __check_api_response(response: requests.Response) -> None:
         """
         Checks the HTTP return code for the provided response and
         logs any errors before raising an HTTPError
@@ -112,6 +112,7 @@ class ApiClient:
         raises HTTPError
 
         :returns: Dictionary with keys `major`, `minor`, `patch`
+        :rtype: dict
         """
         api_endpoint = f'{self.api_url}server/version'
         r = requests.get(api_endpoint, **self.request_args , timeout=self.api_timeout)
@@ -141,6 +142,7 @@ class ApiClient:
                 of an album or not. If set to False, will find images in albums and not part of albums
         :param visibility_options: A list of visibility options to find and return assets with
         :returns: An array of asset objects
+        :rtype: list[dict]
         """
         if self.server_version['major'] == 1 and self.server_version['minor'] < 133:
             return self.fetch_assets_with_options({'isNotInAlbum': is_not_in_album, 'withArchived': 'archive' in visibility_options})
@@ -159,6 +161,7 @@ class ApiClient:
 
         :param search_options: Dictionary containing options to pass to the search/metadata API endpoint
         :returns: An array of asset objects
+        :rtype: list[dict]
         """
         body = search_options
         assets_found = []
@@ -195,6 +198,7 @@ class ApiClient:
         Fetches albums from the Immich API
         
         :returns: A list of album objects
+        :rtype: list[dict]
         """
 
         api_endpoint = 'albums'
@@ -211,6 +215,7 @@ class ApiClient:
         :param album_id_for_info: The ID of the album to fetch information for
         
         :returns: A dict containing album information
+        :rtype: dict
         """
 
         api_endpoint = f'albums/{album_id_for_info}'
@@ -228,6 +233,7 @@ class ApiClient:
         :param album_delete: Dictionary with the following keys: `id`, `albumName`
 
         :returns: True if the album was deleted, otherwise False
+        :rtype: bool
         """
         api_endpoint = 'albums'
 
@@ -248,6 +254,7 @@ class ApiClient:
         :param album_name_to_create: Name of the album to create
 
         :returns: True if the album was deleted, otherwise False
+        :rtype: str
         
         :raises: Exception if the API call failed
         """
@@ -279,6 +286,7 @@ class ApiClient:
         :param asset_list: A list of asset IDs to add to the album
 
         :returns: The asset UUIDs that were actually added to the album (not respecting assets that were already part of the album)
+        :rtype: list[str]
         """
         api_endpoint = 'albums'
 
@@ -307,6 +315,7 @@ class ApiClient:
         Queries and returns all users
         
         :returns: A list of user objects
+        :rtype: list[dict]
         """
 
         api_endpoint = 'users'
@@ -624,6 +633,7 @@ class ApiClient:
         :param force_delete: Flag indicating whether to actually delete albums (True) or only to perform a dry-run (False)
 
         :returns: Number of successfully deleted albums
+        :rtype: int
 
         :raises: HTTPError if the API call fails
         """
@@ -799,6 +809,7 @@ class AlbumModel:
         as a dictionary
 
         :returns: A dictionary of all album properties
+        :rtype: dict
         """
         props = dict(vars(self))
         for prop in list(props.keys()):
@@ -811,14 +822,16 @@ class AlbumModel:
         Returns a string representation of this most important album properties
 
         :returns: A string for printing this album model's properties
+        :rtype: str
         """
         return str(self.get_album_properties_dict())
 
-    def get_asset_uuids(self) -> list:
+    def get_asset_uuids(self) -> list[str]:
         """
         Gathers UUIDs of all assets and returns them
 
         :returns: A list of asset UUIDs
+        :rtype: list[str]
         """
         return [asset_to_add['id'] for asset_to_add in self.assets]
 
@@ -836,6 +849,7 @@ class AlbumModel:
 
         :returns: A list of string representations for incompatible properties. The list is empty
             if there are no incompatible properties
+        :rtype: list[str]
         """
         if not isinstance(other, AlbumModel):
             return False
@@ -943,6 +957,7 @@ class AlbumModel:
         returns override_name if set, otherwise name.
 
         :returns: override_name if set, otherwise name
+        :rtype: str
         """
         if self.override_name:
             return self.override_name
@@ -956,6 +971,7 @@ class AlbumModel:
         :param album_properties_file_path: The fully qualified path to a valid album properties file
 
         :returns: An AlbumModel that represents the album properties
+        :rtype: str
 
         :raises YAMLError: If the provided album properties file could not be found or parsed
         """
@@ -1181,6 +1197,7 @@ class Configuration(object):
         :param pattern: A GLOB-style pattern to convert to a regular expression
         
         :returns: A regular expression matching the same strings as the provided GLOB pattern
+        :rtype: str
         """
         return Configuration.__escaped_glob_replacement.sub(lambda match: Configuration.escaped_glob_tokens_to_re[match.group(0)], regex.escape(pattern))
 
@@ -1194,6 +1211,7 @@ class Configuration(object):
 
         :param expr: Expression to expand to a GLOB-style expression if not already one
         :returns: The original expression if it contained a slash or an asterisk, otherwise `**/*<expr>*/**`
+        :rtype: str
         """
         if not '/' in expr and not '*' in expr:
             glob_expr = f'**/*{expr}*/**'
@@ -1222,6 +1240,7 @@ class Configuration(object):
         :param key: The dictionary key to look up the value for
         
         :returns: The passed value or the configuration default if the value did not pass the checks
+        :rtype: any
         """
         try:
             Configuration.__assert_not_none_or_empty(key, args_dict[key])
@@ -1235,6 +1254,7 @@ class Configuration(object):
         Creates a the argument parser for parsing command line arguments.
 
         :returns: The ArgumentParser with all options the script supports
+        :rtype: argparse.ArgumentParser
         """
 
         parser = argparse.ArgumentParser(description="Create Immich Albums from an external library path based on the top level folders",
@@ -1341,6 +1361,7 @@ class Configuration(object):
         :param encoding: The encoding to read the file with, defaults to `utf-8`
                 
         :returns: The file's contents
+        :rtype: str
 
         :raises: FileNotFoundError if the file does not exist
         :raises: Exception on any other error reading the file
@@ -1360,6 +1381,7 @@ class Configuration(object):
         :param key_type: Must be either 'literal' or 'file'
         
         :returns: The API key or None on error
+        :rtype: str
         """
         if key_type == 'literal':
             return api_key_source
@@ -1379,6 +1401,7 @@ class Configuration(object):
         :param string_to_test: The string to test for integer
         
         :returns: True if string_to_test is an integer, otherwise False
+        :rtype: bool
         """
         try:
             int(string_to_test)
@@ -1415,6 +1438,7 @@ class FolderAlbumCreator(object):
         :param paths: A list of paths to search for album properties files
 
         :returns: A list of paths with all album properties files
+        :rtype: list[str]
         """
         albumprops_files = []
         for path in paths:
@@ -1456,6 +1480,7 @@ class FolderAlbumCreator(object):
         program exits.
 
         :returns: A dictionary mapping the album name (generated from the path the album properties file was found in) to the album model files
+        :rtype: dict
         """
         fatal_error_occurred = False
         album_properties_file_paths = FolderAlbumCreator.find_albumprops_files(self.config.root_paths)
@@ -1562,6 +1587,7 @@ class FolderAlbumCreator(object):
                 album was generated from. This method expects one entry in this dictionary for every AlbumModel in album_props_templates
         
         :returns: False if model1 and model2 are compatible, otherwise True
+        :rtype: bool
         """
         incompatible_props = model1.find_incompatible_properties(model2)
         if len(incompatible_props) > 0:
@@ -1584,6 +1610,7 @@ class FolderAlbumCreator(object):
         :param albumprops_cache: Dictionary mapping .albumprops file paths to AlbumModel objects
 
         :returns: List of AlbumModel objects in inheritance order (root to current)
+        :rtype: list[AlbumModel]
         """
         inheritance_chain = []
         current_path = os.path.normpath(album_path)
@@ -1622,6 +1649,7 @@ class FolderAlbumCreator(object):
         :param inheritance_chain: List of AlbumModel objects in inheritance order (root to current, excluding current)
 
         :returns: The album model with inherited properties applied
+        :rtype: AlbumModel
         """
         if not inheritance_chain:
             return album_model_param
@@ -1678,6 +1706,7 @@ class FolderAlbumCreator(object):
         Builds a cache of all .albumprops files found in root paths.
 
         :returns: Dictionary mapping .albumprops file paths to AlbumModel objects
+        :rtype: dict
         """
         albumprops_files = FolderAlbumCreator.find_albumprops_files(self.config.root_paths)
         albumprops_path_to_model_dict = {}
@@ -1708,6 +1737,7 @@ class FolderAlbumCreator(object):
         :param albumprops_cache: Dictionary mapping .albumprops file paths to AlbumModel objects
 
         :returns: The album model with inheritance applied, or None if no properties found
+        :rtype: AlbumModel
         """
         # Check if the album directory has its own .albumprops file
         albumprops_path = os.path.join(album_path, FolderAlbumCreator.ALBUMPROPS_FILE_NAME)
@@ -1779,6 +1809,7 @@ class FolderAlbumCreator(object):
         :param items: A list of separated strings to parse
         :returns: A dictionary where the keys are the strings on left side of the separator 
             and the values the string on the right side of the separator.
+        :rtype: dict
         """
         parsed_strings_dict = {}
         if items:
@@ -1800,6 +1831,7 @@ class FolderAlbumCreator(object):
         :param album_name_postprocess_regex: List of pairs of regex and replace, optional
 
         :returns: The created album name or None if the album levels range does not apply to the path chunks.
+        :rtype: str
         """
 
         album_name_chunks = ()
@@ -1869,6 +1901,7 @@ class FolderAlbumCreator(object):
         :param asset_list: A list of assets to choose a thumbnail from, based on thumbnail_setting
 
         :returns: An Immich asset dict or None if no thumbnail was found based on thumbnail_setting
+        :rtype: str
         """
         # Case: fully qualified path
         if thumbnail_setting not in Configuration.ALBUM_THUMBNAIL_SETTINGS_GLOBAL:
@@ -1905,6 +1938,7 @@ class FolderAlbumCreator(object):
         :param asset_to_check: The asset to check if it must be ignored or not. Must have the key 'originalPath'.
         
         :returns: True if the asset must be ignored, otherwise False
+        :rtype: bool
         """
         is_path_ignored_result = False
         asset_root_path = None
@@ -1942,6 +1976,7 @@ class FolderAlbumCreator(object):
         :param album_name: Name of album to find the ID for
 
         :returns: The ID of the requested album or None if not found
+        :rtype: str
         """
         for _ in albums_list:
             if _['albumName'] == album_name:
@@ -1963,6 +1998,7 @@ class FolderAlbumCreator(object):
                 True, we can assume asset_list is complete and should contain any static components.
 
         :returns: An asset list without live photo video components
+        :rtype: list[dict]
         """
         logging.info("Checking for live photo video components")
         # Filter for all quicktime assets
@@ -2052,6 +2088,7 @@ class FolderAlbumCreator(object):
         :param albumprops_cache: Dictionary mapping .albumprops file paths to AlbumModel objects (for inheritance)
 
         :returns: A dict with album names as keys and an AlbumModel as value
+        :rtype: dict
         """
         album_models = {}
         logged_albums = set()  # Track which albums we've already logged properties for
@@ -2167,6 +2204,7 @@ class FolderAlbumCreator(object):
         :param user_list: A list of user dictionaries with the following mandatory keys: `id`, `name`, `email`
         
         :returns: A user dict with matching name or email or None if no matching user was found
+        :rtype: dict
         """
         for user in user_list:
             # Search by name or mail address
