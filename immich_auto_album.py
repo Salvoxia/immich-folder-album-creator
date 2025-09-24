@@ -22,30 +22,8 @@ import warnings
 
 
 # Script Constants
-
-
-
 # Environment variable to check if the script is running inside Docker
 ENV_IS_DOCKER = "IS_DOCKER"
-
-# List of allowed share user roles
-SHARE_ROLES = ["editor", "viewer"]
-
-# Immich API request timeout
-REQUEST_TIMEOUT_DEFAULT = 20
-
-# Constants for album thumbnail setting
-ALBUM_THUMBNAIL_RANDOM_ALL = "random-all"
-ALBUM_THUMBNAIL_RANDOM_FILTERED = "random-filtered"
-ALBUM_THUMBNAIL_SETTINGS = ["first", "last", "random"]
-ALBUM_THUMBNAIL_SETTINGS_GLOBAL = ALBUM_THUMBNAIL_SETTINGS + [ALBUM_THUMBNAIL_RANDOM_ALL, ALBUM_THUMBNAIL_RANDOM_FILTERED]
-ALBUM_THUMBNAIL_STATIC_INDICES = {
-    "first": 0,
-    "last": -1,
-}
-
-# File name to use for album properties files
-ALBUMPROPS_FILE_NAME = '.albumprops'
 
 class ApiClient:
     """Encapsulates Immich API Calls in a client object"""
@@ -58,6 +36,9 @@ class ApiClient:
     FETCH_CHUNK_SIZE_DEFAULT = 1000
     # Default value for API request timeout ins econds
     API_TIMEOUT_DEFAULT = 20
+
+    # List of allowed share user roles
+    SHARE_ROLES = ["editor", "viewer"]
 
     def __init__(self, api_url : str, api_key : str, chunk_size : int = CHUNK_SIZE_DEFAULT, fetch_chunk_size : int = FETCH_CHUNK_SIZE_DEFAULT, api_timeout : int = API_TIMEOUT_DEFAULT, insecure : bool = False):
         # The Immich API URL to connect to
@@ -244,8 +225,6 @@ class ApiClient:
 
         If the album could not be deleted, logs an error.
 
-        Parameters
-        ----------
         :param album_delete: Dictionary with the following keys: `id`, `albumName`
 
         :returns: True if the album was deleted, otherwise False
@@ -362,7 +341,7 @@ class ApiClient:
         """
         api_endpoint = f'albums/{album_id_to_share}/user/{share_user_id}'
 
-        assert share_user_role in SHARE_ROLES
+        assert share_user_role in ApiClient.SHARE_ROLES
 
         data = {
             'role': share_user_role
@@ -384,7 +363,7 @@ class ApiClient:
         """
         api_endpoint = f'albums/{album_id_to_share}/users'
 
-        assert user_share_role in SHARE_ROLES
+        assert user_share_role in ApiClient.SHARE_ROLES
 
         # build payload
         album_users = []
@@ -819,9 +798,7 @@ class AlbumModel:
         Returns this class' attributes relevant for album properties handling
         as a dictionary
 
-        Returns
-        ---------
-            A dictionary of all album properties
+        :returns: A dictionary of all album properties
         """
         props = dict(vars(self))
         for prop in list(props.keys()):
@@ -833,9 +810,7 @@ class AlbumModel:
         """
         Returns a string representation of this most important album properties
 
-        Returns
-        ---------
-            A string for printing this album model's properties
+        :returns: A string for printing this album model's properties
         """
         return str(self.get_album_properties_dict())
 
@@ -843,9 +818,7 @@ class AlbumModel:
         """
         Gathers UUIDs of all assets and returns them
 
-        Returns
-        ---------
-            A list of asset UUIDs
+        :returns: A list of asset UUIDs
         """
         return [asset_to_add['id'] for asset_to_add in self.assets]
 
@@ -855,18 +828,13 @@ class AlbumModel:
         describing the same album for creation in a way that no album properties are in conflict
         with each other.
         All properties must either bei the same or not present in both objects, except for
-          - id
-          - name
-          - assets
+          - `id`
+          - `name`
+          - `assets`
 
-        Parameters
-        ----------
-        other : AlbumModel
-            The other album model to check against
+        :param other: The other album model to check against
 
-        Returns
-        ---------
-            A list of string representations for incompatible properties. The list is empty
+        :returns: A list of string representations for incompatible properties. The list is empty
             if there are no incompatible properties
         """
         if not isinstance(other, AlbumModel):
@@ -884,19 +852,16 @@ class AlbumModel:
         """
         Merges properties of other in self. The only properties not
         considered for merging are
-          - id
-          - name
-          - assets
+          - `id`
+          - `name`
+          - `assets`
 
-        Parameters
-        ----------
-        other : AlbumModel
-            The other album model to merge properties from
-        merge_mode: int
-            Defines how the merge should be performed:
-            - AlbumModel.ALBUM_MERGE_MODE_EXCLUSIVE: Only merge properties that are not already set in the merge target
-            - AlbumModel.ALBUM_MERGE_MODE_EXCLUSIVE_EX: Same as above, but also raises an exception if attempting to merge an existing property
-            - AlbumModel.ALBUM_MERGE_MODE_OVERRIDE: Overrides any existing property in merge target
+        :param other: The other album model to merge properties from
+        :param merge_mode: Defines how the merge should be performed:
+
+            - `AlbumModel.ALBUM_MERGE_MODE_EXCLUSIVE`: Only merge properties that are not already set in the merge target
+            - `AlbumModel.ALBUM_MERGE_MODE_EXCLUSIVE_EX`: Same as above, but also raises an exception if attempting to merge an existing property
+            - `AlbumModel.ALBUM_MERGE_MODE_OVERRIDE`: Overrides any existing property in merge target
         """
         # Do not try to merge unrelated types
         if not isinstance(other, AlbumModel):
@@ -977,9 +942,7 @@ class AlbumModel:
         Gets the album model's name to use when talking to Immich, i.e.
         returns override_name if set, otherwise name.
 
-        Returns
-        ---------
-            override_name if set, otherwise name
+        :returns: override_name if set, otherwise name
         """
         if self.override_name:
             return self.override_name
@@ -990,19 +953,11 @@ class AlbumModel:
         """
         Parses the provided album properties file into an AlbumModel
 
-        Parameters
-        ----------
-            album_properties_file_path : str
-                The fully qualified path to a valid album properties file
+        :param album_properties_file_path: The fully qualified path to a valid album properties file
 
-        Returns
-        ---------
-            An AlbumModel that represents the album properties
+        :returns: An AlbumModel that represents the album properties
 
-        Raises
-        ---------
-            YAMLError
-                If the provided album properties file could not be found or parsed
+        :raises YAMLError: If the provided album properties file could not be found or parsed
         """
         with open(album_properties_file_path, 'r', encoding="utf-8") as stream:
             album_properties = yaml.safe_load(stream)
@@ -1041,6 +996,16 @@ class Configuration(object):
     SCRIPT_MODE_CLEANUP = "CLEANUP"
     # Delete ALL albums
     SCRIPT_MODE_DELETE_ALL = "DELETE_ALL"
+
+        # Constants for album thumbnail setting
+    ALBUM_THUMBNAIL_RANDOM_ALL = "random-all"
+    ALBUM_THUMBNAIL_RANDOM_FILTERED = "random-filtered"
+    ALBUM_THUMBNAIL_SETTINGS = ["first", "last", "random"]
+    ALBUM_THUMBNAIL_SETTINGS_GLOBAL = ALBUM_THUMBNAIL_SETTINGS + [ALBUM_THUMBNAIL_RANDOM_ALL, ALBUM_THUMBNAIL_RANDOM_FILTERED]
+    ALBUM_THUMBNAIL_STATIC_INDICES = {
+        "first": 0,
+        "last": -1,
+    }
 
     # Default values for config options that cannot be None
     CONFIG_DEFAULTS = {
@@ -1314,7 +1279,7 @@ class Configuration(object):
                             Sharing only happens if the album was actually created, not if new assets were added to an existing album.
                             If the the share role should be specified by user, the format <userName>=<shareRole> must be used, where <shareRole> must be one of 'viewer' or 'editor'.
                             May be specified multiple times to share albums with more than one user.""")
-        parser.add_argument("-o", "--share-role", default=Configuration.CONFIG_DEFAULTS['share_role'], choices=['viewer', 'editor'],
+        parser.add_argument("-o", "--share-role", default=Configuration.CONFIG_DEFAULTS['share_role'], choices=ApiClient.SHARE_ROLES,
                             help="""The default share role for users newly created albums are shared with.
                                     Only effective if --share-with is specified at least once and the share role is not specified within --share-with.""")
         parser.add_argument("-S", "--sync-mode", default=Configuration.CONFIG_DEFAULTS['sync_mode'], type=int, choices=[0, 1, 2],
@@ -1329,18 +1294,11 @@ class Configuration(object):
         parser.add_argument("-f", "--path-filter", action="append",
                             help="""Use either literals or glob-like patterns to filter assets before album name creation.
                                     This filter is evaluated before any values passed with --ignore. May be specified multiple times.""")
-        parser.add_argument("--set-album-thumbnail", choices=ALBUM_THUMBNAIL_SETTINGS_GLOBAL,
+        parser.add_argument("--set-album-thumbnail", choices=Configuration.ALBUM_THUMBNAIL_SETTINGS_GLOBAL,
                             help="""Set first/last/random image as thumbnail for newly created albums or albums assets have been added to.
-                                    If set to """+ALBUM_THUMBNAIL_RANDOM_FILTERED+""", thumbnails are shuffled for all albums whose assets would not be
+                                    If set to """+Configuration.ALBUM_THUMBNAIL_RANDOM_FILTERED+""", thumbnails are shuffled for all albums whose assets would not be
                                     filtered out or ignored by the ignore or path-filter options, even if no assets were added during the run.
-                                    If set to """+ALBUM_THUMBNAIL_RANDOM_ALL+""", the thumbnails for ALL albums will be shuffled on every run.""")
-        # Backward compatibility, remove when archive is removed
-        parser.add_argument("-v", "--archive", action="store_true",
-                            help="""DEPRECATED. Use --visibility=archive instead! This option will be removed in the future!
-                                    Set this option to automatically archive all assets that were newly added to albums.
-                                    If this option is set in combination with --mode = CLEANUP or DELETE_ALL, archived images of deleted albums will be unarchived.
-                                    Archiving hides the assets from Immich's timeline.""")
-        # End Backward compaibility
+                                    If set to """+Configuration.ALBUM_THUMBNAIL_RANDOM_ALL+""", the thumbnails for ALL albums will be shuffled on every run.""")
         parser.add_argument("--visibility", choices=['archive', 'hidden', 'locked', 'timeline'],
                             help="""Set this option to automatically set the visibility of all assets that are discovered by the script and assigned to albums.
                                     Exception for value 'locked': Assets will not be added to any albums, but to the 'locked' folder only.
@@ -1398,15 +1356,10 @@ class Configuration(object):
         For key'type 'file', api_key_source is a path to a file containing the API key,
         and the file's contents are returned.
 
-        Parameters
-        ----------
-            api_key_source : str
-                An API key or path to a file containing an API key
-            key_type : str
-                Must be either 'literal' or 'file'
-        Returns
-        ---------
-            The API key or None on error
+        :param api_key_source: An API key or path to a file containing an API key
+        :param key_type: Must be either 'literal' or 'file'
+        
+        :returns: The API key or None on error
         """
         if key_type == 'literal':
             return api_key_source
@@ -1445,6 +1398,9 @@ class Configuration(object):
 class FolderAlbumCreator(object):
     """The Folder Album Creator class creating albums from folder structures based on the passed configuration"""
 
+    # File name to use for album properties files
+    ALBUMPROPS_FILE_NAME = '.albumprops'
+
     def __init__(self, config : Configuration):
         self.config = config
         # Create API client for configuration
@@ -1468,7 +1424,7 @@ class FolderAlbumCreator(object):
             for path_tuple in os.walk(path):
                 root = path_tuple[0]
                 filenames = path_tuple[2]
-                for filename in fnmatch.filter(filenames, ALBUMPROPS_FILE_NAME):
+                for filename in fnmatch.filter(filenames, FolderAlbumCreator.ALBUMPROPS_FILE_NAME):
                     albumprops_files.append(os.path.join(root, filename))
         return albumprops_files
     
@@ -1569,14 +1525,9 @@ class FolderAlbumCreator(object):
 
         If a validation error occurs, the program exits.
 
-        Parameters
-        ----------
-            album_props_templates : list[AlbumModel]
-                The list AlbumModel objects to validate
-            album_name_to_album_properties_file_path : dict
-                A dictionary where the key is an album name and the value is the path to the album properties file the
-                album was generated from.
-                This method expects one entry in this dictionary for every AlbumModel in album_props_templates
+        :param album_props_templates: The list of `AlbumModel` objects to validate
+        :param album_name_to_album_properties_file_path: A dictionary where the key is an album name and the value is the path to the album properties file the
+                album was generated from. This method expects one entry in this dictionary for every `AlbumModel` in album_props_templates.
         """
         fatal_error_occurred = False
         # This is a cache to remember checked names - keep time complexity down
@@ -1640,7 +1591,7 @@ class FolderAlbumCreator(object):
 
         # Walk up the directory tree until we reach the root path
         while len(current_path) >= len(root_path):
-            albumprops_path = os.path.join(current_path, ALBUMPROPS_FILE_NAME)
+            albumprops_path = os.path.join(current_path, FolderAlbumCreator.ALBUMPROPS_FILE_NAME)
 
             if albumprops_path in albumprops_cache_param:
                 album_model_local = albumprops_cache_param[albumprops_path]
@@ -1759,7 +1710,7 @@ class FolderAlbumCreator(object):
         :returns: The album model with inheritance applied, or None if no properties found
         """
         # Check if the album directory has its own .albumprops file
-        albumprops_path = os.path.join(album_path, ALBUMPROPS_FILE_NAME)
+        albumprops_path = os.path.join(album_path, FolderAlbumCreator.ALBUMPROPS_FILE_NAME)
         local_album_model = None
 
         logging.debug("Checking for album properties: album_path=%s, albumprops_path=%s", album_path, albumprops_path)
@@ -1920,7 +1871,7 @@ class FolderAlbumCreator(object):
         :returns: An Immich asset dict or None if no thumbnail was found based on thumbnail_setting
         """
         # Case: fully qualified path
-        if thumbnail_setting not in ALBUM_THUMBNAIL_SETTINGS_GLOBAL:
+        if thumbnail_setting not in Configuration.ALBUM_THUMBNAIL_SETTINGS_GLOBAL:
             for asset in thumbnail_asset_list:
                 if asset['originalPath'] == thumbnail_setting:
                     return asset
@@ -1930,16 +1881,16 @@ class FolderAlbumCreator(object):
         # Case: Anything but fully qualified path
         # Apply filtering to assets
         thumbnail_assets = thumbnail_asset_list
-        if thumbnail_setting == ALBUM_THUMBNAIL_RANDOM_FILTERED:
+        if thumbnail_setting == Configuration.ALBUM_THUMBNAIL_RANDOM_FILTERED:
             thumbnail_assets[:] = [asset for asset in thumbnail_assets if not self.is_path_ignored(asset['originalPath'])]
 
         if len(thumbnail_assets) > 0:
             # Sort assets by creation date
             thumbnail_assets.sort(key=lambda x: x['fileCreatedAt'])
-            if thumbnail_setting not in ALBUM_THUMBNAIL_STATIC_INDICES:
+            if thumbnail_setting not in Configuration.ALBUM_THUMBNAIL_STATIC_INDICES:
                 idx = random.randint(0, len(thumbnail_assets)-1)
             else:
-                idx = ALBUM_THUMBNAIL_STATIC_INDICES[thumbnail_setting]
+                idx = Configuration.ALBUM_THUMBNAIL_STATIC_INDICES[thumbnail_setting]
             return thumbnail_assets[idx]
 
         # Case: Invalid thumbnail_setting
@@ -2229,13 +2180,13 @@ class FolderAlbumCreator(object):
         """
         # Special case: Run Mode DELETE_ALL albums
         if self.config.mode == Configuration.SCRIPT_MODE_DELETE_ALL:
-            self.delete_all_albums(self.config.visibility, self.config.delete_confirm)
+            self.api_client.delete_all_albums(self.config.visibility, self.config.delete_confirm)
             return
         
         album_properties_templates = {}
         albumprops_cache = {}
         if self.config.read_album_properties:
-            logging.debug("Albumprops: Finding, parsing and loading %s files with inheritance support", ALBUMPROPS_FILE_NAME)
+            logging.debug("Albumprops: Finding, parsing and loading %s files with inheritance support", FolderAlbumCreator.ALBUMPROPS_FILE_NAME)
             albumprops_cache = self.build_albumprops_cache()
             # Keep the old templates for backward compatibility with existing logic that expects album name keys
             album_properties_templates = self.build_album_properties_templates()
@@ -2280,7 +2231,8 @@ class FolderAlbumCreator(object):
 
         albums = self.api_client.fetch_albums()
         logging.info("%d existing albums identified", len(albums))
-
+        
+        album: AlbumModel
         for album in albums_to_create.values():
             # fetch the id if same album name exist
             album.id = FolderAlbumCreator.get_album_id_by_name(albums, album.get_final_name())
@@ -2336,7 +2288,7 @@ class FolderAlbumCreator(object):
             if self.config.update_album_props_mode > 0 or (album in created_albums):
                 # Handle thumbnail
                 # Thumbnail setting 'random-all' is handled separately
-                if album.thumbnail_setting and album.thumbnail_setting != ALBUM_THUMBNAIL_RANDOM_ALL:
+                if album.thumbnail_setting and album.thumbnail_setting != Configuration.ALBUM_THUMBNAIL_RANDOM_ALL:
                     # Fetch assets to be sure to have up-to-date asset list
                     album_to_update_info = self.api_client.fetch_album_info(album.id)
                     album_assets = album_to_update_info['assets']
@@ -2360,7 +2312,7 @@ class FolderAlbumCreator(object):
         logging.info("%d albums created", len(created_albums))
 
         # Perform album cover randomization
-        if self.config.set_album_thumbnail == ALBUM_THUMBNAIL_RANDOM_ALL:
+        if self.config.set_album_thumbnail == Configuration.ALBUM_THUMBNAIL_RANDOM_ALL:
             logging.info("Picking a new random thumbnail for all albums")
             albums = self.api_client.fetch_albums()
             for album in albums:
