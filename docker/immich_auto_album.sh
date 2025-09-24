@@ -44,6 +44,27 @@ if [ ! -z "$IGNORE" ]; then
     done
 fi
 
+# parse API_KEY CSV
+main_api_key=""
+additional_api_keys=""
+api_keys=""
+# Determine whether API keys are passed as literals or as paths to secret files
+if [ ! -z "$API_KEY" ]; then
+    api_key_type="--api-key-type literal"
+    api_keys=${API_KEY}
+elif [ ! -z "$API_KEY_FILE" ]; then
+    api_key_type="--api-key-type file"
+    api_keys=${API_KEY_FILE}
+fi
+
+for api_key in ${api_keys}; do
+  if [ -z "$main_api_key" ]; then
+    main_api_key="\"$api_key\""
+  else
+    additional_api_keys="--api-key \"$api_key\" $additional_api_keys"
+  fi
+done
+
 ## parse ABLUM_NAME_POST_REGEX<n>
 # Split on newline only
 IFS=$(echo -en "\n\b")
@@ -72,18 +93,9 @@ if [ ! -z "$UNATTENDED" ]; then
     unattended="--unattended"
 fi
 
-api_key=""
-api_key_type=""
 
-if [ ! -z "$API_KEY" ]; then
-    api_key=$API_KEY
-    api_key_type="--api-key-type literal"
-elif [ ! -z "$API_KEY_FILE" ]; then
-    api_key=$API_KEY_FILE
-    api_key_type="--api-key-type file"
-fi
 
-args="$api_key_type $unattended $main_root_path $API_URL $api_key"
+args="$api_key_type $unattended $main_root_path $API_URL $main_api_key"
 
 if [ ! -z "$additional_root_paths" ]; then
     args="$additional_root_paths $args"
@@ -119,6 +131,10 @@ fi
 
 if [ ! -z "$ignore_list" ]; then
     args="$ignore_list $args"
+fi
+
+if [ ! -z "$additional_api_keys" ]; then
+    args="$additional_api_keys $args"
 fi
 
 if [ ! -z "$MODE" ]; then

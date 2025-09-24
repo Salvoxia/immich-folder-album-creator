@@ -1261,7 +1261,9 @@ class Configuration(object):
             formatter_class=argparse.ArgumentDefaultsHelpFormatter)
         parser.add_argument("root_path", action='append', help="The external library's root path in Immich")
         parser.add_argument("api_url", help="The root API URL of immich, e.g. https://immich.mydomain.com/api/")
-        parser.add_argument("api_key", help="The Immich API Key to use. Set --api-key-type to 'file' if a file path is provided.")
+        parser.add_argument("api_key", action='append', help="The Immich API Key to use. Set --api-key-type to 'file' if a file path is provided.")
+        parser.add_argument("--api-key", action="append",
+                            help="Additional API Keys to run the script for; May be specified multiple times for running the script for multiple users.")
         parser.add_argument("-t", "--api-key-type", default=Configuration.CONFIG_DEFAULTS['api_key_type'], choices=['literal', 'file'], help="The type of the Immich API Key")
         parser.add_argument("-r", "--root-path", action="append",
                             help="Additional external library root path in Immich; May be specified multiple times for multiple import paths or external libraries.")
@@ -1279,7 +1281,7 @@ class Configuration(object):
                 help='Regex pattern and optional replacement (use "" for empty replacement). Can be specified multiple times.')
         parser.add_argument("-c", "--chunk-size", default=Configuration.CONFIG_DEFAULTS['chunk_size'], type=int, help="Maximum number of assets to add to an album with a single API call")
         parser.add_argument("-C", "--fetch-chunk-size", default=Configuration.CONFIG_DEFAULTS['fetch_chunk_size'], type=int, help="Maximum number of assets to fetch with a single API call")
-        parser.add_argument("-l", "--log-level", default=Configuration.CONFIG_DEFAULTS['log_level'], choices=['CRITICAL', 'ERROR', 'WARNING', 'INFO', 'DEBUG'], help="Log level to use")
+        parser.add_argument("-l", "--log-level", default=Configuration.CONFIG_DEFAULTS['log_level'], choices=['CRITICAL', 'ERROR', 'WARNING', 'INFO', 'DEBUG'], help="Log level to use. ATTENTION: Log level DEBUG logs API key in clear text!")
         parser.add_argument("-k", "--insecure", action="store_true", help="Pass to ignore SSL verification")
         parser.add_argument("-i", "--ignore", action="append",
                             help="""Use either literals or glob-like patterns to ignore assets for album name creation.
@@ -1348,8 +1350,15 @@ class Configuration(object):
     def get_configurations(cls) -> list[Configuration]:
         parser = Configuration.get_arg_parser()
         args = vars(parser.parse_args())
+        configs: list[Configuration] = []
+        # Create a configuration for each passed API key
+        for api_key in args['api_key']:
+            config_args = args
+            # replace the API key array with the current api key for that configuration args
+            config_args['api_key'] = api_key
+            configs.append(cls(config_args))
         # Return a list with a single configuration
-        return [cls(args)]
+        return configs
 
     @staticmethod
     def __read_file(file_path: str, encoding: str  = "utf-8") -> str:
@@ -2416,10 +2425,16 @@ except(HTTPError, ValueError, AssertionError) as e:
 
 for config in configs:
     logging.basicConfig(level=config.log_level, stream=sys.stdout, format='time=%(asctime)s level=%(levelname)s msg=%(message)s')
+    folder_album_creator = FolderAlbumCreator(config)
+
+    processing_api_key = folder_album_creator.api_client.api_key[:5] + '*' * (len(folder_album_creator.api_client.api_key)-5)
+    # Log the full API key when DEBUG logging is enabled
+    if 'DEBUG' == config.log_level:
+        processing_api_key = folder_album_creator.api_client.api_key
+
+    logging.info("Processing API Key %s", processing_api_key)
     # Log config to DEBUG level
     config.log_debug()
-
-    folder_album_creator = FolderAlbumCreator(config)
     try:
         folder_album_creator.run()
     except (AlbumMergeError, AlbumModelValidationError, HTTPError, ValueError, AssertionError) as e:
