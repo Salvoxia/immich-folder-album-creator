@@ -1099,9 +1099,7 @@ class Configuration():
         self.log_level = Utils.get_value_or_config_default("log_level", args, Configuration.CONFIG_DEFAULTS["log_level"])
         self.root_paths = args["root_path"]
         self.root_url = args["api_url"]
-        self.api_key_type = Utils.get_value_or_config_default("api_key_type", args, Configuration.CONFIG_DEFAULTS["api_key_type"])
-        self.api_key = self.__determine_api_key(args["api_key"], self.api_key_type)
-
+        self.api_key = args["api_key"]
         self.chunk_size = Utils.get_value_or_config_default("chunk_size", args, Configuration.CONFIG_DEFAULTS["chunk_size"])
         self.fetch_chunk_size = Utils.get_value_or_config_default("fetch_chunk_size", args, Configuration.CONFIG_DEFAULTS["fetch_chunk_size"])
         self.unattended = Utils.get_value_or_config_default("unattended", args, Configuration.CONFIG_DEFAULTS["unattended"])
@@ -1353,33 +1351,36 @@ class Configuration():
         parser = Configuration.get_arg_parser()
         args = vars(parser.parse_args())
         created_configs: list[Configuration] = []
+        api_key_type = Utils.get_value_or_config_default("api_key_type", args, Configuration.CONFIG_DEFAULTS["api_key_type"])
         # Create a configuration for each passed API key
-        for api_key in args['api_key']:
+        for api_key_arg in args['api_key']:
+            api_keys = Configuration.__determine_api_key(api_key_arg, api_key_type)
             config_args = args
-            # replace the API key array with the current api key for that configuration args
-            config_args['api_key'] = api_key
-            created_configs.append(cls(config_args))
+            for api_key in api_keys:
+                # replace the API key array with the current api key for that configuration args
+                config_args['api_key'] = api_key
+                created_configs.append(cls(config_args))
         # Return a list with a single configuration
         return created_configs
 
     @staticmethod
-    def __determine_api_key(api_key_source: str, key_type: str) -> str:
+    def __determine_api_key(api_key_source: str, key_type: str) -> list[str]:
         """
-        Determines the API key base on key_type.
-        For key_type 'literal', api_key_source is returned as is.
-        For key'type 'file', api_key_source is a path to a file containing the API key,
-        and the file's contents are returned.
+        For key_type `literal`, api_key_source is returned in a list with a single record.
+        For key_type `file`, api_key_source is a path to a file containing the API key,
+        each line in that file is interpreted as an API key. and a list with each line as a record
+        is returned.
 
         :param api_key_source: An API key or path to a file containing an API key
         :param key_type: Must be either 'literal' or 'file'
         
-        :returns: The API key or None on error
-        :rtype: str
+        :returns: A list of API keys to use
+        :rtype: list[str]
         """
         if key_type == 'literal':
-            return api_key_source
+            return [api_key_source]
         if key_type == 'file':
-            return Utils.read_file(api_key_source)
+            return Utils.read_file(api_key_source).splitlines()
         # At this point key_type is not a valid value
         logging.error("Unknown key type (-t, --key-type). Must be either 'literal' or 'file'.")
         return None
@@ -2452,6 +2453,7 @@ is_docker = os.environ.get(ENV_IS_DOCKER, False)
 
 try:
     configs = Configuration.get_configurations()
+    logging.info("Created %d configurations", len(configs))
 except(HTTPError, ValueError, AssertionError) as e:
     logging.fatal(e.msg)
     sys.exit(1)
