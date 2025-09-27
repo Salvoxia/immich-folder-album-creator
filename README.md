@@ -84,8 +84,8 @@ Since Immich Server v1.135.x, creating API keys allows the user to specify permi
     ```
 3. Run the script
 ```
-    usage: immich_auto_album.py [-h] [-t {literal,file}] [-r ROOT_PATH] [-u] [-a ALBUM_LEVELS] [-s ALBUM_SEPARATOR] [-R PATTERN [REPL ...]] [-c CHUNK_SIZE] [-C FETCH_CHUNK_SIZE] [-l {CRITICAL,ERROR,WARNING,INFO,DEBUG}] [-k] [-i IGNORE]
-                            [-m {CREATE,CLEANUP,DELETE_ALL}] [-d] [-x SHARE_WITH] [-o {viewer,editor}] [-S {0,1,2}] [-O {False,asc,desc}] [-A] [-f PATH_FILTER] [--set-album-thumbnail {first,last,random,random-all,random-filtered}] [-v]
+    usage: immich_auto_album.py [-h] [--api-key API_KEY] [-t {literal,file}] [-r ROOT_PATH] [-u] [-a ALBUM_LEVELS] [-s ALBUM_SEPARATOR] [-R PATTERN [REPL ...]] [-c CHUNK_SIZE] [-C FETCH_CHUNK_SIZE] [-l {CRITICAL,ERROR,WARNING,INFO,DEBUG}] [-k] [-i IGNORE]
+                            [-m {CREATE,CLEANUP,DELETE_ALL}] [-d] [-x SHARE_WITH] [-o {editor,viewer}] [-S {0,1,2}] [-O {False,asc,desc}] [-A] [-f PATH_FILTER] [--set-album-thumbnail {first,last,random,random-all,random-filtered}] [--visibility {archive,hidden,locked,timeline}]
                             [--find-archived-assets] [--read-album-properties] [--api-timeout API_TIMEOUT] [--comments-and-likes-enabled] [--comments-and-likes-disabled] [--update-album-props-mode {0,1,2}]
                             root_path api_url api_key
 
@@ -98,6 +98,7 @@ positional arguments:
 
 options:
   -h, --help            show this help message and exit
+  --api-key API_KEY     Additional API Keys to run the script for; May be specified multiple times for running the script for multiple users. (default: None)
   -t {literal,file}, --api-key-type {literal,file}
                         The type of the Immich API Key (default: literal)
   -r ROOT_PATH, --root-path ROOT_PATH
@@ -116,7 +117,7 @@ options:
   -C FETCH_CHUNK_SIZE, --fetch-chunk-size FETCH_CHUNK_SIZE
                         Maximum number of assets to fetch with a single API call (default: 5000)
   -l {CRITICAL,ERROR,WARNING,INFO,DEBUG}, --log-level {CRITICAL,ERROR,WARNING,INFO,DEBUG}
-                        Log level to use (default: INFO)
+                        Log level to use. ATTENTION: Log level DEBUG logs API key in clear text! (default: INFO)
   -k, --insecure        Pass to ignore SSL verification (default: False)
   -i IGNORE, --ignore IGNORE
                         Use either literals or glob-like patterns to ignore assets for album name creation. This filter is evaluated after any values passed with --path-filter. May be specified multiple times. (default: None)
@@ -144,8 +145,6 @@ options:
   --set-album-thumbnail {first,last,random,random-all,random-filtered}
                         Set first/last/random image as thumbnail for newly created albums or albums assets have been added to. If set to random-filtered, thumbnails are shuffled for all albums whose assets would not be filtered out or
                         ignored by the ignore or path-filter options, even if no assets were added during the run. If set to random-all, the thumbnails for ALL albums will be shuffled on every run. (default: None)
-  -v, --archive         DEPRECATED. Use --visibility=archive instead! This option will be removed in the future! Set this option to automatically archive all assets that were newly added to albums. If this option is set in combination with --mode = CLEANUP or DELETE_ALL, archived images of
-                        deleted albums will be unarchived. Archiving hides the assets from Immich's timeline. (default: False)
   --visibility {archive,hidden,locked,timeline}
                         Set this option to automatically set the visibility of all assets that are discovered by the script and assigned to albums. Exception for value 'locked': Assets will not be added to any albums, but to the 'locked' folder only. Also applies if -m/--mode is set to
                         CLEAN_UP or DELETE_ALL; then it affects all assets in the deleted albums. Always overrides -v/--archive. (default: None)
@@ -198,8 +197,8 @@ The environment variables are analogous to the script's command line arguments.
 | :--------------------------- | :--------- | :---------- |
 | `ROOT_PATH`                  | yes        | A single or a comma separated list of import paths for external libraries in Immich. <br>Refer to [Choosing the correct `root_path`](#choosing-the-correct-root_path).|
 | `API_URL`                    | yes        | The root API URL of immich, e.g. https://immich.mydomain.com/api/ |
-| `API_KEY`                    | no         | The Immich API Key to use. Either `API_KEY` or `API_KEY_FILE` must be specified. The `API_KEY` variable takes precedence for ease of manual execution, but it is recommended to use `API_KEY_FILE`. 
-| `API_KEY_FILE`               | no         | An absolute path (from the root of the container) to a file containing the Immich API Key. The file might be mounted into the container using a volume (e.g. `-v /path/to/api_key.secret:/immich_api_key.secret:ro`). The file must contain only the value. |
+| `API_KEY`                    | no         | A colon `:` separated list of API Keys to run the script for. Either `API_KEY` or `API_KEY_FILE` must be specified. The `API_KEY` variable takes precedence for ease of manual execution, but it is recommended to use `API_KEY_FILE`. 
+| `API_KEY_FILE`               | no         | A colon `:` separated list of absolute paths (from the root of the container) to files containing an Immich API Key, one key per file. The file might be mounted into the container using a volume (e.g. `-v /path/to/api_key.secret:/immich_api_key.secret:ro`). Each file must contain only the value of a single API Key. |
 | `CRON_EXPRESSION`            | yes        | A [crontab-style expression](https://crontab.guru/) (e.g. `0 * * * *`) to perform album creation on a schedule (e.g. every hour). |
 | `RUN_IMMEDIATELY`            | no         | Set to `true` to run the script right away, after running once the script will automatically run again based on the CRON_EXPRESSION |
 | `ALBUM_LEVELS`               | no         | Number of sub-folders or range of sub-folder levels below the root path used for album name creation. Positive numbers start from top of the folder structure, negative numbers from the bottom. Cannot be `0`. If a range should be set, the start level and end level must be separated by a comma. <br>Refer to [How it works](#how-it-works) for a detailed explanation and examples. |
@@ -218,7 +217,6 @@ The environment variables are analogous to the script's command line arguments.
 | `FIND_ASSETS_IN_ALBUMS`      | no         | By default, the script only finds assets that are not assigned to any album yet. Set this option to make the script discover assets that are already part of an album and handle them as usual. If --find-archived-assets is set as well, both options apply. (default: `False`)<br>Refer to [Assets in Multiple Albums](#assets-in-multiple-albums). |
 | `PATH_FILTER`                | no         | A colon `:` separated list of literals or glob-style patterns to filter assets before album name creation. (default: ``)<br>Refer to [Filtering](#filtering). |
 | `SET_ALBUM_THUMBNAIL`        | no         | Set first/last/random image as thumbnail (based on image creation timestamp) for newly created albums or albums assets have been added to.<br> Allowed values: `first`,`last`,`random`,`random-filtered`,`random-all`<br>If set to `random-filtered`, thumbnails are shuffled for all albums whose assets would not be filtered out or ignored by the `IGNORE` or `PATH_FILTER` options, even if no assets were added during the run. If set to random-all, the thumbnails for ALL albums will be shuffled on every run. (default: `None`)<br>Refer to [Setting Album Thumbnails](#setting-album-thumbnails). |
-| `ARCHIVE`                    | no         | __DEPRECATED! Use `VISIBILITY` instead! This option will be removed in the future!__<br>Set this option to automatically archive all assets that were newly added to albums.<br>If this option is set in combination with `MODE` = `CLEANUP` or `DELETE_ALL`, archived images of deleted albums will be unarchived.<br>Archiving hides the assets from Immich's timeline. (default: `False`)<br>Refer to [Asset Visibility & Locked Folder](#asset-visibility-locked-folder). |
 | `VISIBILITY`                 | no         | Set this option to automatically set the visibility of all assets that are discovered by the script and assigned to albums.<br>Exception for value 'locked': Assets will not be added to any albums, but to the 'locked' folder only.<br>Also applies if `MODE` is set to CLEAN_UP or DELETE_ALL; then it affects all assets in the deleted albums.<br>Always overrides `ARCHIVE`. (default: `None`)<br>Refer to [Asset Visibility & Locked Folder](#asset-visibility-locked-folder). |
 | `FIND_ARCHIVED_ASSETS`       | no         | By default, the script only finds assets with visibility set to 'timeline' (which is the default). Set this option to make the script discover assets with visibility 'archive' as well. If -A/--find-assets-in-albums is set as well, both options apply. (default: `False`)<br>Refer to [Asset Visibility & Locked Folder](#asset-visibility--locked-folder). |
 | `READ_ALBUM_PROPERTIES`      | no         | Set to `True` to enable discovery of `.albumprops` files in root paths, allowing to set different album properties for different albums. (default: `False`)<br>Refer to [Setting Album-Fine Properties](#setting-album-fine-properties). |
