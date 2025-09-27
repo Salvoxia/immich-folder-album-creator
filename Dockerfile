@@ -1,4 +1,4 @@
-FROM python:3.12-alpine
+FROM python:3.13-alpine3.22
 LABEL maintainer="Salvoxia <salvoxia@blindfish.info>"
 
 COPY immich_auto_album.py requirements.txt docker/immich_auto_album.sh docker/setup_cron.sh /script/
