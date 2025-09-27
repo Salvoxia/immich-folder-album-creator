@@ -13,6 +13,7 @@ import datetime
 from collections import OrderedDict
 import random
 from urllib.error import HTTPError
+import traceback
 
 import regex
 import yaml
@@ -80,9 +81,9 @@ class ApiClient:
         else:
             warnings.resetwarnings()
 
-        self.server_version = self.fetch_server_version()
+        self.server_version = self.__fetch_server_version_safe()
         if self.server_version is None:
-            raise AssertionError("Communication with Immich Server API failed! Check API URL and API Key!")
+            raise AssertionError("Communication with Immich Server API failed! Make sure the API URL is correct and verify the API Key!")
 
         # Check version
         if self.server_version ['major'] == 1 and self.server_version  ['minor'] < 106:
@@ -142,6 +143,9 @@ class ApiClient:
 
         :returns: Dictionary with keys `major`, `minor`, `patch`
         :rtype: dict
+        :raises ConnectionError: If the connection to the API server cannot be establisehd
+        :raises JSONDecodeError: If the API response cannot be parsed
+        :raises ValueError: If the API response is malformed
         """
         api_endpoint = f'{self.api_url}server/version'
         r = requests.get(api_endpoint, **self.request_args , timeout=self.api_timeout)
@@ -153,11 +157,37 @@ class ApiClient:
 
         if r.status_code == 200:
             server_version = r.json()
+            try:
+                assert server_version['major'] is not None
+                assert server_version['minor'] is not None
+                assert server_version['patch'] is not None
+            except AssertionError as e:
+                raise ValueError from e
             logging.info("Detected Immich server version %s.%s.%s", server_version['major'], server_version['minor'], server_version['patch'])
-        # Any other errors mean communication error with API
-        else:
-            logging.error("Communication with Immich API failed! Make sure the passed API URL is correct!")
-        return server_version
+            return server_version
+        return None
+
+    # pylint: disable=W0718
+    # Catching too general exception Exception (broad-exception-caught
+    # That's the whole point of this method
+    def __fetch_server_version_safe(self) -> dict:
+        """
+        Fetches the API version from the Immich server, suppressing any raised errors.
+        On error, an error message is getting logged to ERRRO level, and the exception stacktrace
+        is logged to DEBUG level.
+
+        :returns: Dictionary with keys `major`, `minor`, `patch` or None in case of an error
+        :rtype: dict
+        """
+        try:
+            return self.fetch_server_version()
+        except Exception:
+            # JSONDecodeError happens if the URL is valid, but does not return valid JSON
+            # Anything below this line is deemed an error
+            logging.debug("Error requesting server version!")
+            logging.debug(traceback.format_exc())
+        return None
+
 
     def fetch_assets(self, is_not_in_album: bool, visibility_options: list[str]) -> list[dict]:
         """
@@ -2459,18 +2489,19 @@ except(HTTPError, ValueError, AssertionError) as e:
     sys.exit(1)
 
 for config in configs:
-    logging.basicConfig(level=config.log_level, stream=sys.stdout, format='time=%(asctime)s level=%(levelname)s msg=%(message)s')
-    folder_album_creator = FolderAlbumCreator(config)
-
-    processing_api_key = folder_album_creator.api_client.api_key[:5] + '*' * (len(folder_album_creator.api_client.api_key)-5)
-    # Log the full API key when DEBUG logging is enabled
-    if 'DEBUG' == config.log_level:
-        processing_api_key = folder_album_creator.api_client.api_key
-
-    logging.info("Processing API Key %s", processing_api_key)
-    # Log config to DEBUG level
-    config.log_debug()
+    # Updated log level with the level this configuration dictates
+    logging.getLogger().setLevel(config.log_level)
     try:
+        folder_album_creator = FolderAlbumCreator(config)
+
+        processing_api_key = folder_album_creator.api_client.api_key[:5] + '*' * (len(folder_album_creator.api_client.api_key)-5)
+        # Log the full API key when DEBUG logging is enabled
+        if 'DEBUG' == config.log_level:
+            processing_api_key = folder_album_creator.api_client.api_key
+
+        logging.info("Processing API Key %s", processing_api_key)
+        # Log config to DEBUG level
+        config.log_debug()
         folder_album_creator.run()
     except (AlbumMergeError, AlbumModelValidationError, HTTPError, ValueError, AssertionError) as e:
         logging.fatal("Fatal error while processing configuration!")
