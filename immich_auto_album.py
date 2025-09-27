@@ -2,7 +2,6 @@
 
 # pylint: disable=too-many-lines
 from __future__ import annotations
-from requests.exceptions import JSONDecodeError
 import warnings
 from typing import Tuple
 import argparse
@@ -84,7 +83,7 @@ class ApiClient:
 
         self.server_version = self.__fetch_server_version_safe()
         if self.server_version is None:
-            raise AssertionError("Communication with Immich Server API failed! Check API URL and API Key!")
+            raise AssertionError("Communication with Immich Server API failed! Make sure the API URL is correct and verify the API Key!")
 
         # Check version
         if self.server_version ['major'] == 1 and self.server_version  ['minor'] < 106:
@@ -166,7 +165,11 @@ class ApiClient:
                 raise ValueError from e
             logging.info("Detected Immich server version %s.%s.%s", server_version['major'], server_version['minor'], server_version['patch'])
             return server_version
-        
+        return None
+
+    # pylint: disable=W0718
+    # Catching too general exception Exception (broad-exception-caught
+    # That's the whole point of this method
     def __fetch_server_version_safe(self) -> dict:
         """
         Fetches the API version from the Immich server, suppressing any raised errors.
@@ -183,8 +186,7 @@ class ApiClient:
             # Anything below this line is deemed an error
             logging.debug("Error requesting server version!")
             logging.debug(traceback.format_exc())
-        # Any other errors mean communication error with API
-        logging.error("Communication with Immich API failed! Make sure the passed API URL is correct!")
+        return None
 
 
     def fetch_assets(self, is_not_in_album: bool, visibility_options: list[str]) -> list[dict]:
