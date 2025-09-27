@@ -2,6 +2,7 @@
 
 # pylint: disable=too-many-lines
 from __future__ import annotations
+import warnings
 from typing import Tuple
 import argparse
 import logging
@@ -18,13 +19,13 @@ import yaml
 
 import urllib3
 import requests
-import warnings
 
 
 # Script Constants
 # Environment variable to check if the script is running inside Docker
 ENV_IS_DOCKER = "IS_DOCKER"
 
+# pylint: disable=R0902,R0904
 class ApiClient:
     """Encapsulates Immich API Calls in a client object"""
 
@@ -40,16 +41,29 @@ class ApiClient:
     # List of allowed share user roles
     SHARE_ROLES = ["editor", "viewer"]
 
-    def __init__(self, api_url : str, api_key : str, chunk_size : int = CHUNK_SIZE_DEFAULT, fetch_chunk_size : int = FETCH_CHUNK_SIZE_DEFAULT, api_timeout : int = API_TIMEOUT_DEFAULT, insecure : bool = False):
+    def __init__(self, api_url : str, api_key : str, **kwargs: dict):
+        """
+        :param api_url: The Immich Server's API base URL
+        :param api_key: The Immich API key to use for authentication
+        :param **kwargs: keyword arguments allowing the following keywords:
+
+                - `chunk_size: int` The number of assets to add to an album with a single API call
+                - `fetch_chunk_size: int` The number of assets to fetch with a single API call
+                - `api_timeout: int` The timeout to use for API calls in seconds
+                - `insecure: bool` Flag indicating whether to skip SSL certificate validation
+        :raises AssertionError: When validation of options failed
+        """
         # The Immich API URL to connect to
         self.api_url = api_url
         # The API key to use
         self.api_key = api_key
 
-        self.chunk_size = chunk_size
-        self.fetch_chunk_size = fetch_chunk_size
-        self.api_timeout = api_timeout
-        self.insecure = insecure
+        self.chunk_size = Utils.get_value_or_config_default('chunk_size', kwargs, Configuration.CONFIG_DEFAULTS['chunk_size'])
+        self.fetch_chunk_size = Utils.get_value_or_config_default('fetch_chunk_size', kwargs, Configuration.CONFIG_DEFAULTS['fetch_chunk_size'])
+        self.api_timeout = Utils.get_value_or_config_default('api_timeout', kwargs, Configuration.CONFIG_DEFAULTS['api_timeout'])
+        self.insecure = Utils.get_value_or_config_default('insecure', kwargs, Configuration.CONFIG_DEFAULTS['insecure'])
+
+        self.__validate_config()
 
         # Build request arguments to use for API calls
         self.request_args = {
@@ -64,28 +78,43 @@ class ApiClient:
         if self.insecure:
             urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
         else:
-           warnings.resetwarnings()
+            warnings.resetwarnings()
 
         self.server_version = self.fetch_server_version()
-        if(self.server_version is None):
-            raise HTTPError("Communication with Immich Server API failed! Check API URL and API Key!")
-        
+        if self.server_version is None:
+            raise AssertionError("Communication with Immich Server API failed! Check API URL and API Key!")
+
         # Check version
         if self.server_version ['major'] == 1 and self.server_version  ['minor'] < 106:
             raise AssertionError("This script only works with Immich Server v1.106.0 and newer! Update Immich Server or use script version 0.8.1!")
-    
-    @staticmethod
-    def __divide_chunks(full_list: list, chunk_size: int):
+
+    def __validate_config(self):
         """
-        Yield successive chunk_size-sized chunks from full_list.
-        
-        :param full_list: The full list to create chunks from
-        :param chunk_size: The number of records per chunk
+        Validates all set configuration values.
+
+        :raises: ValueError if any config value does not pass validation
         """
-        # looping till length l
-        for j in range(0, len(full_list), chunk_size):
-            yield full_list[j:j + chunk_size]
-                
+        Utils.assert_not_none_or_empty("api_url", self.api_url)
+        Utils.assert_not_none_or_empty("api_key", self.api_key)
+        Utils.assert_not_none_or_empty("chunk_size", self.chunk_size)
+        Utils.assert_not_none_or_empty("fetch_chunk_size", self.fetch_chunk_size)
+        Utils.assert_not_none_or_empty("api_timeout", self.api_timeout)
+        Utils.assert_not_none_or_empty("insecure", self.insecure)
+
+        if not Utils.is_integer(self.chunk_size) or self.chunk_size < 1:
+            raise ValueError("chunk_size must be an integer > 0!")
+
+        if not Utils.is_integer(self.fetch_chunk_size) or self.fetch_chunk_size < 1:
+            raise ValueError("fetch_chunk_size must be an integer > 0!")
+
+        if not Utils.is_integer(self.api_timeout) or self.api_timeout < 1:
+            raise ValueError("api_timeout must be an integer > 0!")
+
+        try:
+            bool(self.insecure)
+        except ValueError as e:
+            raise ValueError("insecure argument must be a boolean!") from e
+
     @staticmethod
     def __check_api_response(response: requests.Response) -> None:
         """
@@ -129,7 +158,6 @@ class ApiClient:
         else:
             logging.error("Communication with Immich API failed! Make sure the passed API URL is correct!")
         return server_version
-
 
     def fetch_assets(self, is_not_in_album: bool, visibility_options: list[str]) -> list[dict]:
         """
@@ -192,7 +220,6 @@ class ApiClient:
             assets_found = assets_found + assets_received
         return assets_found
 
-
     def fetch_albums(self) -> list[dict]:
         """
         Fetches albums from the Immich API
@@ -206,7 +233,6 @@ class ApiClient:
         r = requests.get(self.api_url+api_endpoint, **self.request_args, timeout=self.api_timeout)
         self.__check_api_response(r)
         return r.json()
-
 
     def fetch_album_info(self, album_id_for_info: str) -> dict:
         """
@@ -269,9 +295,6 @@ class ApiClient:
 
         return r.json()['id']
 
-
-
-
     def add_assets_to_album(self, assets_add_album_id: str, asset_list: list[str]) -> list[str]:
         """
         Adds the assets IDs provided in assets to the provided albumId.
@@ -292,7 +315,7 @@ class ApiClient:
 
         # Divide our assets into chunks of self.chunk_size,
         # So the API can cope
-        assets_chunked = list(ApiClient.__divide_chunks(asset_list, self.chunk_size))
+        assets_chunked = list(Utils.divide_chunks(asset_list, self.chunk_size))
         asset_list_added = []
 
         for assets_chunk in assets_chunked:
@@ -323,7 +346,7 @@ class ApiClient:
         r = requests.get(self.api_url+api_endpoint, **self.request_args, timeout=self.api_timeout)
         self.__check_api_response(r)
         return r.json()
-    
+
     def unshare_album_with_user(self, album_id_to_unshare: str, unshare_user_id: str) -> None:
         """
         Unshares the provided album with the provided user
@@ -1002,9 +1025,9 @@ class AlbumModel:
         return None
 
 
-class Configuration(object):
+class Configuration():
     """A configuration object for the main class, controlling everything from API key, root path and all the other options the script offers"""
-    
+
     # Constants holding script run modes
     # Create albums based on folder names and script arguments
     SCRIPT_MODE_CREATE = "CREATE"
@@ -1073,39 +1096,39 @@ class Configuration(object):
 
         :param args: A dictionary containing well-defined key-value pairs
         """
-        self.log_level = Configuration.__get_value_or_config_default("log_level", args)
+        self.log_level = Utils.get_value_or_config_default("log_level", args, Configuration.CONFIG_DEFAULTS["log_level"])
         self.root_paths = args["root_path"]
         self.root_url = args["api_url"]
-        self.api_key_type = Configuration.__get_value_or_config_default("api_key_type", args)
+        self.api_key_type = Utils.get_value_or_config_default("api_key_type", args, Configuration.CONFIG_DEFAULTS["api_key_type"])
         self.api_key = self.__determine_api_key(args["api_key"], self.api_key_type)
-        
-        self.chunk_size = Configuration.__get_value_or_config_default("chunk_size", args)
-        self.fetch_chunk_size = Configuration.__get_value_or_config_default("fetch_chunk_size", args)
-        self.unattended = Configuration.__get_value_or_config_default("unattended", args)
-        self.album_levels = Configuration.__get_value_or_config_default("album_levels", args)
+
+        self.chunk_size = Utils.get_value_or_config_default("chunk_size", args, Configuration.CONFIG_DEFAULTS["chunk_size"])
+        self.fetch_chunk_size = Utils.get_value_or_config_default("fetch_chunk_size", args, Configuration.CONFIG_DEFAULTS["fetch_chunk_size"])
+        self.unattended = Utils.get_value_or_config_default("unattended", args, Configuration.CONFIG_DEFAULTS["unattended"])
+        self.album_levels = Utils.get_value_or_config_default("album_levels", args, Configuration.CONFIG_DEFAULTS["album_levels"])
         # Album Levels Range handling
         self.album_levels_range_arr = ()
-        self.album_level_separator = Configuration.__get_value_or_config_default("album_separator", args)
+        self.album_level_separator = Utils.get_value_or_config_default("album_separator", args, Configuration.CONFIG_DEFAULTS["album_separator"])
         self.album_name_post_regex = args["album_name_post_regex"]
-        self.album_order = Configuration.__get_value_or_config_default("album_order", args)
-        self.insecure = Configuration.__get_value_or_config_default("insecure", args)
+        self.album_order = Utils.get_value_or_config_default("album_order", args, Configuration.CONFIG_DEFAULTS["album_order"])
+        self.insecure = Utils.get_value_or_config_default("insecure", args, Configuration.CONFIG_DEFAULTS["insecure"])
         self.ignore_albums = args["ignore"]
-        self.mode = Configuration.__get_value_or_config_default("mode", args)
-        self.delete_confirm = Configuration.__get_value_or_config_default("delete_confirm", args)
+        self.mode = Utils.get_value_or_config_default("mode", args, Configuration.CONFIG_DEFAULTS["mode"])
+        self.delete_confirm = Utils.get_value_or_config_default("delete_confirm", args, Configuration.CONFIG_DEFAULTS["delete_confirm"])
         self.share_with = args["share_with"]
-        self.share_role = Configuration.__get_value_or_config_default("share_role", args)
-        self.sync_mode = Configuration.__get_value_or_config_default("sync_mode", args)
-        self.find_assets_in_albums = Configuration.__get_value_or_config_default("find_assets_in_albums", args)
+        self.share_role = Utils.get_value_or_config_default("share_role", args, Configuration.CONFIG_DEFAULTS["share_role"])
+        self.sync_mode = Utils.get_value_or_config_default("sync_mode", args, Configuration.CONFIG_DEFAULTS["sync_mode"])
+        self.find_assets_in_albums = Utils.get_value_or_config_default("find_assets_in_albums", args, Configuration.CONFIG_DEFAULTS["find_assets_in_albums"])
         self.path_filter = args["path_filter"]
         self.set_album_thumbnail = args["set_album_thumbnail"]
         self.visibility = args["visibility"]
-        self.find_archived_assets = Configuration.__get_value_or_config_default("find_archived_assets", args)
-        self.read_album_properties = Configuration.__get_value_or_config_default("read_album_properties", args)
-        self.api_timeout = Configuration.__get_value_or_config_default("api_timeout", args)
-        self.comments_and_likes_enabled = Configuration.__get_value_or_config_default("comments_and_likes_enabled", args)
-        self.comments_and_likes_disabled = Configuration.__get_value_or_config_default("comments_and_likes_disabled", args)
-        
-        self.update_album_props_mode = Configuration.__get_value_or_config_default("update_album_props_mode", args)
+        self.find_archived_assets = Utils.get_value_or_config_default("find_archived_assets", args, Configuration.CONFIG_DEFAULTS["find_archived_assets"])
+        self.read_album_properties = Utils.get_value_or_config_default("read_album_properties", args, Configuration.CONFIG_DEFAULTS["read_album_properties"])
+        self.api_timeout = Utils.get_value_or_config_default("api_timeout", args, Configuration.CONFIG_DEFAULTS["api_timeout"])
+        self.comments_and_likes_enabled = Utils.get_value_or_config_default("comments_and_likes_enabled", args, Configuration.CONFIG_DEFAULTS["comments_and_likes_enabled"])
+        self.comments_and_likes_disabled = Utils.get_value_or_config_default("comments_and_likes_disabled", args, Configuration.CONFIG_DEFAULTS["comments_and_likes_disabled"])
+
+        self.update_album_props_mode = Utils.get_value_or_config_default("update_album_props_mode", args, Configuration.CONFIG_DEFAULTS["update_album_props_mode"])
 
         if self.mode != Configuration.SCRIPT_MODE_CREATE:
             # Override unattended if we're running in destructive mode
@@ -1128,7 +1151,7 @@ class Configuration(object):
         for i in range(len(self.root_paths)):
             if self.root_paths[i][-1] != '/':
                 self.root_paths[i] = self.root_paths[i] + '/'
-        
+
         # append trailing slash to root URL
         if self.root_url[-1] != '/':
             self.root_url = self.root_url + '/'
@@ -1142,13 +1165,13 @@ class Configuration(object):
 
         :raises: ValueError if any config value does not pass validation
         """
-        Configuration.__assert_not_none_or_empty("root_path", self.root_paths)
-        Configuration.__assert_not_none_or_empty("root_url", self.root_url)
-        Configuration.__assert_not_none_or_empty("api_key", self.api_key)
+        Utils.assert_not_none_or_empty("root_path", self.root_paths)
+        Utils.assert_not_none_or_empty("root_url", self.root_url)
+        Utils.assert_not_none_or_empty("api_key", self.api_key)
 
         if self.comments_and_likes_disabled and self.comments_and_likes_enabled:
             raise ValueError("Arguments --comments-and-likes-enabled and --comments-and-likes-disabled cannot be used together! Choose one!")
-        
+
         self.__validate_album_range()
 
     def __validate_album_range(self):
@@ -1156,12 +1179,12 @@ class Configuration(object):
         Performs logic validation for album level range setting.
         """
         # Verify album levels range
-        if not Configuration.__is_integer(self.album_levels):
+        if not Utils.is_integer(self.album_levels):
             album_levels_range_split = self.album_levels.split(",")
             if any([
                     len(album_levels_range_split) != 2,
-                    not Configuration.__is_integer(album_levels_range_split[0]),
-                    not Configuration.__is_integer(album_levels_range_split[1]),
+                    not Utils.is_integer(album_levels_range_split[0]),
+                    not Utils.is_integer(album_levels_range_split[1]),
                     int(album_levels_range_split[0]) == 0,
                     int(album_levels_range_split[1]) == 0,
                     (int(album_levels_range_split[1]) < 0 <= int(album_levels_range_split[0])),
@@ -1199,7 +1222,7 @@ class Configuration(object):
         :returns: A regular expression matching the same strings as the provided GLOB pattern
         :rtype: str
         """
-        return Configuration.__escaped_glob_replacement.sub(lambda match: Configuration.escaped_glob_tokens_to_re[match.group(0)], regex.escape(pattern))
+        return Configuration.__escaped_glob_replacement.sub(lambda match: Configuration.__escaped_glob_tokens_to_re[match.group(0)], regex.escape(pattern))
 
     @staticmethod
     def __expand_to_glob(expr: str) -> str:
@@ -1218,35 +1241,6 @@ class Configuration(object):
             logging.debug("expanding %s to %s", expr, glob_expr)
             return glob_expr
         return expr
-
-    @staticmethod
-    def __assert_not_none_or_empty(key: str, value : any):
-        """
-        Asserts that the passed value is not None and not empty
-        
-        :param value: The value to assert
-        :raises: ValueError if the passed value is None or empty
-        """
-        if value is None or len(str(value)) == 0:
-            raise ValueError("Value for "+key+" is None or empty")
-
-    @staticmethod
-    def __get_value_or_config_default(key : str, args_dict : dict) -> any:
-        """
-        Returns the value stored in args_dict under the provided key if it is not None or empty, 
-        otherwise returns the value from Configuration.CONFIG_DEAULTS using the same key.
-        
-        :param default: The default value to return if value did not pass the check
-        :param key: The dictionary key to look up the value for
-        
-        :returns: The passed value or the configuration default if the value did not pass the checks
-        :rtype: any
-        """
-        try:
-            Configuration.__assert_not_none_or_empty(key, args_dict[key])
-            return args_dict[key]
-        except (ValueError) as e:
-            return Configuration.CONFIG_DEFAULTS[key]
 
     @staticmethod
     def get_arg_parser() -> argparse.ArgumentParser:
@@ -1281,12 +1275,14 @@ class Configuration(object):
                 help='Regex pattern and optional replacement (use "" for empty replacement). Can be specified multiple times.')
         parser.add_argument("-c", "--chunk-size", default=Configuration.CONFIG_DEFAULTS['chunk_size'], type=int, help="Maximum number of assets to add to an album with a single API call")
         parser.add_argument("-C", "--fetch-chunk-size", default=Configuration.CONFIG_DEFAULTS['fetch_chunk_size'], type=int, help="Maximum number of assets to fetch with a single API call")
-        parser.add_argument("-l", "--log-level", default=Configuration.CONFIG_DEFAULTS['log_level'], choices=['CRITICAL', 'ERROR', 'WARNING', 'INFO', 'DEBUG'], help="Log level to use. ATTENTION: Log level DEBUG logs API key in clear text!")
+        parser.add_argument("-l", "--log-level", default=Configuration.CONFIG_DEFAULTS['log_level'], choices=['CRITICAL', 'ERROR', 'WARNING', 'INFO', 'DEBUG'],
+                            help="Log level to use. ATTENTION: Log level DEBUG logs API key in clear text!")
         parser.add_argument("-k", "--insecure", action="store_true", help="Pass to ignore SSL verification")
         parser.add_argument("-i", "--ignore", action="append",
                             help="""Use either literals or glob-like patterns to ignore assets for album name creation.
                                     This filter is evaluated after any values passed with --path-filter. May be specified multiple times.""")
-        parser.add_argument("-m", "--mode", default=Configuration.CONFIG_DEFAULTS['mode'], choices=[Configuration.SCRIPT_MODE_CREATE, Configuration.SCRIPT_MODE_CLEANUP, Configuration.SCRIPT_MODE_DELETE_ALL],
+        parser.add_argument("-m", "--mode", default=Configuration.CONFIG_DEFAULTS['mode'],
+                            choices=[Configuration.SCRIPT_MODE_CREATE, Configuration.SCRIPT_MODE_CLEANUP, Configuration.SCRIPT_MODE_DELETE_ALL],
                             help="""Mode for the script to run with.
                                     CREATE = Create albums based on folder names and provided arguments;
                                     CLEANUP = Create album names based on current images and script arguments, but delete albums if they exist;
@@ -1345,39 +1341,27 @@ class Configuration(object):
                                     1 = Only override album properties but do not change the share status.
                                     2 = Override album properties and share status, this will remove all users from the album which are not in the SHARE_WITH list.""")
         return parser
-    
+
     @classmethod
     def get_configurations(cls) -> list[Configuration]:
+        """
+        Creates and returns a list of configuration objects from the script's arguments.
+
+        :returns: All configurations the script should run with
+        :rtype: list[Configuration]
+        """
         parser = Configuration.get_arg_parser()
         args = vars(parser.parse_args())
-        configs: list[Configuration] = []
+        created_configs: list[Configuration] = []
         # Create a configuration for each passed API key
         for api_key in args['api_key']:
             config_args = args
             # replace the API key array with the current api key for that configuration args
             config_args['api_key'] = api_key
-            configs.append(cls(config_args))
+            created_configs.append(cls(config_args))
         # Return a list with a single configuration
-        return configs
+        return created_configs
 
-    @staticmethod
-    def __read_file(file_path: str, encoding: str  = "utf-8") -> str:
-        """
-        Reads and returns the contents of the provided file.
-        Assumes
-
-        :param file_path: Path to the file to read
-        :param encoding: The encoding to read the file with, defaults to `utf-8`
-                
-        :returns: The file's contents
-        :rtype: str
-
-        :raises: FileNotFoundError if the file does not exist
-        :raises: Exception on any other error reading the file
-        """
-        with open(file_path, 'r', encoding=encoding) as secret_file:
-            return secret_file.read().strip()
-    
     @staticmethod
     def __determine_api_key(api_key_source: str, key_type: str) -> str:
         """
@@ -1395,29 +1379,11 @@ class Configuration(object):
         if key_type == 'literal':
             return api_key_source
         if key_type == 'file':
-            return Configuration.__read_file(api_key_source)
+            return Utils.read_file(api_key_source)
         # At this point key_type is not a valid value
         logging.error("Unknown key type (-t, --key-type). Must be either 'literal' or 'file'.")
         return None
-    
-    @staticmethod
-    def __is_integer(string_to_test: str) -> bool:
-        """
-        Trying to deal with python's isnumeric() function
-        not recognizing negative numbers, tests whether the provided
-        string is an integer or not.
 
-        :param string_to_test: The string to test for integer
-        
-        :returns: True if string_to_test is an integer, otherwise False
-        :rtype: bool
-        """
-        try:
-            int(string_to_test)
-            return True
-        except ValueError:
-            return False
-    
     def log_debug(self):
         """
         Logs all its own properties on `DEBUG` log level
@@ -1427,17 +1393,22 @@ class Configuration(object):
             logging.debug("%s = %s", prop, props[prop])
 
 
-class FolderAlbumCreator(object):
+class FolderAlbumCreator():
     """The Folder Album Creator class creating albums from folder structures based on the passed configuration"""
 
     # File name to use for album properties files
     ALBUMPROPS_FILE_NAME = '.albumprops'
 
-    def __init__(self, config : Configuration):
-        self.config = config
+    def __init__(self, configuration : Configuration):
+        self.config = configuration
         # Create API client for configuration
-        self.api_client = ApiClient(self.config.root_url, self.config.api_key, self.config.chunk_size, self.config.fetch_chunk_size, self.config.api_timeout, self.config.insecure)
-    
+        self.api_client = ApiClient(self.config.root_url,
+                                    self.config.api_key,
+                                    chunk_size=self.config.chunk_size,
+                                    fetch_chunk_size=self.config.fetch_chunk_size,
+                                    api_timeout=self.config.api_timeout,
+                                    insecure=self.config.insecure)
+
     @staticmethod
     def find_albumprops_files(paths: list[str]) -> list[str]:
 
@@ -1460,7 +1431,7 @@ class FolderAlbumCreator(object):
                 for filename in fnmatch.filter(filenames, FolderAlbumCreator.ALBUMPROPS_FILE_NAME):
                     albumprops_files.append(os.path.join(root, filename))
         return albumprops_files
-    
+
     @staticmethod
     def __identify_root_path(path: str, root_path_list: list[str]) -> str:
         """
@@ -1562,6 +1533,8 @@ class FolderAlbumCreator(object):
         :param album_props_templates: The list of `AlbumModel` objects to validate
         :param album_name_to_album_properties_file_path: A dictionary where the key is an album name and the value is the path to the album properties file the
                 album was generated from. This method expects one entry in this dictionary for every `AlbumModel` in album_props_templates.
+
+        :raises AlbumMergeError: If validations do not pass
         """
         fatal_error_occurred = False
         # This is a cache to remember checked names - keep time complexity down
@@ -1580,10 +1553,8 @@ class FolderAlbumCreator(object):
                 checked_override_names.append(album_props_template.override_name)
 
         if fatal_error_occurred:
-            logging.fatal("Encountered at least one fatal error while validating album properties files, exiting!")
-            sys.exit(1)
-            raise 
-    
+            raise AlbumMergeError("Encountered at least one fatal error while validating album properties files, stopping!")
+
     @staticmethod
     def check_for_and_log_incompatible_properties(model1: AlbumModel, model2: AlbumModel, album_name_to_album_properties_file_path: dict) -> bool:
         """
@@ -1650,6 +1621,7 @@ class FolderAlbumCreator(object):
         return inheritance_chain
 
     # pylint: disable=R0912
+    @staticmethod
     def apply_inheritance_to_album_model(album_model_param: AlbumModel, inheritance_chain: list[AlbumModel]) -> AlbumModel:
         """
         Applies inheritance from the inheritance chain to the given album model.
@@ -1665,7 +1637,7 @@ class FolderAlbumCreator(object):
 
         # Create a new model to hold inherited properties
         if album_model_param:
-            inherited_model = AlbumModel(album_model_param.name)
+            inherited_model: AlbumModel = AlbumModel(album_model_param.name)
             # Copy all properties from the original model first
             for prop_name in AlbumModel.ALBUM_PROPERTIES_VARIABLES + AlbumModel.ALBUM_INHERITANCE_VARIABLES:
                 setattr(inherited_model, prop_name, getattr(album_model_param, prop_name))
@@ -1808,24 +1780,6 @@ class FolderAlbumCreator(object):
             # rejoin the rest:
             value = separator.join(items[1:])
         return (key, value)
-
-    @staticmethod
-    def __parse_separated_strings(items: list[str]) -> dict:
-        """
-        Parse a series of key-value pairs and return a dictionary.
-        Uses the equal sign `=` as hard-coded separator.
-
-        :param items: A list of separated strings to parse
-        :returns: A dictionary where the keys are the strings on left side of the separator 
-            and the values the string on the right side of the separator.
-        :rtype: dict
-        """
-        parsed_strings_dict = {}
-        if items:
-            for item in items:
-                key, value = FolderAlbumCreator.__parse_separated_string(item, '=')
-                parsed_strings_dict[key] = value
-        return parsed_strings_dict
 
     # pylint: disable=R0912
     def create_album_name(self, asset_path_chunks: list[str], album_separator: str, album_name_postprocess_regex: list) -> str:
@@ -2204,6 +2158,7 @@ class FolderAlbumCreator(object):
                 logging.warning("Got empty album name for asset path %s, check your album_level settings!", asset_path)
         return album_models
 
+    # pylint: disable=R1705
     @staticmethod
     def find_user_by_name_or_email(name_or_email: str, user_list: list[dict]) -> dict:
         """
@@ -2220,7 +2175,7 @@ class FolderAlbumCreator(object):
             if name_or_email in (user['name'], user['email']):
                 return user
         return None
-    
+
     def run(self) -> None:
         """
         Performs the actual logic of the script, i.e. creating albums from external library folder structures and everything else.
@@ -2229,7 +2184,7 @@ class FolderAlbumCreator(object):
         if self.config.mode == Configuration.SCRIPT_MODE_DELETE_ALL:
             self.api_client.delete_all_albums(self.config.visibility, self.config.delete_confirm)
             return
-        
+
         album_properties_templates = {}
         albumprops_cache = {}
         if self.config.read_album_properties:
@@ -2251,7 +2206,7 @@ class FolderAlbumCreator(object):
         # Remove live photo video components
         assets = self.check_for_and_remove_live_photo_video_components(assets, not self.config.find_assets_in_albums, self.config.find_archived_assets)
         logging.info("%d photos found", len(assets))
-        
+
         logging.info("Sorting assets to corresponding albums using folder name")
         albums_to_create = self.build_album_list(assets, self.config.root_paths, album_properties_templates, albumprops_cache)
         albums_to_create = dict(sorted(albums_to_create.items(), key=lambda item: item[0]))
@@ -2273,12 +2228,11 @@ class FolderAlbumCreator(object):
                 print("Press enter to create these albums, Ctrl+C to abort")
                 input()
 
-        
         logging.info("Listing existing albums on immich")
 
         albums = self.api_client.fetch_albums()
         logging.info("%d existing albums identified", len(albums))
-        
+
         album: AlbumModel
         for album in albums_to_create.values():
             # fetch the id if same album name exist
@@ -2296,7 +2250,7 @@ class FolderAlbumCreator(object):
             number_of_deleted_albums = self.api_client.cleanup_albums(albums_to_cleanup.values(), self.config.visibility, self.config.delete_confirm)
             logging.info("Deleted %d/%d albums", number_of_deleted_albums, len(albums_to_cleanup))
             return
-        
+
         # Get all users in preparation for album sharing
         users = self.api_client.fetch_users()
         logging.debug("Found users: %s", users)
@@ -2409,6 +2363,85 @@ class FolderAlbumCreator(object):
                 logging.info("No empty albums found!")
 
         logging.info("Done!")
+
+class Utils:
+    """A collection of helper methods"""
+    @staticmethod
+    def divide_chunks(full_list: list, chunk_size: int):
+        """
+        Yield successive chunk_size-sized chunks from full_list.
+        
+        :param full_list: The full list to create chunks from
+        :param chunk_size: The number of records per chunk
+        """
+        # looping till length l
+        for j in range(0, len(full_list), chunk_size):
+            yield full_list[j:j + chunk_size]
+
+    @staticmethod
+    def assert_not_none_or_empty(key: str, value : any):
+        """
+        Asserts that the passed value is not None and not empty
+        
+        :param value: The value to assert
+        :raises: ValueError if the passed value is None or empty
+        """
+        if value is None or len(str(value)) == 0:
+            raise ValueError("Value for "+key+" is None or empty")
+
+    @staticmethod
+    def get_value_or_config_default(key : str, args_dict : dict, default: any) -> any:
+        """
+        Returns the value stored in args_dict under the provided key if it is not None or empty, 
+        otherwise returns the value from Configuration.CONFIG_DEAULTS using the same key.
+        
+        :param default: The default value to return if value did not pass the check
+        :param key: The dictionary key to look up the value for
+        
+        :returns: The passed value or the configuration default if the value did not pass the checks
+        :rtype: any
+        """
+        try:
+            Utils.assert_not_none_or_empty(key, args_dict[key])
+            return args_dict[key]
+        except ValueError:
+            return default
+
+    @staticmethod
+    def is_integer(string_to_test: str) -> bool:
+        """
+        Trying to deal with python's isnumeric() function
+        not recognizing negative numbers, tests whether the provided
+        string is an integer or not.
+
+        :param string_to_test: The string to test for integer
+        
+        :returns: True if string_to_test is an integer, otherwise False
+        :rtype: bool
+        """
+        try:
+            int(string_to_test)
+            return True
+        except ValueError:
+            return False
+
+    @staticmethod
+    def read_file(file_path: str, encoding: str  = "utf-8") -> str:
+        """
+        Reads and returns the contents of the provided file.
+        Assumes
+
+        :param file_path: Path to the file to read
+        :param encoding: The encoding to read the file with, defaults to `utf-8`
+                
+        :returns: The file's contents
+        :rtype: str
+
+        :raises: FileNotFoundError if the file does not exist
+        :raises: Exception on any other error reading the file
+        """
+        with open(file_path, 'r', encoding=encoding) as secret_file:
+            return secret_file.read().strip()
 
 # set up logger to log in logfmt format
 logging.Formatter.formatTime = (lambda self, record, datefmt=None: datetime.datetime.fromtimestamp(record.created, datetime.timezone.utc).astimezone().isoformat(sep="T",timespec="milliseconds"))
