@@ -1290,7 +1290,7 @@ class Configuration():
         parser.add_argument("-r", "--root-path", action="append",
                             help="Additional external library root path in Immich; May be specified multiple times for multiple import paths or external libraries.")
         parser.add_argument("-u", "--unattended", action="store_true", help="Do not ask for user confirmation after identifying albums. Set this flag to run script as a cronjob.")
-        parser.add_argument("-a", "--album-levels", default=Configuration.CONFIG_DEFAULTS['album_levels'], type=int,
+        parser.add_argument("-a", "--album-levels", default=Configuration.CONFIG_DEFAULTS['album_levels'], type=str,
                             help="""Number of sub-folders or range of sub-folder levels below the root path used for album name creation.
                                     Positive numbers start from top of the folder structure, negative numbers from the bottom. Cannot be 0.
                                     If a range should be set, the start level and end level must be separated by a comma like '<startLevel>,<endLevel>'.
