@@ -38,6 +38,8 @@ class ApiClient:
     FETCH_CHUNK_SIZE_DEFAULT = 1000
     # Default value for API request timeout ins econds
     API_TIMEOUT_DEFAULT = 20
+    # Number of times to retry an API call if it times out
+    MAX_RETRY_COUNT_ON_TIMEOUT_DEFAULT = 3
 
     # List of allowed share user roles
     SHARE_ROLES = ["editor", "viewer"]
@@ -52,6 +54,7 @@ class ApiClient:
                 - `fetch_chunk_size: int` The number of assets to fetch with a single API call
                 - `api_timeout: int` The timeout to use for API calls in seconds
                 - `insecure: bool` Flag indicating whether to skip SSL certificate validation
+                - `max_retry_count: int` The maximum number of times to retry an API call if it timed out before failing
         :raises AssertionError: When validation of options failed
         """
         # The Immich API URL to connect to
@@ -59,10 +62,11 @@ class ApiClient:
         # The API key to use
         self.api_key = api_key
 
-        self.chunk_size = Utils.get_value_or_config_default('chunk_size', kwargs, Configuration.CONFIG_DEFAULTS['chunk_size'])
-        self.fetch_chunk_size = Utils.get_value_or_config_default('fetch_chunk_size', kwargs, Configuration.CONFIG_DEFAULTS['fetch_chunk_size'])
-        self.api_timeout = Utils.get_value_or_config_default('api_timeout', kwargs, Configuration.CONFIG_DEFAULTS['api_timeout'])
-        self.insecure = Utils.get_value_or_config_default('insecure', kwargs, Configuration.CONFIG_DEFAULTS['insecure'])
+        self.chunk_size : int = Utils.get_value_or_config_default('chunk_size', kwargs, Configuration.CONFIG_DEFAULTS['chunk_size'])
+        self.fetch_chunk_size : int = Utils.get_value_or_config_default('fetch_chunk_size', kwargs, Configuration.CONFIG_DEFAULTS['fetch_chunk_size'])
+        self.api_timeout : int = Utils.get_value_or_config_default('api_timeout', kwargs, Configuration.CONFIG_DEFAULTS['api_timeout'])
+        self.insecure : bool = Utils.get_value_or_config_default('insecure', kwargs, Configuration.CONFIG_DEFAULTS['insecure'])
+        self.max_retry_count : int = Utils.get_value_or_config_default('max_retry_count', kwargs, Configuration.CONFIG_DEFAULTS['max_retry_count'])
 
         self.__validate_config()
 
@@ -116,6 +120,40 @@ class ApiClient:
         except ValueError as e:
             raise ValueError("insecure argument must be a boolean!") from e
 
+    def __request_api(self, http_method: str, endpoint: str, body: any = None, no_retries: bool = False) -> any:
+        """
+        Performs an HTTP request using `http_method` to `endpoint`, sending headers `self.request_args` and `body` as payload.  
+        Uses `self.api_timeout` as a timeout and respects `self.max_retry_count` on timeout if `not_retries` is not `True`. 
+        If the HTTP request fails for any other reason than a timeout, no retries are performed.
+
+        :param http_method: The HTTP method to send the request with, must be one of `GET`, `POST`, `PUT`, `DELETE`, `HEAD`, `CONNECT`, `OPTIONS`, `TRACE` or `PATCH`.
+        :param endpoint: The URL to request
+        :param body: The request body to send. Defaults to an empty dict.
+        :param no_retries: Flag indicating whether to fail immediately on request timeout
+
+        :returns: The HTTP response
+        :raises: HTTPError if the request failed (timeouts only if occurred too many times)
+        """
+
+        http_method_function = getattr(requests, http_method)
+        assert http_method_function is not None
+
+        if body is None:
+            body = {}
+        number_of_retries : int = 0
+        ex = None
+        while number_of_retries == 0 or ( not no_retries and number_of_retries <= self.max_retry_count ):
+            try:
+                return http_method_function(endpoint, **self.request_args, json=body , timeout=self.api_timeout)
+            except requests.exceptions.Timeout as e:
+                ex = e
+                number_of_retries += 1
+                if number_of_retries > self.max_retry_count:
+                    raise e
+                logging.warning("Request to %s timed out, retry %s...", endpoint, number_of_retries)
+        # this point should not be reached
+        raise ex
+
     @staticmethod
     def __check_api_response(response: requests.Response) -> None:
         """
@@ -148,12 +186,12 @@ class ApiClient:
         :raises ValueError: If the API response is malformed
         """
         api_endpoint = f'{self.api_url}server/version'
-        r = requests.get(api_endpoint, **self.request_args , timeout=self.api_timeout)
+        r = self.__request_api('get', api_endpoint, self.request_args)
         # The API endpoint changed in Immich v1.118.0, if the new endpoint
         # was not found try the legacy one
         if r.status_code == 404:
             api_endpoint = f'{self.api_url}server-info/version'
-            r = requests.get(api_endpoint, **self.request_args , timeout=self.api_timeout)
+            r = self.__request_api('get', api_endpoint, self.request_args)
 
         if r.status_code == 200:
             server_version = r.json()
@@ -231,7 +269,7 @@ class ApiClient:
         # Initial API call, let's fetch our first chunk
         page = 1
         body['page'] = str(page)
-        r = requests.post(self.api_url+'search/metadata', json=body, **self.request_args, timeout=self.api_timeout)
+        r = self.__request_api('post', self.api_url+'search/metadata', body)
         r.raise_for_status()
         response_json = r.json()
         assets_received = response_json['assets']['items']
@@ -242,7 +280,7 @@ class ApiClient:
         while len(assets_received) == number_of_assets_to_fetch_per_request_search:
             page += 1
             body['page'] = page
-            r = requests.post(self.api_url+'search/metadata', json=body, **self.request_args, timeout=self.api_timeout)
+            r = self.__request_api('post', self.api_url+'search/metadata', body)
             self.__check_api_response(r)
             response_json = r.json()
             assets_received = response_json['assets']['items']
@@ -260,7 +298,7 @@ class ApiClient:
 
         api_endpoint = 'albums'
 
-        r = requests.get(self.api_url+api_endpoint, **self.request_args, timeout=self.api_timeout)
+        r = self.__request_api('get', self.api_url+api_endpoint)
         self.__check_api_response(r)
         return r.json()
 
@@ -276,7 +314,7 @@ class ApiClient:
 
         api_endpoint = f'albums/{album_id_for_info}'
 
-        r = requests.get(self.api_url+api_endpoint, **self.request_args, timeout=self.api_timeout)
+        r = self.__request_api('get', self.api_url+api_endpoint)
         self.__check_api_response(r)
         return r.json()
 
@@ -294,7 +332,7 @@ class ApiClient:
         api_endpoint = 'albums'
 
         logging.debug("Deleting Album: Album ID = %s, Album Name = %s", album_delete['id'], album_delete['albumName'])
-        r = requests.delete(self.api_url+api_endpoint+'/'+album_delete['id'], **self.request_args, timeout=self.api_timeout)
+        r = self.__request_api('delete', self.api_url+api_endpoint+'/'+album_delete['id'])
         try:
             self.__check_api_response(r)
             return True
@@ -320,7 +358,7 @@ class ApiClient:
         data = {
             'albumName': album_name_to_create
         }
-        r = requests.post(self.api_url+api_endpoint, json=data, **self.request_args, timeout=self.api_timeout)
+        r = self.__request_api('post', self.api_url+api_endpoint, data)
         self.__check_api_response(r)
 
         return r.json()['id']
@@ -350,7 +388,7 @@ class ApiClient:
 
         for assets_chunk in assets_chunked:
             data = {'ids':assets_chunk}
-            r = requests.put(self.api_url+api_endpoint+f'/{assets_add_album_id}/assets', json=data, **self.request_args, timeout=self.api_timeout)
+            r = self.__request_api('put', self.api_url+api_endpoint+f'/{assets_add_album_id}/assets', data)
             self.__check_api_response(r)
             response = r.json()
 
@@ -373,7 +411,7 @@ class ApiClient:
 
         api_endpoint = 'users'
 
-        r = requests.get(self.api_url+api_endpoint, **self.request_args, timeout=self.api_timeout)
+        r = self.__request_api('get', self.api_url+api_endpoint)
         self.__check_api_response(r)
         return r.json()
 
@@ -387,7 +425,7 @@ class ApiClient:
         :raises: HTTPError if the API call fails
         """
         api_endpoint = f'albums/{album_id_to_unshare}/user/{unshare_user_id}'
-        r = requests.delete(self.api_url+api_endpoint, **self.request_args, timeout=self.api_timeout)
+        r = self.__request_api('delete', self.api_url+api_endpoint)
         self.__check_api_response(r)
 
     def update_album_share_user_role(self, album_id_to_share: str, share_user_id: str, share_user_role: str) -> None:
@@ -409,7 +447,7 @@ class ApiClient:
             'role': share_user_role
         }
 
-        r = requests.put(self.api_url+api_endpoint, json=data, **self.request_args, timeout=self.api_timeout)
+        r = self.__request_api('put', self.api_url+api_endpoint, data)
         self.__check_api_response(r)
 
     def share_album_with_user_and_role(self, album_id_to_share: str, user_ids_to_share_with: list[str], user_share_role: str) -> None:
@@ -439,7 +477,7 @@ class ApiClient:
             'albumUsers': album_users
         }
 
-        r = requests.put(self.api_url+api_endpoint, json=data, **self.request_args, timeout=self.api_timeout)
+        r = self.__request_api('put', self.api_url+api_endpoint, data)
         self.__check_api_response(r)
 
     def trigger_offline_asset_removal(self) -> None:
@@ -521,7 +559,7 @@ class ApiClient:
             'ids': asset_ids_to_delete
         }
 
-        r = requests.delete(self.api_url+api_endpoint, json=data, **self.request_args, timeout=self.api_timeout)
+        r = self.__request_api('delete', self.api_url+api_endpoint, data)
         self.__check_api_response(r)
 
     def __trigger_offline_asset_removal_async(self, library_id: str):
@@ -534,7 +572,7 @@ class ApiClient:
 
         api_endpoint = f'libraries/{library_id}/removeOffline'
 
-        r = requests.post(self.api_url+api_endpoint, **self.request_args, timeout=self.api_timeout)
+        r = self.__request_api('post', self.api_url+api_endpoint)
         if r.status_code == 403:
             logging.fatal("--sync-mode 2 requires an Admin User API key!")
         else:
@@ -549,7 +587,7 @@ class ApiClient:
 
         api_endpoint = 'libraries'
 
-        r = requests.get(self.api_url+api_endpoint, **self.request_args, timeout=self.api_timeout)
+        r = self.__request_api('get', self.api_url+api_endpoint)
         self.__check_api_response(r)
         return r.json()
 
@@ -566,7 +604,7 @@ class ApiClient:
 
         data = {"albumThumbnailAssetId": thumbnail_asset_id}
 
-        r = requests.patch(self.api_url+api_endpoint, json=data, **self.request_args, timeout=self.api_timeout)
+        r = self.__request_api('patch', self.api_url+api_endpoint, data)
         self.__check_api_response(r)
 
     def update_album_properties(self, album_to_update: AlbumModel):
@@ -600,7 +638,7 @@ class ApiClient:
         if len(data) > 0:
             api_endpoint = f'albums/{album_to_update.id}'
 
-            response = requests.patch(self.api_url+api_endpoint, json=data, **self.request_args, timeout=self.api_timeout)
+            response = self.__request_api('patch',self.api_url+api_endpoint, data)
             self.__check_api_response(response)
 
     def set_assets_visibility(self, asset_ids_for_visibility: list[str], visibility_setting: str):
@@ -627,7 +665,7 @@ class ApiClient:
         else:
             data["visibility"] = visibility_setting
 
-        r = requests.put(self.api_url+api_endpoint, json=data, **self.request_args, timeout=self.api_timeout)
+        r = self.__request_api('put', self.api_url+api_endpoint, data)
         self.__check_api_response(r)
 
     def delete_all_albums(self, assets_visibility: str, force_delete: bool):
@@ -1097,7 +1135,8 @@ class Configuration():
         "api_timeout": ApiClient.API_TIMEOUT_DEFAULT,
         "comments_and_likes_enabled": False,
         "comments_and_likes_disabled": False,
-        "update_album_props_mode": 0
+        "update_album_props_mode": 0,
+        "max_retry_count": ApiClient.MAX_RETRY_COUNT_ON_TIMEOUT_DEFAULT
     }
 
     # Translation of GLOB-style patterns to Regex
@@ -1157,6 +1196,7 @@ class Configuration():
         self.comments_and_likes_disabled = Utils.get_value_or_config_default("comments_and_likes_disabled", args, Configuration.CONFIG_DEFAULTS["comments_and_likes_disabled"])
 
         self.update_album_props_mode = Utils.get_value_or_config_default("update_album_props_mode", args, Configuration.CONFIG_DEFAULTS["update_album_props_mode"])
+        self.max_retry_count = Utils.get_value_or_config_default('max_retry_count', args, Configuration.CONFIG_DEFAULTS['max_retry_count'])
 
         if self.mode != Configuration.SCRIPT_MODE_CREATE:
             # Override unattended if we're running in destructive mode
@@ -1368,6 +1408,8 @@ class Configuration():
                                     0 = Do not change album properties.
                                     1 = Only override album properties but do not change the share status.
                                     2 = Override album properties and share status, this will remove all users from the album which are not in the SHARE_WITH list.""")
+        parser.add_argument("--max-retry-count", type=int, default=Configuration.CONFIG_DEFAULTS['max_retry_count'],
+                            help="Number of times to retry an Immich API call if it timed out before failing.")
         return parser
 
     @classmethod
@@ -1438,7 +1480,8 @@ class FolderAlbumCreator():
                                     chunk_size=self.config.chunk_size,
                                     fetch_chunk_size=self.config.fetch_chunk_size,
                                     api_timeout=self.config.api_timeout,
-                                    insecure=self.config.insecure)
+                                    insecure=self.config.insecure,
+                                    max_retry_count=self.config.max_retry_count)
 
     @staticmethod
     def find_albumprops_files(paths: list[str]) -> list[str]:
@@ -2433,7 +2476,7 @@ class Utils:
         :rtype: any
         """
         try:
-            Utils.assert_not_none_or_empty(key, args_dict[key])
+            Utils.assert_not_none_or_empty(key, args_dict[key] if key in args_dict else None)
             return args_dict[key]
         except ValueError:
             return default
