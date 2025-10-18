@@ -145,12 +145,16 @@ class ApiClient:
         while number_of_retries == 0 or ( not no_retries and number_of_retries <= self.max_retry_count ):
             try:
                 return http_method_function(endpoint, **self.request_args, json=body , timeout=self.api_timeout)
-            except (requests.exceptions.Timeout, urllib3.exceptions.ReadTimeoutError) as e:
-                ex = e
-                number_of_retries += 1
-                if number_of_retries > self.max_retry_count:
+            except (requests.exceptions.Timeout, urllib3.exceptions.ReadTimeoutError, requests.exceptions.ConnectionError) as e:
+                # either not a ConnectionError or a ConectionError caused by ReadTimeoutError
+                if not isinstance(e, requests.exceptions.ConnectionError) or (len(e.args) > 0 and isinstance(e.args[0], urllib3.exceptions.ReadTimeoutError)):
+                    ex = e
+                    number_of_retries += 1
+                    if number_of_retries > self.max_retry_count:
+                        raise e
+                    logging.warning("Request to %s timed out, retry %s...", endpoint, number_of_retries)
+                else:
                     raise e
-                logging.warning("Request to %s timed out, retry %s...", endpoint, number_of_retries)
         # this point should not be reached
         raise ex
 
