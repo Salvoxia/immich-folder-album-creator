@@ -145,7 +145,7 @@ class ApiClient:
         while number_of_retries == 0 or ( not no_retries and number_of_retries <= self.max_retry_count ):
             try:
                 return http_method_function(endpoint, **self.request_args, json=body , timeout=self.api_timeout)
-            except requests.exceptions.Timeout as e:
+            except (requests.exceptions.Timeout, urllib3.exceptions.ReadTimeoutError) as e:
                 ex = e
                 number_of_retries += 1
                 if number_of_retries > self.max_retry_count:
