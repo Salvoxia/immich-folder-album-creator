@@ -163,6 +163,8 @@ options:
                         Change how album properties are updated whenever new assets are added to an album. Album properties can either come from script arguments or the .albumprops file. Possible values: 0 = Do not change album
                         properties. 1 = Only override album properties but do not change the share status. 2 = Override album properties and share status, this will remove all users from the album which are not in the SHARE_WITH list.
                         (default: 0)
+  --max-retry-count MAX_RETRY_COUNT
+                        Number of times to retry an Immich API call if it timed out before failing. (default: 3)
 
 ```
 
@@ -224,6 +226,7 @@ The environment variables are analogous to the script's command line arguments.
 | `COMMENTS_AND_LIKES`         | no         | Set to `1` to explicitly enable Comments & Likes functionality for all albums this script adds assets to, set to `0` to disable. If not set, this setting is left alone by the script. |
 | `UPDATE_ALBUM_PROPS_MODE`    | no         | Change how album properties are updated whenever new assets are added to an album. Album properties can either come from script arguments or the `.albumprops` file. Possible values: <br>`0` = Do not change album properties.<br> `1` = Only override album properties but do not change the share status.<br> `2` = Override album properties and share status, this will remove all users from the album which are not in the SHARE_WITH list. |
 | `ALBUM_NAME_POST_REGEX1..10` | no         | Up to 10 numbered environment variables `ALBUM_NAME_POST_REGEX1` to `ALBUM_NAME_POST_REGEX10` for album name post processing with regular expressions.<br> Refer to [Album Name Regex](#album-name-regex) |
+| `MAX_RETRY_COUNT`            | no         | Maximum number of times an API call is retried if it timed out before failing.<br>(default: `3`)|
 
 #### Run the container with Docker
 

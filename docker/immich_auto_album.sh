@@ -204,5 +204,9 @@ if [ ! -z "$UPDATE_ALBUM_PROPS_MODE" ]; then
     args="--update-album-props-mode $UPDATE_ALBUM_PROPS_MODE $args"
 fi
 
+if [ ! -z "$MAX_RETRY_COUNT" ]; then
+    args="--max-retry-count $MAX_RETRY_COUNT $args"
+fi
+
 BASEDIR=$(dirname "$0")
 echo $args | xargs python3 -u $BASEDIR/immich_auto_album.py
