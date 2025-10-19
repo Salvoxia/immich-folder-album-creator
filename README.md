@@ -1117,12 +1117,13 @@ services:
     container_name: immich_server
     volumes:
      - /path/to/my/photos:/external_libs/photos
-     - /path/to/secret/file:/immich_api_key.secret:ro
   ...
   immich-folder-album-creator:
     container_name: immich_folder_album_creator
     image: salvoxia/immich-folder-album-creator:latest
     restart: unless-stopped
+    volumes:
+     - /path/to/secret/file:/immich_api_key.secret:ro
     environment:
       API_URL: http://immich_server:2283/api
       API_KEY_FILE: "/immich_api_key.secret"
