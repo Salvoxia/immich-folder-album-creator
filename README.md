@@ -59,10 +59,11 @@ This script is mostly based on the following original script: [REDVM/immich_auto
 ## Usage
 ### Creating an API Key
 Regardless of how the script will be used later ([Bare Python Script](#bare-python-script) or [Docker](#docker)), an API Key is required for each user the script should be used for.
-Since Immich Server v1.135.x, creating API keys allows the user to specify permissions. The following permissions are required for the script to work with any possible option:
-> [!IMPORTANT]
-> The API Key permissions listed below are sufficient only for Immich Server v1.135.x. Since v1.136.0, API calls for which no explicit permission exists in Immich are no longer accessilble for API keys that do not have all permissions. Hopefully, permissions will get more granular in the future and will cover all API calls this script uses. For now, API keys must be created with all permissions for the script to work.
+Since Immich Server v1.135.x, creating API keys allows the user to specify permissions. The following permissions are required for the script to work with any possible option.  
+The list contains API key permissions valid for **Immich v2.1.0**.
   - `asset`
+    - `asset.read`
+    - `asset.delete`
     - `asset.delete`
   - `album`
     - `album.create`
@@ -70,7 +71,14 @@ Since Immich Server v1.135.x, creating API keys allows the user to specify permi
     - `album.update`
     - `album.delete`
     - `album.addAsset`
-    - `album.share`
+  - `albumAsset`
+    - `albumAsset.create`
+  - `albumUser`
+    - `albumUser.create`
+    - `albumUser.update`
+    - `albumUser.delete`
+  - `user`
+    - `user.read`
 
 ### Bare Python Script
 1. Download the script and its requirements
