@@ -718,7 +718,7 @@ share_with:
 # Set album thumbnail, valid values: first, last, random or fully qualified path of an asset that is (or will be) assigned to the album
 thumbnail_setting: "first"
 # Sort order in album, valid values: asc, desc
-sort_oder: "desc"
+sort_order: "desc"
 # Set the visibility of assets that are getting added to that album, valid values: archive, hidden, locked, timeline
 visibility: 'timeline'
 # Flag indicating whether assets in this albums can be commented on and liked
@@ -731,7 +731,8 @@ inherit_properties:
   - "share_with"
   - "visibility"
 ```
-All properties are optional.
+All properties are optional.  
+The scripts expects the file to be in UTF-8 encoding.
 
 #### Property Inheritance
 
