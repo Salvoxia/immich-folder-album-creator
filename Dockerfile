@@ -4,7 +4,6 @@ ARG TARGETPLATFORM
 
 # Latest releases available at https://github.com/aptible/supercronic/releases
 ENV SUPERCRONIC_URL_BASE=https://github.com/aptible/supercronic/releases/download/v0.2.39/supercronic \
-    SUPERCRONIC_SHA1SUM=c98bbf82c5f648aaac8708c182cc83046fe48423 \
     SUPERCRONIC_BASE=supercronic \
     CRONTAB_PATH=/tmp/crontab
 
@@ -12,9 +11,9 @@ COPY immich_auto_album.py requirements.txt docker/immich_auto_album.sh docker/se
 
 # gcc and musl-dev are required for building requirements for regex python module
 RUN case "${TARGETPLATFORM}" in \
-         "linux/amd64")  SUPERCRONIC_URL=$SUPERCRONIC_URL_BASE-linux-amd64 SUPERCRONIC=$SUPERCRONIC_BASE-linux-amd64 ;; \
-         "linux/arm64")  SUPERCRONIC_URL=$SUPERCRONIC_URL_BASE-linux-arm SUPERCRONIC=$SUPERCRONIC_BASE-linux-arm  ;; \
-         "linux/arm/v7")  SUPERCRONIC_URL=$SUPERCRONIC_URL_BASE-linux-arm64 SUPERCRONIC=$SUPERCRONIC_BASE-linux-arm64  ;; \
+         "linux/amd64")  SUPERCRONIC_URL=$SUPERCRONIC_URL_BASE-linux-amd64 SUPERCRONIC=$SUPERCRONIC_BASE-linux-amd64 SUPERCRONIC_SHA1SUM=c98bbf82c5f648aaac8708c182cc83046fe48423 ;; \
+         "linux/arm64")  SUPERCRONIC_URL=$SUPERCRONIC_URL_BASE-linux-arm SUPERCRONIC=$SUPERCRONIC_BASE-linux-arm SUPERCRONIC_SHA1SUM=8c3dbef8175e3f579baefe4e55978f2a27cb76b5 ;; \
+         "linux/arm/v7")  SUPERCRONIC_URL=$SUPERCRONIC_URL_BASE-linux-arm64 SUPERCRONIC=$SUPERCRONIC_BASE-linux-arm64 SUPERCRONIC_SHA1SUM=5ef4ccc3d43f12d0f6c3763758bc37cc4e5af76e ;; \
          *) exit 1 ;; \
     esac; \
     if [ "$TARGETPLATFORM" = "linux/arm/v7" ]; then apk add gcc musl-dev; fi \
