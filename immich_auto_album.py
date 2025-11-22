@@ -1474,13 +1474,20 @@ class Configuration():
         logging.error("Unknown key type (-t, --key-type). Must be either 'literal' or 'file'.")
         return None
 
+    @staticmethod
+    def log_debug_global():
+        """
+        Logs global configuration options on `DEBUG` log level
+        """
+        logging.debug("%s = '%s'", "log_level", Configuration.log_level)
+
     def log_debug(self):
         """
         Logs all its own properties on `DEBUG` log level
         """
         props = dict(vars(self))
         for prop in list(props.keys()):
-            logging.debug("%s = %s", prop, props[prop])
+            logging.debug("%s = '%s'", prop, props[prop])
 
 
 class FolderAlbumCreator():
@@ -2534,13 +2541,24 @@ class Utils:
         with open(file_path, 'r', encoding=encoding) as secret_file:
             return secret_file.read().strip()
 
-# set up logger to log in logfmt format
-logging.Formatter.formatTime = (lambda self, record, datefmt=None: datetime.datetime.fromtimestamp(record.created, datetime.timezone.utc).astimezone().isoformat(sep="T",timespec="milliseconds"))
-# Initialize logging with default log level, since we don't have any configuration yet
-logging.basicConfig(level=Configuration.CONFIG_DEFAULTS["log_level"], stream=sys.stdout, format='time=%(asctime)s level=%(levelname)s msg=%(message)s')
+class AlbumCreatorLogFormatter(logging.Formatter):
+    """Log formatter logging as logfmt with seconds-precision timestamps and lower-case log levels to match supercronic's logging"""
+    def format(self, record):
+        record.levelname = record.levelname.lower()
+        logging.Formatter.formatTime = (lambda self, record, datefmt=None: datetime.datetime.fromtimestamp(record.created, datetime.timezone.utc).astimezone().replace(microsecond=0).isoformat(sep="T",timespec="seconds").replace('+00:00', 'Z'))
+        return logging.Formatter.format(self, record)
+
+# Set up logging
+handler = logging.StreamHandler()
+formatter = AlbumCreatorLogFormatter('time="%(asctime)s" level=%(levelname)s msg="%(message)s"')
+handler.setFormatter(formatter)
+# Initialize logging with default log level, we might have to log something when initializing the global configuration (which includes the log level we should use)
+logging.basicConfig(level=Configuration.CONFIG_DEFAULTS["log_level"], handlers=[handler])
+# Initialize global config
 Configuration.init_global_config()
 # Update log level with the level this configuration dictates
 logging.getLogger().setLevel(Configuration.log_level)
+
 
 is_docker = os.environ.get(ENV_IS_DOCKER, False)
 
@@ -2550,6 +2568,8 @@ try:
 except(HTTPError, ValueError, AssertionError) as e:
     logging.fatal(e.msg)
     sys.exit(1)
+
+Configuration.log_debug_global()
 
 for config in configs:
     try:
