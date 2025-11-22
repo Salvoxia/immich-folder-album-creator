@@ -2543,14 +2543,27 @@ class Utils:
 
 class AlbumCreatorLogFormatter(logging.Formatter):
     """Log formatter logging as logfmt with seconds-precision timestamps and lower-case log levels to match supercronic's logging"""
+    
+    def init_formatter(self, is_debug : bool) -> None:
+        """
+        Initializes the log formatter, respecting the passed is_debug flag.
+
+        :param is_debug: When true, sets the time format timestamp to 'milliseconds', otherwise to 'seconds'.
+        """
+        timespec_setting = "seconds"
+        if is_debug:
+            timespec_setting = "milliseconds"
+
+        logging.Formatter.formatTime = (lambda self, record, datefmt=None: datetime.datetime.fromtimestamp(record.created, datetime.timezone.utc).astimezone().replace(microsecond=0).isoformat(sep="T",timespec=timespec_setting).replace('+00:00', 'Z'))
+
     def format(self, record):
         record.levelname = record.levelname.lower()
-        logging.Formatter.formatTime = (lambda self, record, datefmt=None: datetime.datetime.fromtimestamp(record.created, datetime.timezone.utc).astimezone().replace(microsecond=0).isoformat(sep="T",timespec="seconds").replace('+00:00', 'Z'))
         return logging.Formatter.format(self, record)
 
 # Set up logging
 handler = logging.StreamHandler()
 formatter = AlbumCreatorLogFormatter('time="%(asctime)s" level=%(levelname)s msg="%(message)s"')
+formatter.init_formatter(False)
 handler.setFormatter(formatter)
 # Initialize logging with default log level, we might have to log something when initializing the global configuration (which includes the log level we should use)
 logging.basicConfig(level=Configuration.CONFIG_DEFAULTS["log_level"], handlers=[handler])
@@ -2558,6 +2571,8 @@ logging.basicConfig(level=Configuration.CONFIG_DEFAULTS["log_level"], handlers=[
 Configuration.init_global_config()
 # Update log level with the level this configuration dictates
 logging.getLogger().setLevel(Configuration.log_level)
+if 'DEBUG' == Configuration.log_level:
+    formatter.init_formatter(True)
 
 
 is_docker = os.environ.get(ENV_IS_DOCKER, False)
