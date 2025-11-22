@@ -4,7 +4,7 @@ if [ ! -z "$CRON_EXPRESSION" ]; then
     if [ "$LOG_LEVEL" == "DEBUG" ]; then
         $DEBUG_PARM=-debug
     fi
-    /usr/local/bin/supercronic $DEBUGPARM $CRONTAB_PATH
+    /usr/local/bin/supercronic -passthrough-logs -no-reap -split-logs $DEBUGPARM $CRONTAB_PATH
 else
     UNATTENDED=1 /script/immich_auto_album.sh > /proc/1/fd/1 2>/proc/1/fd/2 || true
 fi
