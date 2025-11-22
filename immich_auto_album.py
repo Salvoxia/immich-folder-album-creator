@@ -2543,7 +2543,7 @@ class Utils:
 
 class AlbumCreatorLogFormatter(logging.Formatter):
     """Log formatter logging as logfmt with seconds-precision timestamps and lower-case log levels to match supercronic's logging"""
-    
+
     def init_formatter(self, is_debug : bool) -> None:
         """
         Initializes the log formatter, respecting the passed is_debug flag.
@@ -2554,7 +2554,11 @@ class AlbumCreatorLogFormatter(logging.Formatter):
         if is_debug:
             timespec_setting = "milliseconds"
 
-        logging.Formatter.formatTime = (lambda self, record, datefmt=None: datetime.datetime.fromtimestamp(record.created, datetime.timezone.utc).astimezone().replace(microsecond=0).isoformat(sep="T",timespec=timespec_setting).replace('+00:00', 'Z'))
+        logging.Formatter.formatTime = (
+            lambda self,
+            record,
+            datefmt=None: datetime.datetime.fromtimestamp(record.created, datetime.timezone.utc).astimezone().replace(microsecond=0).isoformat(sep="T",timespec=timespec_setting).replace('+00:00', 'Z')
+            )
 
     def format(self, record):
         record.levelname = record.levelname.lower()
