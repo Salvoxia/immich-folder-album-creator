@@ -1099,7 +1099,6 @@ class AlbumModel:
 
 class Configuration():
     """A configuration object for the main class, controlling everything from API key, root path and all the other options the script offers"""
-    
     # Constants holding script run modes
     # Create albums based on folder names and script arguments
     SCRIPT_MODE_CREATE = "CREATE"
@@ -1420,6 +1419,12 @@ class Configuration():
 
     @staticmethod
     def init_global_config() -> None:
+        """
+        Initializes global configuration options from global config file ()
+
+        :returns: All configurations the script should run with
+        :rtype: None
+        """
         parser = Configuration.get_arg_parser()
         args = vars(parser.parse_args())
         Configuration.log_level = Utils.get_value_or_config_default("log_level", args, Configuration.CONFIG_DEFAULTS["log_level"])
