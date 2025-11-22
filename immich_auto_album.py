@@ -1099,7 +1099,7 @@ class AlbumModel:
 
 class Configuration():
     """A configuration object for the main class, controlling everything from API key, root path and all the other options the script offers"""
-
+    
     # Constants holding script run modes
     # Create albums based on folder names and script arguments
     SCRIPT_MODE_CREATE = "CREATE"
@@ -1143,6 +1143,9 @@ class Configuration():
         "max_retry_count": ApiClient.MAX_RETRY_COUNT_ON_TIMEOUT_DEFAULT
     }
 
+    # Static (Global) configuration options
+    log_level = CONFIG_DEFAULTS["log_level"]
+
     # Translation of GLOB-style patterns to Regex
     # Source: https://stackoverflow.com/a/63212852
     # FIXME_EVENTUALLY: Replace with glob.translate() introduced with Python 3.13
@@ -1169,7 +1172,6 @@ class Configuration():
 
         :param args: A dictionary containing well-defined key-value pairs
         """
-        self.log_level = Utils.get_value_or_config_default("log_level", args, Configuration.CONFIG_DEFAULTS["log_level"])
         self.root_paths = args["root_path"]
         self.root_url = args["api_url"]
         self.api_key = args["api_key"]
@@ -1415,6 +1417,12 @@ class Configuration():
         parser.add_argument("--max-retry-count", type=int, default=Configuration.CONFIG_DEFAULTS['max_retry_count'],
                             help="Number of times to retry an Immich API call if it timed out before failing.")
         return parser
+
+    @staticmethod
+    def init_global_config() -> None:
+        parser = Configuration.get_arg_parser()
+        args = vars(parser.parse_args())
+        Configuration.log_level = Utils.get_value_or_config_default("log_level", args, Configuration.CONFIG_DEFAULTS["log_level"])
 
     @classmethod
     def get_configurations(cls) -> list[Configuration]:
@@ -2525,6 +2533,9 @@ class Utils:
 logging.Formatter.formatTime = (lambda self, record, datefmt=None: datetime.datetime.fromtimestamp(record.created, datetime.timezone.utc).astimezone().isoformat(sep="T",timespec="milliseconds"))
 # Initialize logging with default log level, since we don't have any configuration yet
 logging.basicConfig(level=Configuration.CONFIG_DEFAULTS["log_level"], stream=sys.stdout, format='time=%(asctime)s level=%(levelname)s msg=%(message)s')
+Configuration.init_global_config()
+# Update log level with the level this configuration dictates
+logging.getLogger().setLevel(Configuration.log_level)
 
 is_docker = os.environ.get(ENV_IS_DOCKER, False)
 
@@ -2536,8 +2547,6 @@ except(HTTPError, ValueError, AssertionError) as e:
     sys.exit(1)
 
 for config in configs:
-    # Updated log level with the level this configuration dictates
-    logging.getLogger().setLevel(config.log_level)
     try:
         folder_album_creator = FolderAlbumCreator(config)
 
