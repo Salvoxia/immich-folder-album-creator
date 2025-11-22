@@ -5,7 +5,8 @@ ARG TARGETPLATFORM
 # Latest releases available at https://github.com/aptible/supercronic/releases
 ENV SUPERCRONIC_URL_BASE=https://github.com/aptible/supercronic/releases/download/v0.2.39/supercronic \
     SUPERCRONIC_BASE=supercronic \
-    CRONTAB_PATH=/tmp/crontab
+    CRONTAB_DIR=/script/cron \
+    IS_DOCKER=1
 
 COPY immich_auto_album.py requirements.txt docker/immich_auto_album.sh docker/setup_cron.sh /script/
 
@@ -27,9 +28,11 @@ RUN case "${TARGETPLATFORM}" in \
     && chmod +x "$SUPERCRONIC" \
     && mv "$SUPERCRONIC" "/usr/local/bin/${SUPERCRONIC}" \
     && ln -s "/usr/local/bin/${SUPERCRONIC}" /usr/local/bin/supercronic \
-    && apk del curl
+    && apk del curl \
+    # Prepare crontab
+    && mkdir $CRONTAB_DIR \
+    && chmod 0777 $CRONTAB_DIR
 
-ENV IS_DOCKER=1
 WORKDIR /script
 
 USER 1000:1000
