@@ -196,7 +196,8 @@ python3 ./immich_auto_album.py \
 ```
 ### Docker
 
-A Docker image is provided to be used as a runtime environment. It can be used to either run the script manually, or via cronjob by providing a crontab expression to the container. The container can then be added to the Immich compose stack directly.
+A Docker image is provided to be used as a runtime environment. It can be used to either run the script manually, or via cronjob by providing a crontab expression to the container. The container can then be added to the Immich compose stack directly.  
+The container runs rootless, by default with `uid:gid` `1000:1000`. This can be overridden in the `docker` command or `docker-compose` file.
 
 #### Environment Variables
 The environment variables are analogous to the script's command line arguments.
@@ -206,7 +207,7 @@ The environment variables are analogous to the script's command line arguments.
 | `ROOT_PATH`                  | yes        | A single or a comma separated list of import paths for external libraries in Immich. <br>Refer to [Choosing the correct `root_path`](#choosing-the-correct-root_path).|
 | `API_URL`                    | yes        | The root API URL of immich, e.g. https://immich.mydomain.com/api/ |
 | `API_KEY`                    | no         | A colon `:` separated list of API Keys to run the script for. Either `API_KEY` or `API_KEY_FILE` must be specified. The `API_KEY` variable takes precedence for ease of manual execution, but it is recommended to use `API_KEY_FILE`. 
-| `API_KEY_FILE`               | no         | A colon `:` separated list of absolute paths (from the root of the container) to files containing an Immich API Key, one key per file. The file might be mounted into the container using a volume (e.g. `-v /path/to/api_key.secret:/immich_api_key.secret:ro`). Each file must contain only the value of a single API Key. |
+| `API_KEY_FILE`               | no         | A colon `:` separated list of absolute paths (from the root of the container) to files containing an Immich API Key, one key per file. The file might be mounted into the container using a volume (e.g. `-v /path/to/api_key.secret:/immich_api_key.secret:ro`). Each file must contain only the value of a single API Key.<br>Note that the user the container is running with must have read access to all API key file. |
 | `CRON_EXPRESSION`            | yes        | A [crontab-style expression](https://crontab.guru/) (e.g. `0 * * * *`) to perform album creation on a schedule (e.g. every hour). |
 | `RUN_IMMEDIATELY`            | no         | Set to `true` to run the script right away, after running once the script will automatically run again based on the CRON_EXPRESSION |
 | `ALBUM_LEVELS`               | no         | Number of sub-folders or range of sub-folder levels below the root path used for album name creation. Positive numbers start from top of the folder structure, negative numbers from the bottom. Cannot be `0`. If a range should be set, the start level and end level must be separated by a comma. <br>Refer to [How it works](#how-it-works) for a detailed explanation and examples. |
@@ -227,7 +228,7 @@ The environment variables are analogous to the script's command line arguments.
 | `SET_ALBUM_THUMBNAIL`        | no         | Set first/last/random image as thumbnail (based on image creation timestamp) for newly created albums or albums assets have been added to.<br> Allowed values: `first`,`last`,`random`,`random-filtered`,`random-all`<br>If set to `random-filtered`, thumbnails are shuffled for all albums whose assets would not be filtered out or ignored by the `IGNORE` or `PATH_FILTER` options, even if no assets were added during the run. If set to random-all, the thumbnails for ALL albums will be shuffled on every run. (default: `None`)<br>Refer to [Setting Album Thumbnails](#setting-album-thumbnails). |
 | `VISIBILITY`                 | no         | Set this option to automatically set the visibility of all assets that are discovered by the script and assigned to albums.<br>Exception for value 'locked': Assets will not be added to any albums, but to the 'locked' folder only.<br>Also applies if `MODE` is set to CLEAN_UP or DELETE_ALL; then it affects all assets in the deleted albums.<br>Always overrides `ARCHIVE`. (default: `None`)<br>Refer to [Asset Visibility & Locked Folder](#asset-visibility-locked-folder). |
 | `FIND_ARCHIVED_ASSETS`       | no         | By default, the script only finds assets with visibility set to 'timeline' (which is the default). Set this option to make the script discover assets with visibility 'archive' as well. If -A/--find-assets-in-albums is set as well, both options apply. (default: `False`)<br>Refer to [Asset Visibility & Locked Folder](#asset-visibility--locked-folder). |
-| `READ_ALBUM_PROPERTIES`      | no         | Set to `True` to enable discovery of `.albumprops` files in root paths, allowing to set different album properties for different albums. (default: `False`)<br>Refer to [Setting Album-Fine Properties](#setting-album-fine-properties). |
+| `READ_ALBUM_PROPERTIES`      | no         | Set to `True` to enable discovery of `.albumprops` files in root paths, allowing to set different album properties for different albums. (default: `False`)<br>Refer to [Setting Album-Fine Properties](#setting-album-fine-properties).<br>Note that the user the container is running with must to your mounted external libraries for this function to work. |
 | `API_TIMEOUT`                | no         | Timeout when requesting Immich API in seconds (default: `20`) |
 | `COMMENTS_AND_LIKES`         | no         | Set to `1` to explicitly enable Comments & Likes functionality for all albums this script adds assets to, set to `0` to disable. If not set, this setting is left alone by the script. |
 | `UPDATE_ALBUM_PROPS_MODE`    | no         | Change how album properties are updated whenever new assets are added to an album. Album properties can either come from script arguments or the `.albumprops` file. Possible values: <br>`0` = Do not change album properties.<br> `1` = Only override album properties but do not change the share status.<br> `2` = Override album properties and share status, this will remove all users from the album which are not in the SHARE_WITH list. |
@@ -236,14 +237,13 @@ The environment variables are analogous to the script's command line arguments.
 
 #### Run the container with Docker
 
-To perform a manually triggered __dry run__ (only list albums that __would__ be created), use the following command:
+To perform a manually triggered __dry run__ (only list albums that __would__ be created), use the following command (make sure not to set the `CRON_EXPRESSION` environment variable):
 ```bash
 docker run \
   -e API_URL="https://immich.mydomain.com/api/" \
   -e API_KEY="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" \
   -e ROOT_PATH="/external_libs/photos" \
-  salvoxia/immich-folder-album-creator:latest \
-  /script/immich_auto_album.sh
+  salvoxia/immich-folder-album-creator:latest
 ```
 To actually create albums after performing a dry run, use the following command (setting the `UNATTENDED` environment variable):
 ```bash
@@ -252,8 +252,19 @@ docker run \
   -e API_URL="https://immich.mydomain.com/api/" \
   -e API_KEY="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" \
   -e ROOT_PATH="/external_libs/photos" \
-  salvoxia/immich-folder-album-creator:latest \
-  /script/immich_auto_album.sh
+  salvoxia/immich-folder-album-creator:latest
+```
+
+To pass the API key by secret file instead of an environment variable, pass `API_KEY_FILE` containing the path to the secret file mounted into the container, use a volume mount to mount the file and run the container with a user that has read access to the screts file:
+```bash
+docker run \
+  -v "./api_key.secret:/api_key.secret:ro"
+  -u 1001:1001 \
+  -e UNATTENDED="1" \
+  -e API_KEY_FILE="/api_key.secret" \
+  -e API_KEY="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" \
+  -e ROOT_PATH="/external_libs/photos" \
+  salvoxia/immich-folder-album-creator:latest
 ```
 
 To set up the container to periodically run the script, give it a name, pass the TZ variable and a valid crontab expression as environment variable. This example runs the script every hour:
@@ -304,6 +315,9 @@ services:
     container_name: immich_folder_album_creator
     image: salvoxia/immich-folder-album-creator:latest
     restart: unless-stopped
+    # Use a UID/GID that has read access to the mounted API key file 
+    # and external libraries
+    user: 1001:1001
     volumes:
      - /path/to/secret/file:/immich_api_key.secret:ro
      # mount needed for .albumprops to work
@@ -692,6 +706,7 @@ This is achieved by placing `.albumprops` files in each folder these properties 
 
 This function requires that all `root_paths` passed to the script are also accessible to it on a file-system level.
   - Docker: All root paths must be mounted under the same path to the `immich-folder-album-creator` container as they are mounted to the Immich container
+  - Docker: The container must run with a user/group ID that has read access to the mounted root paths to be able to discover and read the `.albumprops` files
   - Bare Python Script: The script must have access to all root paths under the same path as they are mounted into the Immich container
     Either mount the folders into Immich under the same path as they are on the Immich host, or create symlinks for the script to access
 
@@ -1129,6 +1144,8 @@ services:
     container_name: immich_folder_album_creator
     image: salvoxia/immich-folder-album-creator:latest
     restart: unless-stopped
+    # Use a UID/GID that has read access to the mounted API key file 
+    user: 1001:1001
     volumes:
      - /path/to/secret/file:/immich_api_key.secret:ro
     environment:
