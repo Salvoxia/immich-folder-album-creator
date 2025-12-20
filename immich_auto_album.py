@@ -1468,8 +1468,8 @@ class Configuration():
                                     2 = Override album properties and share status, this will remove all users from the album which are not in the SHARE_WITH list.""")
         parser.add_argument("--max-retry-count", type=int, default=Configuration.CONFIG_DEFAULTS['max_retry_count'],
                             help="Number of times to retry an Immich API call if it timed out before failing.")
-        parser.add_argument("--threads", type=int, default=Configuration.CONFIG_DEFAULTS['threads'],
-                            help="Number of times to retry an Immich API call if it timed out before failing.")
+        parser.add_argument("--threads", type=int, default=Configuration.CONFIG_DEFAULTS['threads'], choices=range(1, ApiClient.THREADS_MAX+1),
+                            help="Number of threads to fetch assets with in parallel.")
         return parser
 
     @staticmethod
