@@ -266,6 +266,7 @@ class ApiClient:
                 asset_list += self.fetch_assets_with_options({'isNotInAlbum': is_not_in_album, 'visibility': visiblity_option})
         return asset_list
 
+    # pylint: disable=R0914
     def fetch_assets_with_options(self, search_options: dict[str]) -> list[dict]:
         """
         Fetches assets from the Immich API using specific search options.
