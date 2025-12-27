@@ -1033,7 +1033,7 @@ By applying `--path-filter` and/or `--ignore` options, it is possible to get a m
 
 ## Asset Visibility & Locked Folder
 
-In Immich, may be 'archived' meaning they are hidden from the main timeline and only show up in their respective albums and the 'Archive' in the sidebar menu. Immich v1.133.0 also introduced the concept of a locked folder. The user must enter a PIN code to access the contents of that locked folder. Assets that are moved to the locked folder cannot be part of any albums and naturally are not displayed in the timeline.
+In Immich, assets being 'archived' means they are hidden from the main timeline and only show up in their respective albums and the 'Archive' in the sidebar menu. Immich v1.133.0 also introduced the concept of a locked folder. The user must enter a PIN code to access the contents of the locked folder. Assets that are moved to the locked folder cannot be part of any albums and naturally are not displayed in the timeline.
 
 This script supports both concepts with the option/environment variable `--visibility`/`VISIBILITY`. Allowed values are:
   - `archive`: Assets are archived after getting added to an album
