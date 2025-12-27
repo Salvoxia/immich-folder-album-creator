@@ -2,6 +2,9 @@
 
 # pylint: disable=too-many-lines
 from __future__ import annotations
+from concurrent.futures import ThreadPoolExecutor
+from functools import partial
+from time import perf_counter
 import warnings
 from typing import Tuple
 import argparse
@@ -20,7 +23,7 @@ import yaml
 
 import urllib3
 import requests
-
+from requests import Response
 
 # Script Constants
 # Environment variable to check if the script is running inside Docker
@@ -40,6 +43,10 @@ class ApiClient:
     API_TIMEOUT_DEFAULT = 20
     # Number of times to retry an API call if it times out
     MAX_RETRY_COUNT_ON_TIMEOUT_DEFAULT = 3
+    # Number of threads to fetch assets with in parallel
+    THREADS_DEFAULT = 4
+    # Maximum number of threads to fetch assets with in parallel
+    THREADS_MAX = 20
 
     # List of allowed share user roles
     SHARE_ROLES = ["editor", "viewer"]
@@ -67,6 +74,7 @@ class ApiClient:
         self.api_timeout : int = Utils.get_value_or_config_default('api_timeout', kwargs, Configuration.CONFIG_DEFAULTS['api_timeout'])
         self.insecure : bool = Utils.get_value_or_config_default('insecure', kwargs, Configuration.CONFIG_DEFAULTS['insecure'])
         self.max_retry_count : int = Utils.get_value_or_config_default('max_retry_count', kwargs, Configuration.CONFIG_DEFAULTS['max_retry_count'])
+        self.threads : int = Utils.get_value_or_config_default('threads', kwargs, Configuration.CONFIG_DEFAULTS['threads'])
 
         self.__validate_config()
 
@@ -105,6 +113,7 @@ class ApiClient:
         Utils.assert_not_none_or_empty("fetch_chunk_size", self.fetch_chunk_size)
         Utils.assert_not_none_or_empty("api_timeout", self.api_timeout)
         Utils.assert_not_none_or_empty("insecure", self.insecure)
+        Utils.assert_not_none_or_empty("threads", self.threads)
 
         if not Utils.is_integer(self.chunk_size) or self.chunk_size < 1:
             raise ValueError("chunk_size must be an integer > 0!")
@@ -115,12 +124,15 @@ class ApiClient:
         if not Utils.is_integer(self.api_timeout) or self.api_timeout < 1:
             raise ValueError("api_timeout must be an integer > 0!")
 
+        if not Utils.is_integer(self.threads) or self.threads < 1 or self.threads > ApiClient.THREADS_MAX:
+            raise ValueError(f'api_timeout must be an integer between 1 and {ApiClient.THREADS_MAX}!')
+
         try:
             bool(self.insecure)
         except ValueError as e:
             raise ValueError("insecure argument must be a boolean!") from e
 
-    def __request_api(self, http_method: str, endpoint: str, body: any = None, no_retries: bool = False) -> any:
+    def __request_api(self, http_method: str, endpoint: str, body: any = None, no_retries: bool = False) -> Response:
         """
         Performs an HTTP request using `http_method` to `endpoint`, sending headers `self.request_args` and `body` as payload.  
         Uses `self.api_timeout` as a timeout and respects `self.max_retry_count` on timeout if `not_retries` is not `True`. 
@@ -254,16 +266,18 @@ class ApiClient:
                 asset_list += self.fetch_assets_with_options({'isNotInAlbum': is_not_in_album, 'visibility': visiblity_option})
         return asset_list
 
+    # pylint: disable=R0914
     def fetch_assets_with_options(self, search_options: dict[str]) -> list[dict]:
         """
         Fetches assets from the Immich API using specific search options.
         The search options directly correspond to the body used for the search API request.
+        Assets are retreived in parallel based on configured number of threads.
 
         :param search_options: Dictionary containing options to pass to the search/metadata API endpoint
         :returns: An array of asset objects
         :rtype: list[dict]
         """
-        body = search_options
+        body = dict(search_options)
         assets_found = []
         # prepare request body
 
@@ -272,25 +286,59 @@ class ApiClient:
         body['size'] = number_of_assets_to_fetch_per_request_search
         # Initial API call, let's fetch our first chunk
         page = 1
+        # Record time when we started fetching
+        start_time = perf_counter()
+        page_fetched, response_json = self.__fetch_asset_chunk(body, page)
+        assets_received = response_json['assets']['items']
+        assets_found = assets_found + assets_received
+        logging.debug("Received %s assets with chunk %s", len(assets_received), page_fetched)
+
+        page += 1
+        # Create a callable with the static arguments already set, we're going to iterate over the page to fetch only.
+        partial_fetch_asset_chunk = partial(self.__fetch_asset_chunk, body)
+        # If we got a full chunk size back, let's perform subsequent calls until we get less than a full chunk size
+        asset_count_received_with_chunk = len(assets_received)
+        while asset_count_received_with_chunk == number_of_assets_to_fetch_per_request_search:
+            pages_to_fetch_in_parallel = list(range(page, page + self.threads))
+            with ThreadPoolExecutor(max_workers=self.threads) as exe:
+                # Maps the method 'cube' with a list of values.
+                results = exe.map(partial_fetch_asset_chunk, pages_to_fetch_in_parallel)
+
+            for page_fetched, result in results:
+                assets_received = result['assets']['items']
+                # Remember the minimum number of assets received with any chunk; if there is a chunk with
+                # less than our chunk size we know we fetched everything.
+                asset_count_received_with_chunk = min(asset_count_received_with_chunk, len(assets_received))
+                # Determine the fetched page from the results; if there is a next page, the current page is next page - 1. If there is
+                # no next page, it was the last.
+                #page_fetched : str = str(int(result['assets']['nextPage']) - 1) if result['assets']['nextPage'] is not None else 'last'
+                logging.debug("Received %s assets with chunk %s", len(assets_received), page_fetched)
+                assets_found = assets_found + assets_received
+
+            # advance page by number of parallel threads
+            page = page + self.threads
+        end_time = perf_counter()
+        logging.info("Fetching %s assets with %s threads took %s s", len(assets_found), self.threads, round(end_time - start_time, 2))
+        return assets_found
+
+    def __fetch_asset_chunk(self, search_options: dict[str], page: int) -> Tuple[int, dict]:
+        """
+        Fetches a single page of assets from the Immich API using specific search options.
+        
+        :param search_options: Dictionary containing options to pass to the search/metadata API endpoint
+        :param page: The result page to fetch
+        :returns: A tuple with the fetched page as first argument and the returned JSON as second argument
+        :rtype: Tuple[int, dict]
+        """
+
+        # copy search options, since we are going to inser the page number
+        body = dict(search_options)
         body['page'] = str(page)
+        logging.debug("requesting %s", body)
         r = self.__request_api('post', self.api_url+'search/metadata', body)
         r.raise_for_status()
-        response_json = r.json()
-        assets_received = response_json['assets']['items']
-        logging.debug("Received %s assets with chunk %s", len(assets_received), page)
 
-        assets_found = assets_found + assets_received
-        # If we got a full chunk size back, let's perform subsequent calls until we get less than a full chunk size
-        while len(assets_received) == number_of_assets_to_fetch_per_request_search:
-            page += 1
-            body['page'] = page
-            r = self.__request_api('post', self.api_url+'search/metadata', body)
-            self.__check_api_response(r)
-            response_json = r.json()
-            assets_received = response_json['assets']['items']
-            logging.debug("Received %s assets with chunk %s", len(assets_received), page)
-            assets_found = assets_found + assets_received
-        return assets_found
+        return (page, r.json())
 
     def fetch_albums(self) -> list[dict]:
         """
@@ -1139,7 +1187,8 @@ class Configuration():
         "comments_and_likes_enabled": False,
         "comments_and_likes_disabled": False,
         "update_album_props_mode": 0,
-        "max_retry_count": ApiClient.MAX_RETRY_COUNT_ON_TIMEOUT_DEFAULT
+        "max_retry_count": ApiClient.MAX_RETRY_COUNT_ON_TIMEOUT_DEFAULT,
+        "threads": ApiClient.THREADS_DEFAULT
     }
 
     # Static (Global) configuration options
@@ -1176,6 +1225,7 @@ class Configuration():
         self.api_key = args["api_key"]
         self.chunk_size = Utils.get_value_or_config_default("chunk_size", args, Configuration.CONFIG_DEFAULTS["chunk_size"])
         self.fetch_chunk_size = Utils.get_value_or_config_default("fetch_chunk_size", args, Configuration.CONFIG_DEFAULTS["fetch_chunk_size"])
+        self.threads = Utils.get_value_or_config_default("threads", args, Configuration.CONFIG_DEFAULTS["threads"])
         self.unattended = Utils.get_value_or_config_default("unattended", args, Configuration.CONFIG_DEFAULTS["unattended"])
         self.album_levels = Utils.get_value_or_config_default("album_levels", args, Configuration.CONFIG_DEFAULTS["album_levels"])
         # Album Levels Range handling
@@ -1244,6 +1294,10 @@ class Configuration():
 
         if self.comments_and_likes_disabled and self.comments_and_likes_enabled:
             raise ValueError("Arguments --comments-and-likes-enabled and --comments-and-likes-disabled cannot be used together! Choose one!")
+
+        if not Utils.is_integer(self.threads) or int(self.threads) < 1 or int(self.threads) > ApiClient.THREADS_MAX:
+            raise ValueError(f'--threads must be an integer between 1 and {ApiClient.THREADS_MAX}')
+        self.threads = int(self.threads)
 
         self.__validate_album_range()
 
@@ -1415,6 +1469,8 @@ class Configuration():
                                     2 = Override album properties and share status, this will remove all users from the album which are not in the SHARE_WITH list.""")
         parser.add_argument("--max-retry-count", type=int, default=Configuration.CONFIG_DEFAULTS['max_retry_count'],
                             help="Number of times to retry an Immich API call if it timed out before failing.")
+        parser.add_argument("--threads", type=int, default=Configuration.CONFIG_DEFAULTS['threads'], choices=range(1, ApiClient.THREADS_MAX+1),
+                            help="Number of threads to fetch assets with in parallel.")
         return parser
 
     @staticmethod
@@ -1505,7 +1561,8 @@ class FolderAlbumCreator():
                                     fetch_chunk_size=self.config.fetch_chunk_size,
                                     api_timeout=self.config.api_timeout,
                                     insecure=self.config.insecure,
-                                    max_retry_count=self.config.max_retry_count)
+                                    max_retry_count=self.config.max_retry_count,
+                                    threads=self.config.threads)
 
     @staticmethod
     def find_albumprops_files(paths: list[str]) -> list[str]:
