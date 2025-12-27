@@ -317,7 +317,7 @@ class ApiClient:
             # advance page by number of parallel threads
             page = page + self.threads
         end_time = perf_counter()
-        logging.info("Fetching %s assets took %s s", len(assets_found), end_time - start_time)
+        logging.info("Fetching %s assets with %s threads took %s s", len(assets_found), self.threads, round(end_time - start_time, 2))
         return assets_found
 
     def __fetch_asset_chunk(self, search_options: dict[str], page: int) -> Tuple[int, dict]:
