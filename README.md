@@ -92,7 +92,7 @@ The list contains API key permissions valid for **Immich v2.1.0**.
 3. Run the script
 ```
     usage: immich_auto_album.py [-h] [--api-key API_KEY] [-t {literal,file}] [-r ROOT_PATH] [-u] [-a ALBUM_LEVELS] [-s ALBUM_SEPARATOR] [-R PATTERN [REPL ...]] [-c CHUNK_SIZE] [-C FETCH_CHUNK_SIZE] [-l {CRITICAL,ERROR,WARNING,INFO,DEBUG}] [-k] [-i IGNORE]
-                            [-m {CREATE,CLEANUP,DELETE_ALL}] [-d] [-x SHARE_WITH] [-o {editor,viewer}] [-S {0,1,2}] [-O {False,asc,desc}] [-A] [-f PATH_FILTER] [--set-album-thumbnail {first,last,random,random-all,random-filtered}] [--visibility {archive,hidden,locked,timeline}]
+                            [-m {CREATE,CLEANUP,DELETE_ALL}] [-d] [-x SHARE_WITH] [-o {editor,viewer}] [-S {0,1,2}] [-O {False,asc,desc}] [-A] [-f PATH_FILTER] [--set-album-thumbnail {first,last,random,random-all,random-filtered}] [--visibility {archive,locked,timeline}]
                             [--find-archived-assets] [--read-album-properties] [--api-timeout API_TIMEOUT] [--comments-and-likes-enabled] [--comments-and-likes-disabled] [--update-album-props-mode {0,1,2}]
                             root_path api_url api_key
 
@@ -152,7 +152,7 @@ options:
   --set-album-thumbnail {first,last,random,random-all,random-filtered}
                         Set first/last/random image as thumbnail for newly created albums or albums assets have been added to. If set to random-filtered, thumbnails are shuffled for all albums whose assets would not be filtered out or
                         ignored by the ignore or path-filter options, even if no assets were added during the run. If set to random-all, the thumbnails for ALL albums will be shuffled on every run. (default: None)
-  --visibility {archive,hidden,locked,timeline}
+  --visibility {archive,locked,timeline}
                         Set this option to automatically set the visibility of all assets that are discovered by the script and assigned to albums. Exception for value 'locked': Assets will not be added to any albums, but to the 'locked' folder only. Also applies if -m/--mode is set to
                         CLEAN_UP or DELETE_ALL; then it affects all assets in the deleted albums. Always overrides -v/--archive. (default: None)
   --find-archived-assets
@@ -738,7 +738,7 @@ share_with:
 thumbnail_setting: "first"
 # Sort order in album, valid values: asc, desc
 sort_order: "desc"
-# Set the visibility of assets that are getting added to that album, valid values: archive, hidden, locked, timeline
+# Set the visibility of assets that are getting added to that album, valid values: archive, locked, timeline
 visibility: 'timeline'
 # Flag indicating whether assets in this albums can be commented on and liked
 comments_and_likes_enabled: false

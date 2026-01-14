@@ -937,7 +937,7 @@ class AlbumModel:
         # Boolean indicating whether assets in this album should be archived after adding
         # Deprecated, use visibility = archive instead!
         self.archive = None
-        # String indicating asset visibility, allowed values: archive, hidden, locked, timeline
+        # String indicating asset visibility, allowed values: archive, locked, timeline
         self.visibility = None
         # Boolean indicating whether assets in this albums can be commented on and liked
         self.comments_and_likes_enabled = None
@@ -1444,7 +1444,7 @@ class Configuration():
                                     If set to """+Configuration.ALBUM_THUMBNAIL_RANDOM_FILTERED+""", thumbnails are shuffled for all albums whose assets would not be
                                     filtered out or ignored by the ignore or path-filter options, even if no assets were added during the run.
                                     If set to """+Configuration.ALBUM_THUMBNAIL_RANDOM_ALL+""", the thumbnails for ALL albums will be shuffled on every run.""")
-        parser.add_argument("--visibility", choices=['archive', 'hidden', 'locked', 'timeline'],
+        parser.add_argument("--visibility", choices=['archive', 'locked', 'timeline'],
                             help="""Set this option to automatically set the visibility of all assets that are discovered by the script and assigned to albums.
                                     Exception for value 'locked': Assets will not be added to any albums, but to the 'locked' folder only.
                                     Also applies if -m/--mode is set to CLEAN_UP or DELETE_ALL; then it affects all assets in the deleted albums.
