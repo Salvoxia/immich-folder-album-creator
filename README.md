@@ -64,6 +64,7 @@ The list contains API key permissions valid for **Immich v2.1.0**.
   - `asset`
     - `asset.read`
     - `asset.delete`
+    - `asset.update`
   - `album`
     - `album.create`
     - `album.read`
