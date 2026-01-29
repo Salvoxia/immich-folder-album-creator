@@ -104,10 +104,6 @@ class ApiClient:
         if self.server_version is None:
             raise AssertionError("Communication with Immich Server API failed! Make sure the API URL is correct and verify the API Key!")
 
-        # Check version
-        if self.server_version ['major'] == 1 and self.server_version  ['minor'] < 106:
-            raise AssertionError("This script only works with Immich Server v1.106.0 and newer! Update Immich Server or use script version 0.8.1!")
-
     def __validate_config(self):
         """
         Validates all set configuration values.
@@ -243,9 +239,6 @@ class ApiClient:
         :returns: An array of asset objects
         :rtype: list[dict]
         """
-        if self.server_version['major'] == 1 and self.server_version['minor'] < 133:
-            return self.fetch_assets_with_options({'isNotInAlbum': is_not_in_album, 'withArchived': 'archive' in visibility_options})
-
         asset_list = self.fetch_assets_with_options({'isNotInAlbum': is_not_in_album})
         for visiblity_option in visibility_options:
             # Do not fetch agin for 'timeline', that's the default!
@@ -534,12 +527,9 @@ class ApiClient:
 
         :raises: HTTPException if any API call fails
         """
-        if self.server_version['major'] == 1 and self.server_version['minor'] < 116:
-            self.__trigger_offline_asset_removal_pre_minor_version_116()
-        else:
-            self.__trigger_offline_asset_removal_since_minor_version_116()
+        self._trigger_offline_asset_removal()
 
-    def __trigger_offline_asset_removal_since_minor_version_116(self) -> None:
+    def _trigger_offline_asset_removal(self) -> None:
         """
         Synchronously deletes offline assets.
 
@@ -548,16 +538,7 @@ class ApiClient:
 
         :raises: HTTPException if any API call fails
         """
-        # Workaround for a bug where isOffline option is not respected:
-        # Search all trashed assets and manually filter for offline assets.
-        # WARNING! This workaround must NOT be removed to keep compatibility with Immich v1.116.x to at
-        # least v1.117.x (reported issue for v1.117.0, might be fixed with v1.118.0)!
-        # If removed the assets for users of v1.116.0 - v1.117.x might be deleted completely!!!
-        # 2024/03/01: With Immich v1.128.0 isOffline filter is fixed. Remember to also request archived assets.
-        trashed_assets = self.fetch_assets_with_options({'isTrashed': True, 'isOffline': True, 'withArchived': True})
-        #logging.debug("search results: %s", offline_assets)
-
-        offline_assets = [asset for asset in trashed_assets if asset['isOffline']]
+        offline_assets = self.fetch_assets_with_options({'isTrashed': True, 'isOffline': True, 'withArchived': True})
 
         if len(offline_assets) > 0:
             logging.info("Deleting %s offline assets", len(offline_assets))
@@ -565,21 +546,6 @@ class ApiClient:
             self.delete_assets(offline_assets, True)
         else:
             logging.info("No offline assets found!")
-
-    def __trigger_offline_asset_removal_pre_minor_version_116(self):
-        """
-        Triggers Offline Asset Removal Job.
-        Only supported in Immich prior v1.116.0.
-        Requires the script to run with an Administrator level API key.
-
-        Works by fetching all libraries and triggering the Offline Asset Removal job
-        one by one.
-
-        :raises: HTTPError if the API call fails
-        """
-        libraries = self.fetch_libraries()
-        for library in libraries:
-            self.__trigger_offline_asset_removal_async(library['id'])
 
     def delete_assets(self, assets_to_delete: list, force: bool):
         """
@@ -600,22 +566,6 @@ class ApiClient:
 
         r = self.__request_raw('delete', self.api_url+api_endpoint, data)
         self.__check_api_response(r)
-
-    def __trigger_offline_asset_removal_async(self, library_id: str):
-        """
-        Triggers removal of offline assets in the library identified by libraryId.
-
-        :param library_id: The ID of the library to trigger offline asset removal for
-        :raises: Exception if any API call fails
-        """
-
-        api_endpoint = f'libraries/{library_id}/removeOffline'
-
-        r = self.__request_raw('post', self.api_url+api_endpoint)
-        if r.status_code == 403:
-            logging.fatal("--sync-mode 2 requires an Admin User API key!")
-        else:
-            self.__check_api_response(r)
 
     def fetch_libraries(self) -> list[dict]:
         """
@@ -898,7 +848,7 @@ class AlbumModel:
     ALBUM_MERGE_MODE_OVERRIDE = 3
     # List of class attribute names that are relevant for album properties handling
     # This list is used for album model merging and validation
-    ALBUM_PROPERTIES_VARIABLES = ['override_name', 'description', 'share_with', 'thumbnail_setting', 'sort_order', 'archive', 'visibility', 'comments_and_likes_enabled']
+    ALBUM_PROPERTIES_VARIABLES = ['override_name', 'description', 'share_with', 'thumbnail_setting', 'sort_order', 'visibility', 'comments_and_likes_enabled']
 
     # List of class attribute names that are relevant for inheritance
     ALBUM_INHERITANCE_VARIABLES = ['inherit', 'inherit_properties']
@@ -921,9 +871,6 @@ class AlbumModel:
         self.thumbnail_asset_uuid = None
         # Sorting order for this album, 'asc' or 'desc'
         self.sort_order = None
-        # Boolean indicating whether assets in this album should be archived after adding
-        # Deprecated, use visibility = archive instead!
-        self.archive = None
         # String indicating asset visibility, allowed values: archive, locked, timeline
         self.visibility = None
         # Boolean indicating whether assets in this albums can be commented on and liked
@@ -1126,12 +1073,6 @@ class AlbumModel:
                 if inheritance_prop_name in album_properties:
                     album_props_template_vars[inheritance_prop_name] = album_properties[inheritance_prop_name]
 
-            # Backward compatibility, remove when archive is removed:
-            if album_props_template.archive is not None:
-                logging.warning("Found deprecated property archive in %s! This will be removed in the future, use visibility: archive instead!", album_properties_file_path)
-                if album_props_template.visibility is None:
-                    album_props_template.visibility = 'archive'
-            #  End backward compatibility
             return album_props_template
 
         return None
@@ -1595,112 +1536,6 @@ class FolderAlbumCreator():
             if root_path in path:
                 return root_path
         return None
-
-    def build_album_properties_templates(self) -> dict:
-        """
-        Searches all root paths for album properties files,
-        applies ignore/filtering mechanisms, parses the files,
-        creates AlbumModel objects from them, performs validations and returns
-        a dictionary mapping mapping the album name (generated from the path the album properties file was found in)
-        to the album model file.
-        If a fatal error occurs during processing of album properties files (i.e. two files encountered targeting the same album with incompatible properties), the
-        program exits.
-
-        :returns: A dictionary mapping the album name (generated from the path the album properties file was found in) to the album model files
-        :rtype: dict
-        """
-        fatal_error_occurred = False
-        album_properties_file_paths = FolderAlbumCreator.find_albumprops_files(self.config.root_paths)
-        # Dictionary mapping album name generated from album properties' path to the AlbumModel representing the
-        # album properties
-        album_props_templates = {}
-        album_name_to_album_properties_file_path = {}
-        for album_properties_file_path in album_properties_file_paths:
-            # First check global path_filter and ignore options
-            if self.is_path_ignored(album_properties_file_path):
-                continue
-
-            # Identify the root path
-            album_props_root_path = FolderAlbumCreator.__identify_root_path(album_properties_file_path, self.config.root_paths)
-            if not album_props_root_path:
-                continue
-
-            # Chunks of the asset's path below root_path
-            path_chunks = album_properties_file_path.replace(album_props_root_path, '').split('/')
-            # A single chunk means it's just the image file in no sub folder, ignore
-            if len(path_chunks) == 1:
-                continue
-
-            # remove last item from path chunks, which is the file name
-            del path_chunks[-1]
-            album_name = self.create_album_name(path_chunks, self.config.album_level_separator, self.config.album_name_post_regex)
-            if album_name is None:
-                continue
-            try:
-                # Parse the album properties into an album model
-                album_props_template = AlbumModel.parse_album_properties_file(album_properties_file_path)
-                if not album_props_template:
-                    logging.warning("Unable to parse album properties file %s", album_properties_file_path)
-                    continue
-
-                album_props_template.name = album_name
-                if not album_name in album_props_templates:
-                    album_props_templates[album_name] = album_props_template
-                    album_name_to_album_properties_file_path[album_name] = album_properties_file_path
-                # There is already an album properties template with the same album name (maybe from a different root_path)
-                else:
-                    incompatible_props = album_props_template.find_incompatible_properties(album_props_templates[album_name])
-                    if len(incompatible_props) > 0:
-                        logging.fatal("Album Properties files %s and %s create an album with identical name but have conflicting properties:",
-                                    album_name_to_album_properties_file_path[album_name], album_properties_file_path)
-                        for incompatible_prop in incompatible_props:
-                            logging.fatal(incompatible_prop)
-                        fatal_error_occurred = True
-
-            except yaml.YAMLError as ex:
-                logging.error("Could not parse album properties file %s: %s", album_properties_file_path, ex)
-
-        if fatal_error_occurred:
-            raise AlbumModelValidationError("Encountered at least one fatal error during parsing or validating of album properties files!")
-
-        # Now validate that all album properties templates with the same override_name are compatible with each other
-        FolderAlbumCreator.validate_album_props_templates(album_props_templates.values(), album_name_to_album_properties_file_path)
-
-        return album_props_templates
-
-    @staticmethod
-    def validate_album_props_templates(album_props_templates: list[AlbumModel], album_name_to_album_properties_file_path: dict):
-        """
-        Validates the provided list of album properties.
-        Specifically, checks that if multiple album properties files specify the same override_name, all other specified properties
-        are the same as well.
-
-        If a validation error occurs, the program exits.
-
-        :param album_props_templates: The list of `AlbumModel` objects to validate
-        :param album_name_to_album_properties_file_path: A dictionary where the key is an album name and the value is the path to the album properties file the
-                album was generated from. This method expects one entry in this dictionary for every `AlbumModel` in album_props_templates.
-
-        :raises AlbumMergeError: If validations do not pass
-        """
-        fatal_error_occurred = False
-        # This is a cache to remember checked names - keep time complexity down
-        checked_override_names = []
-        # Loop over all album properties templates
-        for album_props_template in album_props_templates:
-            # Check if override_name is set and not already checked
-            if album_props_template.override_name and album_props_template.override_name not in checked_override_names:
-                # Inner loop through album properties template
-                for album_props_template_to_check in album_props_templates:
-                    # Do not check against ourselves and only check if the other template has the same override name (we already checked above that override_name is not None)
-                    if (album_props_template is not album_props_template_to_check
-                        and album_props_template.override_name == album_props_template_to_check.override_name):
-                        if FolderAlbumCreator.check_for_and_log_incompatible_properties(album_props_template, album_props_template_to_check, album_name_to_album_properties_file_path):
-                            fatal_error_occurred = True
-                checked_override_names.append(album_props_template.override_name)
-
-        if fatal_error_occurred:
-            raise AlbumMergeError("Encountered at least one fatal error while validating album properties files, stopping!")
 
     @staticmethod
     def check_for_and_log_incompatible_properties(model1: AlbumModel, model2: AlbumModel, album_name_to_album_properties_file_path: dict) -> bool:
@@ -2186,7 +2021,7 @@ class FolderAlbumCreator():
             album_model_to_update.comments_and_likes_enabled = False
 
     # pylint: disable=R0914,R1702,R0915
-    def build_album_list(self, asset_list : list[dict], root_path_list : list[str], album_props_templates: dict, albumprops_cache_param: dict = None) -> dict:
+    def build_album_list(self, asset_list : list[dict], root_path_list : list[str], albumprops_cache_param: dict = None) -> dict:
         """
         Builds a list of album models, enriched with assets assigned to each album.
         Returns a dict where the key is the album name and the value is the model.
@@ -2194,8 +2029,7 @@ class FolderAlbumCreator():
 
         :param asset_list: List of assets dictionaries fetched from Immich API
         :param root_path_list: List of root paths to use for album creation
-        :param album_props_templates: Dictionary mapping an album name to album properties
-        :param albumprops_cache: Dictionary mapping .albumprops file paths to AlbumModel objects (for inheritance)
+        :param albumprops_cache_param: Dictionary mapping .albumprops file paths to AlbumModel objects (for inheritance)
 
         :returns: A dict with album names as keys and an AlbumModel as value
         :rtype: dict
@@ -2240,11 +2074,6 @@ class FolderAlbumCreator():
                     if inherited_album_model and inherited_album_model.override_name:
                         final_album_name = inherited_album_model.override_name
 
-                # Check if there are traditional album properties for this album (backward compatibility)
-                album_props_template = album_props_templates.get(album_name)
-                if album_props_template and album_props_template.override_name:
-                    final_album_name = album_props_template.override_name
-
                 # Check if we already have this album model
                 if final_album_name in album_models:
                     new_album_model = album_models[final_album_name]
@@ -2282,15 +2111,6 @@ class FolderAlbumCreator():
                         # Log final album properties (only once per album)
                         if final_album_name not in logged_albums:
                             logging.info("Final album properties for '%s' (with inheritance): %s", final_album_name, new_album_model)
-                            logged_albums.add(final_album_name)
-
-                    # Apply traditional album properties if available (backward compatibility)
-                    elif album_props_template:
-                        new_album_model.merge_from(album_props_template, AlbumModel.ALBUM_MERGE_MODE_OVERRIDE)
-
-                        # Log final album properties (only once per album)
-                        if final_album_name not in logged_albums:
-                            logging.info("Final album properties for '%s': %s", final_album_name, new_album_model)
                             logged_albums.add(final_album_name)
                     else:
                         # Log final album properties for albums without .albumprops (only once per album)
@@ -2332,15 +2152,10 @@ class FolderAlbumCreator():
             self.api_client.delete_all_albums(self.config.visibility, self.config.delete_confirm)
             return
 
-        album_properties_templates = {}
         albumprops_cache = {}
         if self.config.read_album_properties:
             logging.debug("Albumprops: Finding, parsing and loading %s files with inheritance support", FolderAlbumCreator.ALBUMPROPS_FILE_NAME)
             albumprops_cache = self.build_albumprops_cache()
-            # Keep the old templates for backward compatibility with existing logic that expects album name keys
-            album_properties_templates = self.build_album_properties_templates()
-            for album_properties_path, album_properties_template in album_properties_templates.items():
-                logging.debug("Albumprops: %s -> %s", album_properties_path, album_properties_template)
 
         logging.info("Requesting all assets")
         # only request images that are not in any album if we are running in CREATE mode,
@@ -2355,14 +2170,8 @@ class FolderAlbumCreator():
         logging.info("%d photos found", len(assets))
 
         logging.info("Sorting assets to corresponding albums using folder name")
-        albums_to_create = self.build_album_list(assets, self.config.root_paths, album_properties_templates, albumprops_cache)
+        albums_to_create = self.build_album_list(assets, self.config.root_paths, albumprops_cache)
         albums_to_create = dict(sorted(albums_to_create.items(), key=lambda item: item[0]))
-
-        if self.api_client.server_version['major'] == 1 and self.api_client.server_version['minor'] < 133:
-            albums_with_visibility = [album_check_to_check for album_check_to_check in albums_to_create.values()
-                                    if album_check_to_check.visibility is not None and album_check_to_check.visibility != 'archive']
-            if len(albums_with_visibility) > 0:
-                logging.warning("Option 'visibility' is only supported in Immich Server v1.133.x and newer! Option will be ignored!")
 
         logging.info("%d albums identified", len(albums_to_create))
         logging.info("Album list: %s", list(albums_to_create.keys()))
