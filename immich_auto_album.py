@@ -292,8 +292,8 @@ class ApiClient:
         :rtype: Tuple[int, SearchResponseDto]
         """
 
-        # copy search options, since we are going to inser the page number
-        metadata_search_dto = MetadataSearchDto(page=page, **search_options)
+        # copy search options, since we are going to insert the page number
+        metadata_search_dto = search_options.model_copy(update={"page": page})
         logging.debug("requesting %s", metadata_search_dto)
         r = self.__request_api(lambda c: c.search.search_assets(metadata_search_dto))
 
