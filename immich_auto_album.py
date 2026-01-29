@@ -19,7 +19,7 @@ import random
 from urllib.error import HTTPError
 import traceback
 
-from immich.client.generated import ServerVersionResponseDto
+from immich.client.generated import AddUsersDto, AlbumResponseDto, AlbumUserAddDto, AlbumUserRole, AssetBulkDeleteDto, AssetBulkUpdateDto, AssetResponseDto, AssetVisibility, BulkIdsDto, CreateAlbumDto, LibraryResponseDto, MetadataSearchDto, SearchResponseDto, ServerVersionResponseDto, UpdateAlbumDto, UpdateAlbumUserDto, UserResponseDto
 import regex
 import yaml
 
@@ -161,24 +161,6 @@ class ApiClient:
             logging.debug(traceback.format_exc())
             raise
 
-    @staticmethod
-    def __check_api_response(response: requests.Response) -> None:
-        """
-        Checks the HTTP return code for the provided response and
-        logs any errors before raising an HTTPError
-
-        :param response: A list of asset IDs to archive
-        :raises: HTTPError if the API call fails
-        """
-        try:
-            response.raise_for_status()
-        except HTTPError:
-            if response.json():
-                logging.error("Error in API call: %s", response.json())
-            else:
-                logging.error("API response did not contain a payload")
-        response.raise_for_status()
-
     def fetch_server_version(self) -> ServerVersionResponseDto:
         """
         Fetches the API version from the immich server.
@@ -187,9 +169,9 @@ class ApiClient:
         raises HTTPError
 
         :returns: ServerVersionResponseDto
-        :raises ConnectionError: If the connection to the API server cannot be establisehd
-        :raises JSONDecodeError: If the API response cannot be parsed
-        :raises ValueError: If the API response is malformed
+        :rtype: ServerVersionResponseDto
+        :raises ValueError: If the server version is not valid
+        :raises ApiException: If the API call fails
         """
         server_version = self.__request_api(lambda c: c.server.get_server_version())
         try:
@@ -202,19 +184,19 @@ class ApiClient:
             "Detected Immich server version %s.%s.%s",
             server_version.major, server_version.minor, server_version.patch,
         )
-        return server_version.model_dump()
+        return server_version
 
     # pylint: disable=W0718
     # Catching too general exception Exception (broad-exception-caught
     # That's the whole point of this method
-    def __fetch_server_version_safe(self) -> dict:
+    def __fetch_server_version_safe(self) -> ServerVersionResponseDto:
         """
         Fetches the API version from the Immich server, suppressing any raised errors.
         On error, an error message is getting logged to ERRRO level, and the exception stacktrace
         is logged to DEBUG level.
 
-        :returns: Dictionary with keys `major`, `minor`, `patch` or None in case of an error
-        :rtype: dict
+        :returns: ServerVersionResponseDto or None in case of an error
+        :rtype: ServerVersionResponseDto
         """
         try:
             return self.fetch_server_version()
@@ -226,7 +208,7 @@ class ApiClient:
         return None
 
 
-    def fetch_assets(self, is_not_in_album: bool, visibility_options: list[str]) -> list[dict]:
+    def fetch_assets(self, is_not_in_album: bool, visibility_options: list[str]) -> list[AssetResponseDto]:
         """
         Fetches assets from the Immich API.
 
@@ -237,17 +219,17 @@ class ApiClient:
                 of an album or not. If set to False, will find images in albums and not part of albums
         :param visibility_options: A list of visibility options to find and return assets with
         :returns: An array of asset objects
-        :rtype: list[dict]
+        :rtype: list[AssetResponseDto]
         """
-        asset_list = self.fetch_assets_with_options({'isNotInAlbum': is_not_in_album})
+        asset_list = self.fetch_assets_with_options(MetadataSearchDto(isNotInAlbum=is_not_in_album))
         for visiblity_option in visibility_options:
             # Do not fetch agin for 'timeline', that's the default!
             if visiblity_option != 'timeline':
-                asset_list += self.fetch_assets_with_options({'isNotInAlbum': is_not_in_album, 'visibility': visiblity_option})
+                asset_list += self.fetch_assets_with_options(MetadataSearchDto(isNotInAlbum=is_not_in_album, visibility=visiblity_option))
         return asset_list
 
     # pylint: disable=R0914
-    def fetch_assets_with_options(self, search_options: dict[str]) -> list[dict]:
+    def fetch_assets_with_options(self, search_options: MetadataSearchDto) -> list[AssetResponseDto]:
         """
         Fetches assets from the Immich API using specific search options.
         The search options directly correspond to the body used for the search API request.
@@ -255,27 +237,26 @@ class ApiClient:
 
         :param search_options: Dictionary containing options to pass to the search/metadata API endpoint
         :returns: An array of asset objects
-        :rtype: list[dict]
+        :rtype: list[AssetResponseDto]
         """
-        body = dict(search_options)
-        assets_found = []
+        assets_found: list[AssetResponseDto] = []
         # prepare request body
 
         # This API call allows a maximum page size of 1000
         number_of_assets_to_fetch_per_request_search = min(1000, self.fetch_chunk_size)
-        body['size'] = number_of_assets_to_fetch_per_request_search
+        search_options.size = number_of_assets_to_fetch_per_request_search
         # Initial API call, let's fetch our first chunk
         page = 1
         # Record time when we started fetching
         start_time = perf_counter()
-        page_fetched, response_json = self.__fetch_asset_chunk(body, page)
-        assets_received = response_json['assets']['items']
+        page_fetched, response = self.__fetch_asset_chunk(search_options, page)
+        assets_received = response.assets.items
         assets_found = assets_found + assets_received
         logging.debug("Received %s assets with chunk %s", len(assets_received), page_fetched)
 
         page += 1
         # Create a callable with the static arguments already set, we're going to iterate over the page to fetch only.
-        partial_fetch_asset_chunk = partial(self.__fetch_asset_chunk, body)
+        partial_fetch_asset_chunk = partial(self.__fetch_asset_chunk, search_options)
         # If we got a full chunk size back, let's perform subsequent calls until we get less than a full chunk size
         asset_count_received_with_chunk = len(assets_received)
         while asset_count_received_with_chunk == number_of_assets_to_fetch_per_request_search:
@@ -285,7 +266,7 @@ class ApiClient:
                 results = exe.map(partial_fetch_asset_chunk, pages_to_fetch_in_parallel)
 
             for page_fetched, result in results:
-                assets_received = result['assets']['items']
+                assets_received = result.assets.items
                 # Remember the minimum number of assets received with any chunk; if there is a chunk with
                 # less than our chunk size we know we fetched everything.
                 asset_count_received_with_chunk = min(asset_count_received_with_chunk, len(assets_received))
@@ -301,56 +282,45 @@ class ApiClient:
         logging.info("Fetching %s assets with %s threads took %s s", len(assets_found), self.threads, round(end_time - start_time, 2))
         return assets_found
 
-    def __fetch_asset_chunk(self, search_options: dict[str], page: int) -> Tuple[int, dict]:
+    def __fetch_asset_chunk(self, search_options: MetadataSearchDto, page: int) -> Tuple[int, SearchResponseDto]:
         """
         Fetches a single page of assets from the Immich API using specific search options.
         
-        :param search_options: Dictionary containing options to pass to the search/metadata API endpoint
+        :param search_options: MetadataSearchDto containing options to pass to the search/metadata API endpoint
         :param page: The result page to fetch
-        :returns: A tuple with the fetched page as first argument and the returned JSON as second argument
-        :rtype: Tuple[int, dict]
+        :returns: A tuple with the fetched page as first argument and the returned SearchResponseDto as second argument
+        :rtype: Tuple[int, SearchResponseDto]
         """
 
         # copy search options, since we are going to inser the page number
-        body = dict(search_options)
-        body['page'] = str(page)
-        logging.debug("requesting %s", body)
-        r = self.__request_raw('post', self.api_url+'search/metadata', body)
-        r.raise_for_status()
+        metadata_search_dto = MetadataSearchDto(page=page, **search_options)
+        logging.debug("requesting %s", metadata_search_dto)
+        r = self.__request_api(lambda c: c.search.search_assets(metadata_search_dto))
 
-        return (page, r.json())
+        return (page, r)
 
-    def fetch_albums(self) -> list[dict]:
+    def fetch_albums(self) -> list[AlbumResponseDto]:
         """
         Fetches albums from the Immich API
         
         :returns: A list of album objects
-        :rtype: list[dict]
+        :rtype: list[AlbumResponseDto]
         """
+        return self.__request_api(lambda c: c.albums.get_all_albums())
 
-        api_endpoint = 'albums'
-
-        r = self.__request_raw('get', self.api_url+api_endpoint)
-        self.__check_api_response(r)
-        return r.json()
-
-    def fetch_album_info(self, album_id_for_info: str) -> dict:
+    def fetch_album_info(self, album_id_for_info: str) -> AlbumResponseDto:
         """
         Fetches information about a specific album
 
         :param album_id_for_info: The ID of the album to fetch information for
         
-        :returns: A dict containing album information
-        :rtype: dict
+        :returns: A AlbumResponseDto containing album information
+        :rtype: AlbumResponseDto
         """
 
-        api_endpoint = f'albums/{album_id_for_info}'
+        return self.__request_api(lambda c: c.albums.get_album_info(id=album_id_for_info))
 
-        r = self.__request_raw('get', self.api_url+api_endpoint)
-        self.__check_api_response(r)
-        return r.json()
-
-    def delete_album(self, album_delete: dict) -> bool:
+    def delete_album(self, album_delete: AlbumResponseDto) -> bool:
         """
         Deletes an album identified by album_to_delete['id']
 
@@ -361,15 +331,12 @@ class ApiClient:
         :returns: True if the album was deleted, otherwise False
         :rtype: bool
         """
-        api_endpoint = 'albums'
-
         logging.debug("Deleting Album: Album ID = %s, Album Name = %s", album_delete['id'], album_delete['albumName'])
-        r = self.__request_raw('delete', self.api_url+api_endpoint+'/'+album_delete['id'])
         try:
-            self.__check_api_response(r)
+            self.__request_api(lambda c: c.albums.delete_album(id=album_delete['id']))
             return True
-        except HTTPError:
-            logging.error("Error deleting album %s: %s", album_delete['albumName'], r.reason)
+        except Exception as e:
+            logging.error("Error deleting album %s: %s", album_delete['albumName'], e)
             return False
 
     def create_album(self, album_name_to_create: str) -> str:
@@ -379,21 +346,13 @@ class ApiClient:
 
         :param album_name_to_create: Name of the album to create
 
-        :returns: True if the album was deleted, otherwise False
+        :returns: The ID of the created album
         :rtype: str
         
         :raises: Exception if the API call failed
         """
 
-        api_endpoint = 'albums'
-
-        data = {
-            'albumName': album_name_to_create
-        }
-        r = self.__request_raw('post', self.api_url+api_endpoint, data)
-        self.__check_api_response(r)
-
-        return r.json()['id']
+        return self.__request_api(lambda c: c.albums.create_album(CreateAlbumDto(albumName=album_name_to_create))).id
 
     def add_assets_to_album(self, assets_add_album_id: str, asset_list: list[str]) -> list[str]:
         """
@@ -411,41 +370,27 @@ class ApiClient:
         :returns: The asset UUIDs that were actually added to the album (not respecting assets that were already part of the album)
         :rtype: list[str]
         """
-        api_endpoint = 'albums'
-
-        # Divide our assets into chunks of self.chunk_size,
-        # So the API can cope
-        assets_chunked = list(Utils.divide_chunks(asset_list, self.chunk_size))
-        asset_list_added = []
-
-        for assets_chunk in assets_chunked:
-            data = {'ids':assets_chunk}
-            r = self.__request_raw('put', self.api_url+api_endpoint+f'/{assets_add_album_id}/assets', data)
-            self.__check_api_response(r)
-            response = r.json()
-
-            for res in response:
-                if not res['success']:
-                    if  res['error'] != 'duplicate':
-                        logging.warning("Error adding an asset to an album: %s", res['error'])
+        asset_list_added: list[str] = []
+        for assets_chunk in list(Utils.divide_chunks(asset_list, self.chunk_size)):
+            r = self.__request_api(lambda c: c.albums.add_assets_to_album(id=assets_add_album_id, bulk_ids_dto=BulkIdsDto(ids=assets_chunk)))
+            for res in r:
+                if not res.success:
+                    if  res.error != 'duplicate':
+                        logging.warning("Error adding an asset to an album: %s", res.error)
                 else:
-                    asset_list_added.append(res['id'])
+                    asset_list_added.append(res.id)
 
         return asset_list_added
 
-    def fetch_users(self) -> list[dict]:
+    def fetch_users(self) -> list[UserResponseDto]:
         """
         Queries and returns all users
         
         :returns: A list of user objects
-        :rtype: list[dict]
+        :rtype: list[UserResponseDto]
         """
 
-        api_endpoint = 'users'
-
-        r = self.__request_raw('get', self.api_url+api_endpoint)
-        self.__check_api_response(r)
-        return r.json()
+        return self.__request_api(lambda c: c.users.search_users())
 
     def unshare_album_with_user(self, album_id_to_unshare: str, unshare_user_id: str) -> None:
         """
@@ -454,13 +399,12 @@ class ApiClient:
         :param album_id_to_unshare: The ID of the album to unshare
         :param unshare_user_id: The user ID to remove from the album's share list
         
-        :raises: HTTPError if the API call fails
+        :raises: Exception if the API call fails
         """
-        api_endpoint = f'albums/{album_id_to_unshare}/user/{unshare_user_id}'
-        r = self.__request_raw('delete', self.api_url+api_endpoint)
-        self.__check_api_response(r)
+        self.__request_api(lambda c: c.albums.remove_user_from_album(id=album_id_to_unshare, user_id=unshare_user_id))
+        return None
 
-    def update_album_share_user_role(self, album_id_to_share: str, share_user_id: str, share_user_role: str) -> None:
+    def update_album_share_user_role(self, album_id_to_share: str, share_user_id: str, share_user_role: AlbumUserRole) -> None:
         """
         Updates the user's share role for the provided album ID.
 
@@ -468,21 +412,12 @@ class ApiClient:
         :param share_user_id: The user ID to update the share role for
         :param share_user_role: The share role to update the user to
         
-        :raises: AssertionError if user_share_role contains an invalid value
-        :raises: HTTPError if the API call fails
+        :raises: Exception if the API call fails
         """
-        api_endpoint = f'albums/{album_id_to_share}/user/{share_user_id}'
+        self.__request_api(lambda c: c.albums.update_album_user(id=album_id_to_share, user_id=share_user_id, update_album_user_dto=UpdateAlbumUserDto(role=share_user_role)))
+        return None
 
-        assert share_user_role in ApiClient.SHARE_ROLES
-
-        data = {
-            'role': share_user_role
-        }
-
-        r = self.__request_raw('put', self.api_url+api_endpoint, data)
-        self.__check_api_response(r)
-
-    def share_album_with_user_and_role(self, album_id_to_share: str, user_ids_to_share_with: list[str], user_share_role: str) -> None:
+    def share_album_with_user_and_role(self, album_id_to_share: str, user_ids_to_share_with: list[str], user_share_role: AlbumUserRole) -> None:
         """
         Shares the album with the provided album_id with all provided share_user_ids
         using share_role as a role.
@@ -493,94 +428,50 @@ class ApiClient:
         :raises: AssertionError if user_share_role contains an invalid value
         :raises: HTTPError if the API call fails
         """
-        api_endpoint = f'albums/{album_id_to_share}/users'
-
-        assert user_share_role in ApiClient.SHARE_ROLES
-
-        # build payload
-        album_users = []
-        for user_id_to_share_with in user_ids_to_share_with:
-            share_info = {}
-            share_info['role'] = user_share_role
-            share_info['userId'] = user_id_to_share_with
-            album_users.append(share_info)
-
-        data = {
-            'albumUsers': album_users
-        }
-
-        r = self.__request_raw('put', self.api_url+api_endpoint, data)
-        self.__check_api_response(r)
+        self.__request_api(lambda c: c.albums.add_users_to_album(id=album_id_to_share, add_users_dto=AddUsersDto(albumUsers=[AlbumUserAddDto(userId=user_id, role=user_share_role) for user_id in user_ids_to_share_with])))
+        return None
 
     def trigger_offline_asset_removal(self) -> None:
-        """
-        Removes offline assets.
-
-        Takes into account API changes happening between v1.115.0 and v1.116.0.
-
-        Before v1.116.0, offline asset removal was an asynchronous job that could only be
-        triggered by an Administrator for a specific library.
-
-        Since v1.116.0, offline assets are no longer displayed in the main timeline but shown in the trash. They automatically
-        come back from the trash when they are no longer offline. The only way to delete them is either by emptying the trash
-        (along with everything else) or by selectively deleting all offline assets. This is option the script now uses.
-
-        :raises: HTTPException if any API call fails
-        """
-        self._trigger_offline_asset_removal()
-
-    def _trigger_offline_asset_removal(self) -> None:
         """
         Synchronously deletes offline assets.
 
         Uses the searchMetadata endpoint to find all assets marked as offline, then
         issues a delete call for these asset UUIDs.
 
-        :raises: HTTPException if any API call fails
+        :raises: Exception if any API call fails
         """
-        offline_assets = self.fetch_assets_with_options({'isTrashed': True, 'isOffline': True, 'withArchived': True})
+        offline_assets = self.fetch_assets_with_options(MetadataSearchDto(isTrashed=True, isOffline=True, withArchived=True))
 
         if len(offline_assets) > 0:
             logging.info("Deleting %s offline assets", len(offline_assets))
-            logging.debug("Deleting the following offline assets (count: %d): %s", len(offline_assets), [asset['originalPath'] for asset in offline_assets])
+            logging.debug("Deleting the following offline assets (count: %d): %s", len(offline_assets), [asset.original_file_name for asset in offline_assets])
             self.delete_assets(offline_assets, True)
         else:
             logging.info("No offline assets found!")
 
-    def delete_assets(self, assets_to_delete: list, force: bool):
+    def delete_assets(self, assets_to_delete: list[AssetResponseDto], force: bool) -> None:
         """
         Deletes the provided assets from Immich.
 
         :param assets_to_delete: A list of asset objects with key `id`
         :param force: Force flag to pass to the API call
 
-        :raises: HTTPException if the API call fails
+        :raises: Exception if the API call fails
         """
 
-        api_endpoint = 'assets'
-        asset_ids_to_delete = [asset['id'] for asset in assets_to_delete]
-        data = {
-            'force': force,
-            'ids': asset_ids_to_delete
-        }
+        self.__request_api(lambda c: c.assets.delete_assets(asset_bulk_delete_dto=AssetBulkDeleteDto(ids=[asset.id for asset in assets_to_delete], force=force)))
+        return None
 
-        r = self.__request_raw('delete', self.api_url+api_endpoint, data)
-        self.__check_api_response(r)
-
-    def fetch_libraries(self) -> list[dict]:
+    def fetch_libraries(self) -> list[LibraryResponseDto]:
         """
         Queries and returns all libraries
 
         :raises: Exception if any API call fails
         """
 
-        api_endpoint = 'libraries'
+        return self.__request_api(lambda c: c.libraries.get_all_libraries())
 
-        r = self.__request_raw('get', self.api_url+api_endpoint)
-        self.__check_api_response(r)
-        return r.json()
-
-    def set_album_thumb(self, thumbnail_album_id: str, thumbnail_asset_id: str):
+    def set_album_thumb(self, thumbnail_album_id: str, thumbnail_asset_id: str) -> None:
         """
         Sets asset as thumbnail of album
 
@@ -589,14 +480,10 @@ class ApiClient:
 
         :raises: Exception if the API call fails
         """
-        api_endpoint = f'albums/{thumbnail_album_id}'
+        self.__request_api(lambda c: c.albums.update_album_info(id=thumbnail_album_id, update_album_dto=UpdateAlbumDto(albumThumbnailAssetId=thumbnail_asset_id)))
+        return None
 
-        data = {"albumThumbnailAssetId": thumbnail_asset_id}
-
-        r = self.__request_raw('patch', self.api_url+api_endpoint, data)
-        self.__check_api_response(r)
-
-    def update_album_properties(self, album_to_update: AlbumModel):
+    def update_album_properties(self, album_to_update: AlbumModel) -> None:
         """
         Sets album properties in Immich to the properties of the AlbumModel
 
@@ -604,58 +491,27 @@ class ApiClient:
 
         :raises: Exception if the API call fails
         """
-        # Initialize payload
-        data = {}
+        data = UpdateAlbumDto(
+            description=album_to_update.description,
+            order=album_to_update.sort_order,
+            is_activity_enabled=album_to_update.comments_and_likes_enabled,
+            albumThumbnailAssetId=album_to_update.thumbnail_asset_uuid,
+        )
 
-        # Thumbnail Asset
-        if album_to_update.thumbnail_asset_uuid:
-            data['albumThumbnailAssetId'] = album_to_update.thumbnail_asset_uuid
+        self.__request_api(lambda c: c.albums.update_album_info(id=album_to_update.id, update_album_dto=data))
+        return None
 
-        # Description
-        if album_to_update.description:
-            data['description'] = album_to_update.description
-
-        # Sorting Order
-        if album_to_update.sort_order:
-            data['order'] = album_to_update.sort_order
-
-        # Comments / Likes enabled
-        if album_to_update.comments_and_likes_enabled is not None:
-            data['isActivityEnabled'] = album_to_update.comments_and_likes_enabled
-
-        # Only update album if there is something to update
-        if len(data) > 0:
-            api_endpoint = f'albums/{album_to_update.id}'
-
-            response = self.__request_raw('patch',self.api_url+api_endpoint, data)
-            self.__check_api_response(response)
-
-    def set_assets_visibility(self, asset_ids_for_visibility: list[str], visibility_setting: str):
+    def set_assets_visibility(self, asset_ids_for_visibility: list[str], visibility_setting: AssetVisibility) -> None:
         """
         Sets the visibility of assets identified by the passed list of UUIDs.
 
         :param asset_ids_for_visibility: A list of asset IDs to set visibility for
-        :param visibility: The visibility to set
+        :param visibility_setting: The visibility to set
 
         :raises: Exception if the API call fails
         """
-        api_endpoint = 'assets'
-        data = {"ids": asset_ids_for_visibility}
-        # Remove when minimum supported version is >= 133
-        if self.server_version['major'] == 1 and self.server_version ['minor'] < 133:
-            if visibility_setting is not None and visibility_setting not in ['archive', 'timeline']:
-                # Warnings have been logged earlier, silently abort
-                return
-            is_archived = True
-            if visibility_setting == 'timeline':
-                is_archived = False
-            data["isArchived"] = is_archived
-        # Up-to-date Immich Server versions
-        else:
-            data["visibility"] = visibility_setting
-
-        r = self.__request_raw('put', self.api_url+api_endpoint, data)
-        self.__check_api_response(r)
+        self.__request_api(lambda c: c.assets.update_assets(asset_bulk_update_dto=AssetBulkUpdateDto(ids=asset_ids_for_visibility, visibility=visibility_setting)))
+        return None
 
     def delete_all_albums(self, assets_visibility: str, force_delete: bool):
         """
@@ -676,7 +532,7 @@ class ApiClient:
         if not force_delete:
             album_names = []
             for album_to_delete in all_albums:
-                album_names.append(album_to_delete['albumName'])
+                album_names.append(album_to_delete.album_name)
             print("Would delete the following albums (ALL albums!):")
             print(album_names)
             if is_docker:
@@ -692,9 +548,9 @@ class ApiClient:
                 # In order to do so, we need to fetch all assets of the album we're going to delete
                 assets_in_deleted_album = []
                 if assets_visibility is not None:
-                    album_to_delete_info = self.fetch_album_info(album_to_delete['id'])
-                    assets_in_deleted_album = album_to_delete_info['assets']
-                logging.info("Deleted album %s", album_to_delete['albumName'])
+                    album_to_delete_info = self.fetch_album_info(album_to_delete.id)
+                    assets_in_deleted_album = album_to_delete_info.assets
+                logging.info("Deleted album %s", album_to_delete.album_name)
                 deleted_album_count += 1
                 if len(assets_in_deleted_album) > 0 and assets_visibility is not None:
                     self.set_assets_visibility([asset['id'] for asset in assets_in_deleted_album], assets_visibility)
@@ -737,13 +593,13 @@ class ApiClient:
             # visibility at all, or to override whatever might be set in .ablumprops and revert to something else
             if asset_visibility is not None:
                 album_to_delete_info = self.fetch_album_info(album_to_delete.id)
-                assets_in_album = album_to_delete_info['assets']
-            if self.delete_album({'id': album_to_delete.id, 'albumName': album_to_delete.get_final_name()}):
+                assets_in_album = album_to_delete_info.assets
+            if self.delete_album(AlbumResponseDto(id=album_to_delete.id, album_name=album_to_delete.get_final_name())):
                 logging.info("Deleted album %s", album_to_delete.get_final_name())
                 cpt += 1
                 # Archive flag is set, so we need to unarchive assets
                 if asset_visibility is not None and len(assets_in_album) > 0:
-                    self.set_assets_visibility([asset['id'] for asset in assets_in_album], asset_visibility)
+                    self.set_assets_visibility([asset.id for asset in assets_in_album], asset_visibility)
                     logging.info("Set visibility for %d assets to %s", len(assets_in_album), asset_visibility)
         return cpt
 
@@ -2422,45 +2278,46 @@ class AlbumCreatorLogFormatter(logging.Formatter):
         record.levelname = record.levelname.lower()
         return logging.Formatter.format(self, record)
 
-# Set up logging
-handler = logging.StreamHandler()
-formatter = AlbumCreatorLogFormatter('time="%(asctime)s" level=%(levelname)s msg="%(message)s"')
-formatter.init_formatter(False)
-handler.setFormatter(formatter)
-# Initialize logging with default log level, we might have to log something when initializing the global configuration (which includes the log level we should use)
-logging.basicConfig(level=Configuration.CONFIG_DEFAULTS["log_level"], handlers=[handler])
-# Initialize global config
-Configuration.init_global_config()
-# Update log level with the level this configuration dictates
-logging.getLogger().setLevel(Configuration.log_level)
-if 'DEBUG' == Configuration.log_level:
-    formatter.init_formatter(True)
+
+# # Set up logging
+# handler = logging.StreamHandler()
+# formatter = AlbumCreatorLogFormatter('time="%(asctime)s" level=%(levelname)s msg="%(message)s"')
+# formatter.init_formatter(False)
+# handler.setFormatter(formatter)
+# # Initialize logging with default log level, we might have to log something when initializing the global configuration (which includes the log level we should use)
+# logging.basicConfig(level=Configuration.CONFIG_DEFAULTS["log_level"], handlers=[handler])
+# # Initialize global config
+# Configuration.init_global_config()
+# # Update log level with the level this configuration dictates
+# logging.getLogger().setLevel(Configuration.log_level)
+# if 'DEBUG' == Configuration.log_level:
+#     formatter.init_formatter(True)
 
 
-is_docker = os.environ.get(ENV_IS_DOCKER, False)
+# is_docker = os.environ.get(ENV_IS_DOCKER, False)
 
-try:
-    configs = Configuration.get_configurations()
-    logging.info("Created %d configurations", len(configs))
-except(HTTPError, ValueError, AssertionError) as e:
-    logging.fatal(e.msg)
-    sys.exit(1)
+# try:
+#     configs = Configuration.get_configurations()
+#     logging.info("Created %d configurations", len(configs))
+# except(HTTPError, ValueError, AssertionError) as e:
+#     logging.fatal(e.msg)
+#     sys.exit(1)
 
-Configuration.log_debug_global()
+# Configuration.log_debug_global()
 
-for config in configs:
-    try:
-        folder_album_creator = FolderAlbumCreator(config)
+# for config in configs:
+#     try:
+#         folder_album_creator = FolderAlbumCreator(config)
 
-        processing_api_key = folder_album_creator.api_client.api_key[:5] + '*' * (len(folder_album_creator.api_client.api_key)-5)
-        # Log the full API key when DEBUG logging is enabled
-        if 'DEBUG' == config.log_level:
-            processing_api_key = folder_album_creator.api_client.api_key
+#         processing_api_key = folder_album_creator.api_client.api_key[:5] + '*' * (len(folder_album_creator.api_client.api_key)-5)
+#         # Log the full API key when DEBUG logging is enabled
+#         if 'DEBUG' == config.log_level:
+#             processing_api_key = folder_album_creator.api_client.api_key
 
-        logging.info("Processing API Key %s", processing_api_key)
-        # Log config to DEBUG level
-        config.log_debug()
-        folder_album_creator.run()
-    except (AlbumMergeError, AlbumModelValidationError, HTTPError, ValueError, AssertionError) as e:
-        logging.fatal("Fatal error while processing configuration!")
-        logging.fatal(e)
+#         logging.info("Processing API Key %s", processing_api_key)
+#         # Log config to DEBUG level
+#         config.log_debug()
+#         folder_album_creator.run()
+#     except (AlbumMergeError, AlbumModelValidationError, HTTPError, ValueError, AssertionError) as e:
+#         logging.fatal("Fatal error while processing configuration!")
+#         logging.fatal(e)
