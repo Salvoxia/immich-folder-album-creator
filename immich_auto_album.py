@@ -6,7 +6,8 @@ from concurrent.futures import ThreadPoolExecutor
 from functools import partial
 from time import perf_counter
 import warnings
-from typing import Tuple
+import asyncio
+from typing import Any, Awaitable, Callable, Tuple, TypeVar
 import argparse
 import logging
 import sys
@@ -18,6 +19,7 @@ import random
 from urllib.error import HTTPError
 import traceback
 
+from immich.client.generated import ServerVersionResponseDto
 import regex
 import yaml
 
@@ -25,9 +27,14 @@ import urllib3
 import requests
 from requests import Response
 
+from immich import AsyncClient
+from immich.client.generated.exceptions import ApiException
+
 # Script Constants
 # Environment variable to check if the script is running inside Docker
 ENV_IS_DOCKER = "IS_DOCKER"
+
+T = TypeVar("T")
 
 # pylint: disable=R0902,R0904
 class ApiClient:
@@ -132,43 +139,31 @@ class ApiClient:
         except ValueError as e:
             raise ValueError("insecure argument must be a boolean!") from e
 
-    def __request_api(self, http_method: str, endpoint: str, body: any = None, no_retries: bool = False) -> Response:
+    def __request_api(self, fn: Callable[[AsyncClient], Awaitable[T]]) -> T:
         """
-        Performs an HTTP request using `http_method` to `endpoint`, sending headers `self.request_args` and `body` as payload.  
-        Uses `self.api_timeout` as a timeout and respects `self.max_retry_count` on timeout if `not_retries` is not `True`. 
-        If the HTTP request fails for any other reason than a timeout, no retries are performed.
+        Run an Immich client API call. Creates an AsyncClient with self.api_key and self.api_url,
+        passes it to fn, runs the returned awaitable, and handles ApiException and generic
+        exceptions (log and re-raise). Return type is inferred from the callable.
 
-        :param http_method: The HTTP method to send the request with, must be one of `GET`, `POST`, `PUT`, `DELETE`, `HEAD`, `CONNECT`, `OPTIONS`, `TRACE` or `PATCH`.
-        :param endpoint: The URL to request
-        :param body: The request body to send. Defaults to an empty dict.
-        :param no_retries: Flag indicating whether to fail immediately on request timeout
-
-        :returns: The HTTP response
-        :raises: HTTPError if the request failed (timeouts only if occurred too many times)
+        :param fn: Callable that receives the AsyncClient and returns an awaitable (e.g. lambda c: c.server.get_server_version()).
+        :returns: The API method return value.
+        :raises: ApiException or Exception on failure.
         """
+        async def _run() -> T:
+            async with AsyncClient(api_key=self.api_key, base_url=self.api_url) as client:
+                return await fn(client)
 
-        http_method_function = getattr(requests, http_method)
-        assert http_method_function is not None
-
-        if body is None:
-            body = {}
-        number_of_retries : int = 0
-        ex = None
-        while number_of_retries == 0 or ( not no_retries and number_of_retries <= self.max_retry_count ):
-            try:
-                return http_method_function(endpoint, **self.request_args, json=body , timeout=self.api_timeout)
-            except (requests.exceptions.Timeout, urllib3.exceptions.ReadTimeoutError, requests.exceptions.ConnectionError) as e:
-                # either not a ConnectionError or a ConectionError caused by ReadTimeoutError
-                if not isinstance(e, requests.exceptions.ConnectionError) or (len(e.args) > 0 and isinstance(e.args[0], urllib3.exceptions.ReadTimeoutError)):
-                    ex = e
-                    number_of_retries += 1
-                    if number_of_retries > self.max_retry_count:
-                        raise e
-                    logging.warning("Request to %s timed out, retry %s...", endpoint, number_of_retries)
-                else:
-                    raise e
-        # this point should not be reached
-        raise ex
+        try:
+            return asyncio.run(_run())
+        except ApiException as e:
+            msg = str(e.body) if e.body else "API error"
+            logging.error("%s (status %s)", msg, e.status)
+            logging.debug(traceback.format_exc())
+            raise
+        except Exception as e:
+            logging.error("Unexpected error: %s", str(e).strip())
+            logging.debug(traceback.format_exc())
+            raise
 
     @staticmethod
     def __check_api_response(response: requests.Response) -> None:
@@ -188,38 +183,30 @@ class ApiClient:
                 logging.error("API response did not contain a payload")
         response.raise_for_status()
 
-    def fetch_server_version(self) -> dict:
+    def fetch_server_version(self) -> ServerVersionResponseDto:
         """
         Fetches the API version from the immich server.
 
         If the API endpoint for getting the server version cannot be reached,
         raises HTTPError
 
-        :returns: Dictionary with keys `major`, `minor`, `patch`
-        :rtype: dict
+        :returns: ServerVersionResponseDto
         :raises ConnectionError: If the connection to the API server cannot be establisehd
         :raises JSONDecodeError: If the API response cannot be parsed
         :raises ValueError: If the API response is malformed
         """
-        api_endpoint = f'{self.api_url}server/version'
-        r = self.__request_api('get', api_endpoint, self.request_args)
-        # The API endpoint changed in Immich v1.118.0, if the new endpoint
-        # was not found try the legacy one
-        if r.status_code == 404:
-            api_endpoint = f'{self.api_url}server-info/version'
-            r = self.__request_api('get', api_endpoint, self.request_args)
-
-        if r.status_code == 200:
-            server_version = r.json()
-            try:
-                assert server_version['major'] is not None
-                assert server_version['minor'] is not None
-                assert server_version['patch'] is not None
-            except AssertionError as e:
-                raise ValueError from e
-            logging.info("Detected Immich server version %s.%s.%s", server_version['major'], server_version['minor'], server_version['patch'])
-            return server_version
-        return None
+        server_version = self.__request_api(lambda c: c.server.get_server_version())
+        try:
+            assert server_version.major is not None
+            assert server_version.minor is not None
+            assert server_version.patch is not None
+        except AssertionError as e:
+            raise ValueError from e
+        logging.info(
+            "Detected Immich server version %s.%s.%s",
+            server_version.major, server_version.minor, server_version.patch,
+        )
+        return server_version.model_dump()
 
     # pylint: disable=W0718
     # Catching too general exception Exception (broad-exception-caught
@@ -335,7 +322,7 @@ class ApiClient:
         body = dict(search_options)
         body['page'] = str(page)
         logging.debug("requesting %s", body)
-        r = self.__request_api('post', self.api_url+'search/metadata', body)
+        r = self.__request_raw('post', self.api_url+'search/metadata', body)
         r.raise_for_status()
 
         return (page, r.json())
@@ -350,7 +337,7 @@ class ApiClient:
 
         api_endpoint = 'albums'
 
-        r = self.__request_api('get', self.api_url+api_endpoint)
+        r = self.__request_raw('get', self.api_url+api_endpoint)
         self.__check_api_response(r)
         return r.json()
 
@@ -366,7 +353,7 @@ class ApiClient:
 
         api_endpoint = f'albums/{album_id_for_info}'
 
-        r = self.__request_api('get', self.api_url+api_endpoint)
+        r = self.__request_raw('get', self.api_url+api_endpoint)
         self.__check_api_response(r)
         return r.json()
 
@@ -384,7 +371,7 @@ class ApiClient:
         api_endpoint = 'albums'
 
         logging.debug("Deleting Album: Album ID = %s, Album Name = %s", album_delete['id'], album_delete['albumName'])
-        r = self.__request_api('delete', self.api_url+api_endpoint+'/'+album_delete['id'])
+        r = self.__request_raw('delete', self.api_url+api_endpoint+'/'+album_delete['id'])
         try:
             self.__check_api_response(r)
             return True
@@ -410,7 +397,7 @@ class ApiClient:
         data = {
             'albumName': album_name_to_create
         }
-        r = self.__request_api('post', self.api_url+api_endpoint, data)
+        r = self.__request_raw('post', self.api_url+api_endpoint, data)
         self.__check_api_response(r)
 
         return r.json()['id']
@@ -440,7 +427,7 @@ class ApiClient:
 
         for assets_chunk in assets_chunked:
             data = {'ids':assets_chunk}
-            r = self.__request_api('put', self.api_url+api_endpoint+f'/{assets_add_album_id}/assets', data)
+            r = self.__request_raw('put', self.api_url+api_endpoint+f'/{assets_add_album_id}/assets', data)
             self.__check_api_response(r)
             response = r.json()
 
@@ -463,7 +450,7 @@ class ApiClient:
 
         api_endpoint = 'users'
 
-        r = self.__request_api('get', self.api_url+api_endpoint)
+        r = self.__request_raw('get', self.api_url+api_endpoint)
         self.__check_api_response(r)
         return r.json()
 
@@ -477,7 +464,7 @@ class ApiClient:
         :raises: HTTPError if the API call fails
         """
         api_endpoint = f'albums/{album_id_to_unshare}/user/{unshare_user_id}'
-        r = self.__request_api('delete', self.api_url+api_endpoint)
+        r = self.__request_raw('delete', self.api_url+api_endpoint)
         self.__check_api_response(r)
 
     def update_album_share_user_role(self, album_id_to_share: str, share_user_id: str, share_user_role: str) -> None:
@@ -499,7 +486,7 @@ class ApiClient:
             'role': share_user_role
         }
 
-        r = self.__request_api('put', self.api_url+api_endpoint, data)
+        r = self.__request_raw('put', self.api_url+api_endpoint, data)
         self.__check_api_response(r)
 
     def share_album_with_user_and_role(self, album_id_to_share: str, user_ids_to_share_with: list[str], user_share_role: str) -> None:
@@ -529,7 +516,7 @@ class ApiClient:
             'albumUsers': album_users
         }
 
-        r = self.__request_api('put', self.api_url+api_endpoint, data)
+        r = self.__request_raw('put', self.api_url+api_endpoint, data)
         self.__check_api_response(r)
 
     def trigger_offline_asset_removal(self) -> None:
@@ -611,7 +598,7 @@ class ApiClient:
             'ids': asset_ids_to_delete
         }
 
-        r = self.__request_api('delete', self.api_url+api_endpoint, data)
+        r = self.__request_raw('delete', self.api_url+api_endpoint, data)
         self.__check_api_response(r)
 
     def __trigger_offline_asset_removal_async(self, library_id: str):
@@ -624,7 +611,7 @@ class ApiClient:
 
         api_endpoint = f'libraries/{library_id}/removeOffline'
 
-        r = self.__request_api('post', self.api_url+api_endpoint)
+        r = self.__request_raw('post', self.api_url+api_endpoint)
         if r.status_code == 403:
             logging.fatal("--sync-mode 2 requires an Admin User API key!")
         else:
@@ -639,7 +626,7 @@ class ApiClient:
 
         api_endpoint = 'libraries'
 
-        r = self.__request_api('get', self.api_url+api_endpoint)
+        r = self.__request_raw('get', self.api_url+api_endpoint)
         self.__check_api_response(r)
         return r.json()
 
@@ -656,7 +643,7 @@ class ApiClient:
 
         data = {"albumThumbnailAssetId": thumbnail_asset_id}
 
-        r = self.__request_api('patch', self.api_url+api_endpoint, data)
+        r = self.__request_raw('patch', self.api_url+api_endpoint, data)
         self.__check_api_response(r)
 
     def update_album_properties(self, album_to_update: AlbumModel):
@@ -690,7 +677,7 @@ class ApiClient:
         if len(data) > 0:
             api_endpoint = f'albums/{album_to_update.id}'
 
-            response = self.__request_api('patch',self.api_url+api_endpoint, data)
+            response = self.__request_raw('patch',self.api_url+api_endpoint, data)
             self.__check_api_response(response)
 
     def set_assets_visibility(self, asset_ids_for_visibility: list[str], visibility_setting: str):
@@ -717,7 +704,7 @@ class ApiClient:
         else:
             data["visibility"] = visibility_setting
 
-        r = self.__request_api('put', self.api_url+api_endpoint, data)
+        r = self.__request_raw('put', self.api_url+api_endpoint, data)
         self.__check_api_response(r)
 
     def delete_all_albums(self, assets_visibility: str, force_delete: bool):
