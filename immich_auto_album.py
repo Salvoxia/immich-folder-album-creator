@@ -148,8 +148,8 @@ class ApiClient:
             logging.error("%s (status %s)", msg, e.status)
             logging.debug(traceback.format_exc())
             raise
-        except aiohttp.ServerTimeoutError as e:
-            logging.error("Server timeout error: %s", str(e).strip())
+        except asyncio.TimeoutError as e:
+            logging.error("Timeout error: %s", str(e).strip())
             logging.debug(traceback.format_exc())
             raise
         except Exception as e:
