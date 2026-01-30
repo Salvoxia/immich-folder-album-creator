@@ -11,7 +11,7 @@ This is a python script designed to automatically create albums in [Immich](http
 This is useful for automatically creating and populating albums for external libraries.
 Using the provided docker image, the script can simply be added to the Immich compose stack and run along the rest of Immich's containers.
 
-__Current compatibility:__ Immich v1.106.1 - v2.4.x
+**Compatibility:** Requires Immich server **v2.4.1+**. The script uses the [immich-py](https://github.com/timonrieger/immich-py) client for all API calls; supported server versions are listed in [immich-py COMPATIBILITY.csv](https://github.com/timonrieger/immich-py/blob/main/COMPATIBILITY.csv). Older versions of this script support Immich server versions **v1.106.1 - v2.4.0**.
 
 ### Disclaimer
 This script is mostly based on the following original script: [REDVM/immich_auto_album.py](https://gist.github.com/REDVM/d8b3830b2802db881f5b59033cf35702)
