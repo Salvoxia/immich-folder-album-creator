@@ -7,14 +7,14 @@ from functools import partial
 from time import perf_counter
 import warnings
 import asyncio
-from typing import Any, Awaitable, Callable, Tuple, TypeVar
+from typing import Any, Awaitable, Callable, Optional, Tuple, TypeVar, TypedDict
 import argparse
 import logging
 import sys
 import fnmatch
 import os
 import datetime
-from collections import OrderedDict
+from collections import OrderedDict, defaultdict
 import random
 from urllib.error import HTTPError
 import traceback
@@ -208,7 +208,7 @@ class ApiClient:
         return None
 
 
-    def fetch_assets(self, is_not_in_album: bool, visibility_options: list[str]) -> list[AssetResponseDto]:
+    def fetch_assets(self, is_not_in_album: bool, visibility_options: list[AssetVisibility]) -> list[AssetResponseDto]:
         """
         Fetches assets from the Immich API.
 
@@ -513,14 +513,14 @@ class ApiClient:
         self.__request_api(lambda c: c.assets.update_assets(asset_bulk_update_dto=AssetBulkUpdateDto(ids=asset_ids_for_visibility, visibility=visibility_setting)))
         return None
 
-    def delete_all_albums(self, assets_visibility: str, force_delete: bool):
+    def delete_all_albums(self, assets_visibility: AssetVisibility, force_delete: bool):
         """
         Deletes all albums in Immich if force_delete is True. Otherwise lists all albums
         that would be deleted.
         If assets_visibility is set, all assets in deleted albums
         will be set to that visibility.
 
-        :param assets_visibility: Flag indicating whether to unarchive archived assets
+        :param assets_visibility: The visibility to set for assets for which an album was deleted. Can be used to. e.g. revert archival
         :param force_delete: Flag indicating whether to actually delete albums (True) or only to perform a dry-run (False)
 
         :raises: HTTPError if the API call fails
@@ -556,7 +556,7 @@ class ApiClient:
                     logging.info("Set visibility for %d assets to %s", len(assets_in_deleted_album), assets_visibility)
         logging.info("Deleted %d/%d albums", deleted_album_count, len(all_albums))
 
-    def cleanup_albums(self, albums_to_delete: list[AlbumModel], asset_visibility: str, force_delete: bool) -> int:
+    def cleanup_albums(self, albums_to_delete: list[AlbumModel], asset_visibility: AssetVisibility, force_delete: bool) -> int:
         """
         Instead of creating, deletes albums in Immich if force_delete is True. Otherwise lists all albums
         that would be deleted.
@@ -564,7 +564,7 @@ class ApiClient:
         will be unarchived.
 
         :param  albums_to_delete: A list of AlbumModel records to delete
-        :param asset_visibility: The visibility to set for assets for which an album was deleted. Can be used to. e.g. revert archival
+        :param asset_visibility: The visibility to set for assets for which an album was deleted. Can be used to e.g. revert archival
         :param force_delete: Flag indicating whether to actually delete albums (True) or only to perform a dry-run (False)
 
         :returns: Number of successfully deleted albums
@@ -618,16 +618,16 @@ class ApiClient:
         """
         # Parse and prepare expected share roles
         # List all share users by share role
-        share_users_to_roles_expected = {}
+        share_users_to_roles_expected: dict[str, AlbumUserRole] = {}
         for share_user in album_to_share.share_with:
             # Find the user by configured name or email
-            share_user_in_immich = FolderAlbumCreator.find_user_by_name_or_email(share_user['user'], known_users)
+            share_user_in_immich = FolderAlbumCreator.find_user_by_name_or_email(share_user.user, known_users)
             if not share_user_in_immich:
-                logging.warning("User %s to share album %s with does not exist!", share_user['user'], album_to_share.get_final_name())
+                logging.warning("User %s to share album %s with does not exist!", share_user.user, album_to_share.get_final_name())
                 continue
             # Use 'viewer' as default role if not specified
-            share_role_local = share_user.get('role', 'viewer')
-            share_users_to_roles_expected[share_user_in_immich['id']] = share_role_local
+            share_role_local = share_user.role or AlbumUserRole.VIEWER
+            share_users_to_roles_expected[share_user_in_immich.id] = share_role_local
 
         # No users to share with and unsharing is disabled?
         if len(share_users_to_roles_expected) == 0 and not unshare_users:
@@ -636,19 +636,17 @@ class ApiClient:
         # Now fetch reality
         album_to_share_info = self.fetch_album_info(album_to_share.id)
         # Dict mapping a user ID to share role
-        album_share_info = {}
-        for share_user_actual in album_to_share_info['albumUsers']:
-            album_share_info[share_user_actual['user']['id']] = share_user_actual['role']
+        album_share_info: dict[str, AlbumUserRole] = {}
+        for share_user_actual in album_to_share_info.album_users:
+            album_share_info[share_user_actual.user.id] = share_user_actual.role
 
         # Group share users by share role
-        share_roles_to_users_expected = {}
+        share_roles_to_users_expected: dict[AlbumUserRole, list[str]] = defaultdict(list)
         # Now compare expectation with reality and update
         for user_to_share_with, share_role_expected in share_users_to_roles_expected.items():
             # Case: Album is not share with user
             if user_to_share_with not in album_share_info:
                 # Gather all users to share the album with for this role
-                if not share_role_expected in share_roles_to_users_expected:
-                    share_roles_to_users_expected[share_role_expected] = []
                 share_roles_to_users_expected[share_role_expected].append(user_to_share_with)
 
             # Case: Album is shared, but with wrong role
@@ -708,6 +706,10 @@ class AlbumModel:
     # List of class attribute names that are relevant for inheritance
     ALBUM_INHERITANCE_VARIABLES = ['inherit', 'inherit_properties']
 
+    class ShareWith(TypedDict):
+        user: str
+        role: Optional[AlbumUserRole]
+
     def __init__(self, name : str):
         # The album ID, set after it was created
         self.id = None
@@ -720,14 +722,14 @@ class AlbumModel:
         # A list of dicts with Immich assets
         self.assets = []
         # a list of dicts with keys user and role, listing all users and their role to share the album with
-        self.share_with = []
+        self.share_with: list[AlbumModel.ShareWith] = []
         # Either a fully qualified asset path or one of 'first', 'last', 'random'
         self.thumbnail_setting = None
         self.thumbnail_asset_uuid = None
         # Sorting order for this album, 'asc' or 'desc'
         self.sort_order = None
         # String indicating asset visibility, allowed values: archive, locked, timeline
-        self.visibility = None
+        self.visibility: Optional[AssetVisibility] = None
         # Boolean indicating whether assets in this albums can be commented on and liked
         self.comments_and_likes_enabled = None
         # Boolean indicating whether properties should be inherited down the directory tree
@@ -1024,14 +1026,14 @@ class Configuration():
         self.insecure = Utils.get_value_or_config_default("insecure", args, Configuration.CONFIG_DEFAULTS["insecure"])
         self.ignore_albums = args["ignore"]
         self.mode = Utils.get_value_or_config_default("mode", args, Configuration.CONFIG_DEFAULTS["mode"])
-        self.delete_confirm = Utils.get_value_or_config_default("delete_confirm", args, Configuration.CONFIG_DEFAULTS["delete_confirm"])
-        self.share_with = args["share_with"]
+        self.delete_confirm: bool = Utils.get_value_or_config_default("delete_confirm", args, Configuration.CONFIG_DEFAULTS["delete_confirm"])
+        self.share_with: list[AlbumModel.ShareWith] = args["share_with"]
         self.share_role = Utils.get_value_or_config_default("share_role", args, Configuration.CONFIG_DEFAULTS["share_role"])
         self.sync_mode = Utils.get_value_or_config_default("sync_mode", args, Configuration.CONFIG_DEFAULTS["sync_mode"])
         self.find_assets_in_albums = Utils.get_value_or_config_default("find_assets_in_albums", args, Configuration.CONFIG_DEFAULTS["find_assets_in_albums"])
         self.path_filter = args["path_filter"]
         self.set_album_thumbnail = args["set_album_thumbnail"]
-        self.visibility = args["visibility"]
+        self.visibility = AssetVisibility(args["visibility"])
         self.find_archived_assets = Utils.get_value_or_config_default("find_archived_assets", args, Configuration.CONFIG_DEFAULTS["find_archived_assets"])
         self.read_album_properties = Utils.get_value_or_config_default("read_album_properties", args, Configuration.CONFIG_DEFAULTS["read_album_properties"])
         self.api_timeout = Utils.get_value_or_config_default("api_timeout", args, Configuration.CONFIG_DEFAULTS["api_timeout"])
@@ -1693,7 +1695,7 @@ class FolderAlbumCreator():
 
         return album_name.strip()
 
-    def choose_thumbnail(self, thumbnail_setting: str, thumbnail_asset_list: list[dict]) -> str:
+    def choose_thumbnail(self, thumbnail_setting: str, thumbnail_asset_list: list[AssetResponseDto]) -> Optional[AssetResponseDto]:
         """
         Tries to find an asset to use as thumbnail depending on thumbnail_setting.
 
@@ -1701,12 +1703,12 @@ class FolderAlbumCreator():
         :param asset_list: A list of assets to choose a thumbnail from, based on thumbnail_setting
 
         :returns: An Immich asset dict or None if no thumbnail was found based on thumbnail_setting
-        :rtype: str
+        :rtype: Optional[AssetResponseDto]
         """
         # Case: fully qualified path
         if thumbnail_setting not in Configuration.ALBUM_THUMBNAIL_SETTINGS_GLOBAL:
             for asset in thumbnail_asset_list:
-                if asset['originalPath'] == thumbnail_setting:
+                if asset.original_path == thumbnail_setting:
                     return asset
             # at this point we could not find the thumbnail asset by path
             return None
@@ -1715,11 +1717,11 @@ class FolderAlbumCreator():
         # Apply filtering to assets
         thumbnail_assets = thumbnail_asset_list
         if thumbnail_setting == Configuration.ALBUM_THUMBNAIL_RANDOM_FILTERED:
-            thumbnail_assets[:] = [asset for asset in thumbnail_assets if not self.is_path_ignored(asset['originalPath'])]
+            thumbnail_assets[:] = [asset for asset in thumbnail_assets if not self.is_path_ignored(asset.original_path)]
 
         if len(thumbnail_assets) > 0:
             # Sort assets by creation date
-            thumbnail_assets.sort(key=lambda x: x['fileCreatedAt'])
+            thumbnail_assets.sort(key=lambda x: x.file_created_at)
             if thumbnail_setting not in Configuration.ALBUM_THUMBNAIL_STATIC_INDICES:
                 idx = random.randint(0, len(thumbnail_assets)-1)
             else:
@@ -1768,7 +1770,7 @@ class FolderAlbumCreator():
         return is_path_ignored_result
 
     @staticmethod
-    def get_album_id_by_name(albums_list: list[dict], album_name: str, ) -> str:
+    def get_album_id_by_name(albums_list: list[AlbumResponseDto], album_name: str) -> str:
         """ 
         Finds the album with the provided name in the list of albums and returns its id.
         
@@ -1779,11 +1781,11 @@ class FolderAlbumCreator():
         :rtype: str
         """
         for _ in albums_list:
-            if _['albumName'] == album_name:
-                return _['id']
+            if _.album_name == album_name:
+                return _.id
         return None
 
-    def check_for_and_remove_live_photo_video_components(self, asset_list: list[dict], is_not_in_album: bool, find_archived: bool) -> list[dict]:
+    def check_for_and_remove_live_photo_video_components(self, asset_list: list[AssetResponseDto], is_not_in_album: bool, find_archived: bool) -> list[AssetResponseDto]:
         """
         Checks asset_list for any asset with file ending .mov. This is indicative of a possible video component
         of an Apple Live Photo. There is display bug in the Immich iOS app that prevents live photos from being
@@ -1798,11 +1800,11 @@ class FolderAlbumCreator():
                 True, we can assume asset_list is complete and should contain any static components.
 
         :returns: An asset list without live photo video components
-        :rtype: list[dict]
+        :rtype: list[AssetResponseDto]
         """
         logging.info("Checking for live photo video components")
         # Filter for all quicktime assets
-        asset_list_mov = [asset for asset in asset_list if 'video' in asset['originalMimeType']]
+        asset_list_mov = [asset for asset in asset_list if 'video' in asset.original_mime_type]
 
         if len(asset_list_mov) == 0:
             logging.debug("No live photo video components found")
@@ -1811,28 +1813,25 @@ class FolderAlbumCreator():
         # If either is not True, we need to fetch all assets
         if is_not_in_album or not find_archived:
             logging.debug("Fetching all assets for live photo video component check")
-            if self.api_client.server_version['major'] == 1 and self.api_client.server_version['minor'] < 133:
-                full_asset_list = self.api_client.fetch_assets_with_options({'isNotInAlbum': False, 'withArchived': True})
-            else:
-                full_asset_list = self.api_client.fetch_assets_with_options({'isNotInAlbum': False})
-                full_asset_list += self.api_client.fetch_assets_with_options({'isNotInAlbum': False, 'visibility': 'archive'})
+            full_asset_list = self.api_client.fetch_assets_with_options(MetadataSearchDto(isNotInAlbum=False))
+            full_asset_list += self.api_client.fetch_assets_with_options(MetadataSearchDto(isNotInAlbum=False, visibility=AssetVisibility.ARCHIVE))
         else:
             full_asset_list = asset_list
 
         # Find all assets with a live ID set
-        asset_list_with_live_id = [asset for asset in full_asset_list if asset['livePhotoVideoId'] is not None]
+        asset_list_with_live_id = [asset for asset in full_asset_list if asset.live_photo_video_id is not None]
 
         # Find all video components
         asset_list_video_components_ids = []
         for asset_static_component in asset_list_with_live_id:
             for asset_mov in asset_list_mov:
-                if asset_mov['id'] == asset_static_component['livePhotoVideoId']:
-                    asset_list_video_components_ids.append(asset_mov['id'])
-                    logging.debug("File %s is a video component of a live photo, removing from list", asset_mov['originalPath'])
+                if asset_mov.id == asset_static_component.live_photo_video_id:
+                    asset_list_video_components_ids.append(asset_mov.id)
+                    logging.debug("File %s is a video component of a live photo, removing from list", asset_mov.original_path)
 
         logging.info("Removing %s live photo video components from asset list", len(asset_list_video_components_ids))
         # Remove all video components from the asset list
-        asset_list_without_video_components = [asset for asset in asset_list if asset['id'] not in asset_list_video_components_ids]
+        asset_list_without_video_components = [asset for asset in asset_list if asset.id not in asset_list_video_components_ids]
         return asset_list_without_video_components
 
     # pylint: disable=R0914
@@ -1876,7 +1875,7 @@ class FolderAlbumCreator():
             album_model_to_update.comments_and_likes_enabled = False
 
     # pylint: disable=R0914,R1702,R0915
-    def build_album_list(self, asset_list : list[dict], root_path_list : list[str], albumprops_cache_param: dict = None) -> dict:
+    def build_album_list(self, asset_list : list[AssetResponseDto], root_path_list : list[str], albumprops_cache_param: dict = None) -> dict[str, AlbumModel]:
         """
         Builds a list of album models, enriched with assets assigned to each album.
         Returns a dict where the key is the album name and the value is the model.
@@ -1887,13 +1886,13 @@ class FolderAlbumCreator():
         :param albumprops_cache_param: Dictionary mapping .albumprops file paths to AlbumModel objects (for inheritance)
 
         :returns: A dict with album names as keys and an AlbumModel as value
-        :rtype: dict
+        :rtype: dict[str, AlbumModel]
         """
-        album_models = {}
+        album_models: dict[str, AlbumModel] = {}
         logged_albums = set()  # Track which albums we've already logged properties for
 
         for asset_to_add in asset_list:
-            asset_path = asset_to_add['originalPath']
+            asset_path = asset_to_add.original_path
             # This method will log the ignore reason, so no need to log anything again.
             if self.is_path_ignored(asset_path):
                 continue
@@ -1982,19 +1981,19 @@ class FolderAlbumCreator():
 
     # pylint: disable=R1705
     @staticmethod
-    def find_user_by_name_or_email(name_or_email: str, user_list: list[dict]) -> dict:
+    def find_user_by_name_or_email(name_or_email: str, user_list: list[UserResponseDto]) -> Optional[UserResponseDto]:
         """
         Finds a user identified by name_or_email in the provided user_list.
 
         :param name_or_email: The user name or email address to find the user by
         :param user_list: A list of user dictionaries with the following mandatory keys: `id`, `name`, `email`
         
-        :returns: A user dict with matching name or email or None if no matching user was found
-        :rtype: dict
+        :returns: A user with matching name or email or None if no matching user was found
+        :rtype: UserResponseDto
         """
         for user in user_list:
             # Search by name or mail address
-            if name_or_email in (user['name'], user['email']):
+            if name_or_email in (user.name, user.email):
                 return user
         return None
 
@@ -2016,9 +2015,9 @@ class FolderAlbumCreator():
         # only request images that are not in any album if we are running in CREATE mode,
         # otherwise we need all images, even if they are part of an album
         if self.config.mode == Configuration.SCRIPT_MODE_CREATE:
-            assets = self.api_client.fetch_assets(not self.config.find_assets_in_albums, ['archive'] if self.config.find_archived_assets else [])
+            assets = self.api_client.fetch_assets(not self.config.find_assets_in_albums, [AssetVisibility.ARCHIVE] if self.config.find_archived_assets else [])
         else:
-            assets = self.api_client.fetch_assets(False, ['archive'])
+            assets = self.api_client.fetch_assets(False, [AssetVisibility.ARCHIVE])
 
         # Remove live photo video components
         assets = self.check_for_and_remove_live_photo_video_components(assets, not self.config.find_assets_in_albums, self.config.find_archived_assets)
@@ -2052,7 +2051,7 @@ class FolderAlbumCreator():
         # mode CLEANUP
         if self.config.mode == Configuration.SCRIPT_MODE_CLEANUP:
             # Filter list of albums to create for existing albums only
-            albums_to_cleanup = {}
+            albums_to_cleanup: dict[str, AlbumModel] = {}
             for album in albums_to_create.values():
                 # Only cleanup existing albums (has id set) and no duplicates (due to override_name)
                 if album.id and album.id not in albums_to_cleanup:
@@ -2068,13 +2067,13 @@ class FolderAlbumCreator():
 
         # mode CREATE
         logging.info("Create / Append to Albums")
-        created_albums = []
+        created_albums: list[AlbumModel] = []
         # List for gathering all asset UUIDs for later archiving
-        asset_uuids_added = []
+        asset_uuids_added: list[str] = []
         for album in albums_to_create.values():
             # Special case: Add assets to Locked folder
             # Locked assets cannot be part of an album, so don't create albums in the first place
-            if album.visibility == 'locked':
+            if album.visibility == AssetVisibility.LOCKED:
                 self.api_client.set_assets_visibility(album.get_asset_uuids(), album.visibility)
                 logging.info("Added %d assets to locked folder", len(album.get_asset_uuids()))
                 continue
@@ -2103,11 +2102,11 @@ class FolderAlbumCreator():
                 if album.thumbnail_setting and album.thumbnail_setting != Configuration.ALBUM_THUMBNAIL_RANDOM_ALL:
                     # Fetch assets to be sure to have up-to-date asset list
                     album_to_update_info = self.api_client.fetch_album_info(album.id)
-                    album_assets = album_to_update_info['assets']
+                    album_assets = album_to_update_info.assets
                     thumbnail_asset = self.choose_thumbnail(album.thumbnail_setting, album_assets)
                     if thumbnail_asset:
-                        logging.info("Using asset %s as thumbnail for album %s", thumbnail_asset['originalPath'], album.get_final_name())
-                        album.thumbnail_asset_uuid = thumbnail_asset['id']
+                        logging.info("Using asset %s as thumbnail for album %s", thumbnail_asset.original_path, album.get_final_name())
+                        album.thumbnail_asset_uuid = thumbnail_asset.id
                     else:
                         logging.warning("Unable to determine thumbnail for setting '%s' in album %s", album.thumbnail_setting, album.get_final_name())
                 # Update album properties
@@ -2128,17 +2127,17 @@ class FolderAlbumCreator():
             logging.info("Picking a new random thumbnail for all albums")
             albums = self.api_client.fetch_albums()
             for album in albums:
-                album_info = self.api_client.fetch_album_info(album['id'])
+                album_info = self.api_client.fetch_album_info(album.id)
                 # Create album model for thumbnail randomization
                 album_model = AlbumModel(album['albumName'])
-                album_model.id = album['id']
-                album_model.assets = album_info['assets']
+                album_model.id = album.id
+                album_model.assets = album_info.assets
                 # Set thumbnail setting to 'random' in model
                 album_model.thumbnail_setting = 'random'
                 thumbnail_asset = self.choose_thumbnail(album_model.thumbnail_setting, album_model.assets)
                 if thumbnail_asset:
-                    logging.info("Using asset %s as thumbnail for album %s", thumbnail_asset['originalPath'], album.get_final_name())
-                    album_model.thumbnail_asset_uuid = thumbnail_asset['id']
+                    logging.info("Using asset %s as thumbnail for album %s", thumbnail_asset.original_path, album.get_final_name())
+                    album_model.thumbnail_asset_uuid = thumbnail_asset.id
                 else:
                     logging.warning("Unable to determine thumbnail for setting '%s' in album %s", album.thumbnail_setting, album.get_final_name())
                 # Update album properties (which will only pick a random thumbnail and set it, no other properties are changed)
