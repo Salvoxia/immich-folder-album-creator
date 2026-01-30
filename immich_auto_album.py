@@ -6,6 +6,7 @@ from concurrent.futures import ThreadPoolExecutor
 from functools import partial
 from time import perf_counter
 import asyncio
+from token import OP
 from typing import Awaitable, Callable, Optional, Tuple, TypeVar, TypedDict
 import argparse
 import logging
@@ -19,7 +20,7 @@ from urllib.error import HTTPError
 import traceback
 
 import aiohttp
-from immich.client.generated import AddUsersDto, AlbumResponseDto, AlbumUserAddDto, AlbumUserRole, AssetBulkDeleteDto, AssetBulkUpdateDto, AssetResponseDto, AssetVisibility, BulkIdsDto, CreateAlbumDto, LibraryResponseDto, MetadataSearchDto, SearchResponseDto, ServerVersionResponseDto, UpdateAlbumDto, UpdateAlbumUserDto, UserResponseDto
+from immich.client.generated import AddUsersDto, AlbumResponseDto, AlbumUserAddDto, AlbumUserRole, AssetBulkDeleteDto, AssetBulkUpdateDto, AssetOrder, AssetResponseDto, AssetVisibility, BulkIdsDto, CreateAlbumDto, LibraryResponseDto, MetadataSearchDto, SearchResponseDto, ServerVersionResponseDto, UpdateAlbumDto, UpdateAlbumUserDto, UserResponseDto
 import regex
 import yaml
 from aiohttp import ClientSession, ClientTimeout
@@ -185,7 +186,7 @@ class ApiClient:
     # pylint: disable=W0718
     # Catching too general exception Exception (broad-exception-caught
     # That's the whole point of this method
-    def __fetch_server_version_safe(self) -> ServerVersionResponseDto:
+    def __fetch_server_version_safe(self) -> Optional[ServerVersionResponseDto]:
         """
         Fetches the API version from the Immich server, suppressing any raised errors.
         On error, an error message is getting logged to ERRRO level, and the exception stacktrace
@@ -217,11 +218,11 @@ class ApiClient:
         :returns: An array of asset objects
         :rtype: list[AssetResponseDto]
         """
-        asset_list = self.fetch_assets_with_options(MetadataSearchDto(isNotInAlbum=is_not_in_album))
+        asset_list = self.fetch_assets_with_options(MetadataSearchDto(is_not_in_album=is_not_in_album))
         for visiblity_option in visibility_options:
             # Do not fetch agin for 'timeline', that's the default!
             if visiblity_option != 'timeline':
-                asset_list += self.fetch_assets_with_options(MetadataSearchDto(isNotInAlbum=is_not_in_album, visibility=visiblity_option))
+                asset_list += self.fetch_assets_with_options(MetadataSearchDto(is_not_in_album=is_not_in_album, visibility=visiblity_option))
         return asset_list
 
     # pylint: disable=R0914
@@ -436,7 +437,7 @@ class ApiClient:
 
         :raises: Exception if any API call fails
         """
-        offline_assets = self.fetch_assets_with_options(MetadataSearchDto(isTrashed=True, isOffline=True, withArchived=True))
+        offline_assets = self.fetch_assets_with_options(MetadataSearchDto(is_offline=True))
 
         if len(offline_assets) > 0:
             logging.info("Deleting %s offline assets", len(offline_assets))
@@ -491,7 +492,7 @@ class ApiClient:
             description=album_to_update.description,
             order=album_to_update.sort_order,
             is_activity_enabled=album_to_update.comments_and_likes_enabled,
-            albumThumbnailAssetId=album_to_update.thumbnail_asset_uuid,
+            album_thumbnail_asset_id=album_to_update.thumbnail_asset_uuid,
         )
 
         self.__request_api(lambda c: c.albums.update_album_info(id=album_to_update.id, update_album_dto=data))
@@ -540,7 +541,7 @@ class ApiClient:
         deleted_album_count = 0
         for album_to_delete in all_albums:
             # Fetch assets before delete so we can set visibility after; once deleted, album is gone
-            assets_in_deleted_album: list = []
+            assets_in_deleted_album: list[AssetResponseDto] = []
             if assets_visibility is not None:
                 album_to_delete_info = self.fetch_album_info(album_to_delete.id)
                 assets_in_deleted_album = album_to_delete_info.assets or []
@@ -548,7 +549,7 @@ class ApiClient:
                 logging.info("Deleted album %s", album_to_delete.album_name)
                 deleted_album_count += 1
                 if assets_in_deleted_album and assets_visibility is not None:
-                    self.set_assets_visibility([asset['id'] for asset in assets_in_deleted_album], assets_visibility)
+                    self.set_assets_visibility([str(asset.id) for asset in assets_in_deleted_album], assets_visibility)
                     logging.info("Set visibility for %d assets to %s", len(assets_in_deleted_album), assets_visibility)
         logging.info("Deleted %d/%d albums", deleted_album_count, len(all_albums))
 
@@ -589,7 +590,7 @@ class ApiClient:
             if asset_visibility is not None:
                 album_to_delete_info = self.fetch_album_info(album_to_delete.id)
                 assets_in_album = album_to_delete_info.assets
-            if self.delete_album(AlbumResponseDto(id=album_to_delete.id, album_name=album_to_delete.get_final_name())):
+            if self.delete_album(album_to_delete.id):
                 logging.info("Deleted album %s", album_to_delete.get_final_name())
                 cpt += 1
                 # Archive flag is set, so we need to unarchive assets
@@ -600,7 +601,7 @@ class ApiClient:
 
     # Disable pylint for too many branches
     # pylint: disable=R0912,R0914
-    def update_album_shared_state(self, album_to_share: AlbumModel, unshare_users: bool, known_users: list[dict]) -> None:
+    def update_album_shared_state(self, album_to_share: AlbumModel, unshare_users: bool, known_users: list[UserResponseDto]) -> None:
         """
         Makes sure the album is shared with the users set in the model with the correct roles.
         This involves fetching album info from Immich to check if/who the album is shared with and the share roles,
@@ -702,36 +703,36 @@ class AlbumModel:
     # List of class attribute names that are relevant for inheritance
     ALBUM_INHERITANCE_VARIABLES = ['inherit', 'inherit_properties']
 
-    class ShareWith(TypedDict):
+    class ShareWith:
         user: str
         role: Optional[AlbumUserRole]
 
     def __init__(self, name : str):
         # The album ID, set after it was created
-        self.id = None
+        self.id: Optional[str] = None
         # The album name
-        self.name = name
+        self.name: str = name
         # The override album name, takes precedence over name for album creation
-        self.override_name = None
+        self.override_name: Optional[str] = None
         # The description to set for the album
-        self.description = None
+        self.description: Optional[str] = None
         # A list of dicts with Immich assets
-        self.assets = []
+        self.assets: list[AssetResponseDto] = []
         # a list of dicts with keys user and role, listing all users and their role to share the album with
         self.share_with: list[AlbumModel.ShareWith] = []
         # Either a fully qualified asset path or one of 'first', 'last', 'random'
-        self.thumbnail_setting = None
-        self.thumbnail_asset_uuid = None
+        self.thumbnail_setting: Optional[str] = None
+        self.thumbnail_asset_uuid: Optional[str] = None
         # Sorting order for this album, 'asc' or 'desc'
-        self.sort_order = None
+        self.sort_order: Optional[AssetOrder] = None
         # String indicating asset visibility, allowed values: archive, locked, timeline
         self.visibility: Optional[AssetVisibility] = None
         # Boolean indicating whether assets in this albums can be commented on and liked
-        self.comments_and_likes_enabled = None
+        self.comments_and_likes_enabled: Optional[bool] = None
         # Boolean indicating whether properties should be inherited down the directory tree
-        self.inherit = None
+        self.inherit: Optional[bool] = None
         # List of property names that should be inherited
-        self.inherit_properties = None
+        self.inherit_properties: Optional[list[str]] = None
 
     def get_album_properties_dict(self) -> dict:
         """
@@ -763,7 +764,7 @@ class AlbumModel:
         :returns: A list of asset UUIDs
         :rtype: list[str]
         """
-        return [asset_to_add['id'] for asset_to_add in self.assets]
+        return [str(asset_to_add.id) for asset_to_add in self.assets]
 
     def find_incompatible_properties(self, other) -> list[str]:
         """
@@ -782,7 +783,7 @@ class AlbumModel:
         :rtype: list[str]
         """
         if not isinstance(other, AlbumModel):
-            return False
+            return []
         incompatible_props = []
         props = self.get_album_properties_dict()
         other_props = other.get_album_properties_dict()
@@ -828,7 +829,7 @@ class AlbumModel:
                         raise AlbumMergeError(f"Attempting to override {prop_name} in {self.name} with {other_attribs[prop_name]}")
                     own_attribs[prop_name] = other_attribs[prop_name]
 
-    def merge_inherited_share_with(self, inherited_share_with: list[dict]) -> list[dict]:
+    def merge_inherited_share_with(self, inherited_share_with: list[AlbumModel.ShareWith]) -> list[AlbumModel.ShareWith]:
         """
         Merges inherited share_with settings with current share_with settings.
         Handles special share_with inheritance logic:
@@ -852,34 +853,34 @@ class AlbumModel:
 
         # Add inherited users first
         for inherited_user in inherited_share_with:
-            if inherited_user['role'] == 'none':
-                users_set_to_none.add(inherited_user['user'])
+            if inherited_user.role == 'none':
+                users_set_to_none.add(inherited_user.user)
             else:
-                user_roles[inherited_user['user']] = inherited_user['role']
+                user_roles[inherited_user.user] = inherited_user.role
 
         # Apply current folder's share_with settings
         for current_user in self.share_with:
-            if current_user['role'] == 'none':
+            if current_user.role == 'none':
                 # Remove user from sharing and mark as explicitly set to none
-                user_roles.pop(current_user['user'], None)
-                users_set_to_none.add(current_user['user'])
-            elif current_user['user'] not in users_set_to_none:
+                user_roles.pop(current_user.user, None)
+                users_set_to_none.add(current_user.user)
+            elif current_user.user not in users_set_to_none:
                 # Only add/modify user if they haven't been set to 'none'
-                if current_user['user'] in user_roles:
+                if current_user.user in user_roles:
                     # Apply most restrictive role: viewer is more restrictive than editor
-                    current_role = user_roles[current_user['user']]
-                    new_role = current_user['role']
+                    current_role = user_roles[current_user.user]
+                    new_role = current_user.role
 
                     if current_role == 'viewer' or new_role == 'viewer':
-                        user_roles[current_user['user']] = 'viewer'
+                        user_roles[current_user.user] = 'viewer'
                     else:
-                        user_roles[current_user['user']] = new_role
+                        user_roles[current_user.user] = new_role
                 else:
                     # Add new user with their role
-                    user_roles[current_user['user']] = current_user['role']
+                    user_roles[current_user.user] = current_user.role
 
         # Convert back to list format
-        return [{'user': user, 'role': role} for user, role in user_roles.items()]
+        return [AlbumModel.ShareWith(user=user, role=role) for user, role in user_roles.items()]
 
     def get_final_name(self) -> str:
         """
@@ -1517,15 +1518,15 @@ class FolderAlbumCreator():
 
         return inherited_model
 
-    def build_albumprops_cache(self) -> dict:
+    def build_albumprops_cache(self) -> dict[str, AlbumModel]:
         """
         Builds a cache of all .albumprops files found in root paths.
 
         :returns: Dictionary mapping .albumprops file paths to AlbumModel objects
-        :rtype: dict
+        :rtype: dict[str, AlbumModel]
         """
         albumprops_files = FolderAlbumCreator.find_albumprops_files(self.config.root_paths)
-        albumprops_path_to_model_dict = {}
+        albumprops_path_to_model_dict: dict[str, AlbumModel] = {}
 
         # Parse all .albumprops files
         for albumprops_path in albumprops_files:
@@ -1543,7 +1544,7 @@ class FolderAlbumCreator():
         return albumprops_path_to_model_dict
 
     @staticmethod
-    def get_album_properties_with_inheritance(album_name: str, album_path: str, root_path: str, albumprops_cache_param: dict) -> AlbumModel:
+    def get_album_properties_with_inheritance(album_name: str, album_path: str, root_path: str, albumprops_cache_param: dict[str, AlbumModel]) -> AlbumModel:
         """
         Gets the album properties for an album, applying inheritance from parent folders.
 
@@ -1557,7 +1558,7 @@ class FolderAlbumCreator():
         """
         # Check if the album directory has its own .albumprops file
         albumprops_path = os.path.join(album_path, FolderAlbumCreator.ALBUMPROPS_FILE_NAME)
-        local_album_model = None
+        local_album_model: Optional[AlbumModel] = None
 
         logging.debug("Checking for album properties: album_path=%s, albumprops_path=%s", album_path, albumprops_path)
 
@@ -1593,7 +1594,7 @@ class FolderAlbumCreator():
 
 
     @staticmethod
-    def __parse_separated_string(separated_string: str, separator: str) -> Tuple[str, str]:
+    def __parse_separated_string(separated_string: str, separator: str) -> tuple[str, str]:
         """
         Parse a key, value pair, separated by the provided separator.
 
@@ -1614,7 +1615,7 @@ class FolderAlbumCreator():
         if len(items) > 1:
             # rejoin the rest:
             value = separator.join(items[1:])
-        return (key, value)
+        return key, value
 
     # pylint: disable=R0912
     def create_album_name(self, asset_path_chunks: list[str], album_separator: str, album_name_postprocess_regex: list) -> str:
@@ -1778,7 +1779,7 @@ class FolderAlbumCreator():
         """
         for _ in albums_list:
             if _.album_name == album_name:
-                return _.id
+                return str(_.id)
         return None
 
     def check_for_and_remove_live_photo_video_components(self, asset_list: list[AssetResponseDto], is_not_in_album: bool, find_archived: bool) -> list[AssetResponseDto]:
@@ -1800,7 +1801,7 @@ class FolderAlbumCreator():
         """
         logging.info("Checking for live photo video components")
         # Filter for all quicktime assets
-        asset_list_mov = [asset for asset in asset_list if 'video' in asset.original_mime_type]
+        asset_list_mov = [asset for asset in asset_list if asset.original_mime_type == 'video']
 
         if len(asset_list_mov) == 0:
             logging.debug("No live photo video components found")
@@ -1809,8 +1810,8 @@ class FolderAlbumCreator():
         # If either is not True, we need to fetch all assets
         if is_not_in_album or not find_archived:
             logging.debug("Fetching all assets for live photo video component check")
-            full_asset_list = self.api_client.fetch_assets_with_options(MetadataSearchDto(isNotInAlbum=False))
-            full_asset_list += self.api_client.fetch_assets_with_options(MetadataSearchDto(isNotInAlbum=False, visibility=AssetVisibility.ARCHIVE))
+            full_asset_list = self.api_client.fetch_assets_with_options(MetadataSearchDto(is_not_in_album=False))
+            full_asset_list += self.api_client.fetch_assets_with_options(MetadataSearchDto(is_not_in_album=False, visibility=AssetVisibility.ARCHIVE))
         else:
             full_asset_list = asset_list
 
@@ -1846,10 +1847,10 @@ class FolderAlbumCreator():
                 if share_user_role_local is None:
                     share_user_role_local = self.config.share_role
 
-                album_share_with = {
-                    'user': share_user_name,
-                    'role': share_user_role_local
-                }
+                album_share_with = AlbumModel.ShareWith(
+                    user=share_user_name,
+                    role=share_user_role_local
+                )
                 album_model_to_update.share_with.append(album_share_with)
 
         # Thumbnail Setting
@@ -1871,7 +1872,7 @@ class FolderAlbumCreator():
             album_model_to_update.comments_and_likes_enabled = False
 
     # pylint: disable=R0914,R1702,R0915
-    def build_album_list(self, asset_list : list[AssetResponseDto], root_path_list : list[str], albumprops_cache_param: dict = None) -> dict[str, AlbumModel]:
+    def build_album_list(self, asset_list : list[AssetResponseDto], root_path_list : list[str], albumprops_cache_param: Optional[dict[str, AlbumModel]] = None) -> dict[str, AlbumModel]:
         """
         Builds a list of album models, enriched with assets assigned to each album.
         Returns a dict where the key is the album name and the value is the model.
@@ -2002,7 +2003,7 @@ class FolderAlbumCreator():
             self.api_client.delete_all_albums(self.config.visibility, self.config.delete_confirm)
             return
 
-        albumprops_cache = {}
+        albumprops_cache: Optional[dict[str, AlbumModel]] = None
         if self.config.read_album_properties:
             logging.debug("Albumprops: Finding, parsing and loading %s files with inheritance support", FolderAlbumCreator.ALBUMPROPS_FILE_NAME)
             albumprops_cache = self.build_albumprops_cache()
@@ -2053,7 +2054,7 @@ class FolderAlbumCreator():
                 if album.id and album.id not in albums_to_cleanup:
                     albums_to_cleanup[album.id] = album
             # pylint: disable=C0103
-            number_of_deleted_albums = self.api_client.cleanup_albums(albums_to_cleanup.values(), self.config.visibility, self.config.delete_confirm)
+            number_of_deleted_albums = self.api_client.cleanup_albums(list(albums_to_cleanup.values()), self.config.visibility, self.config.delete_confirm)
             logging.info("Deleted %d/%d albums", number_of_deleted_albums, len(albums_to_cleanup))
             return
 
@@ -2122,11 +2123,11 @@ class FolderAlbumCreator():
         if self.config.set_album_thumbnail == Configuration.ALBUM_THUMBNAIL_RANDOM_ALL:
             logging.info("Picking a new random thumbnail for all albums")
             albums = self.api_client.fetch_albums()
-            for album in albums:
-                album_info = self.api_client.fetch_album_info(album.id)
+            for a in albums:
+                album_info = self.api_client.fetch_album_info(a.id)
                 # Create album model for thumbnail randomization
-                album_model = AlbumModel(album['albumName'])
-                album_model.id = album.id
+                album_model = AlbumModel(a.album_name)
+                album_model.id = a.id
                 album_model.assets = album_info.assets
                 # Set thumbnail setting to 'random' in model
                 album_model.thumbnail_setting = 'random'
@@ -2157,11 +2158,11 @@ class FolderAlbumCreator():
             empty_album_count = 0
             # pylint: disable=C0103
             cleaned_album_count = 0
-            for album in albums:
-                if album['assetCount'] == 0:
+            for a in albums:
+                if a.asset_count == 0:
                     empty_album_count += 1
-                    logging.info("Deleting empty album %s", album['albumName'])
-                    if self.api_client.delete_album(album):
+                    logging.info("Deleting empty album %s", a.album_name)
+                    if self.api_client.delete_album(a.id):
                         cleaned_album_count += 1
             if empty_album_count > 0:
                 logging.info("Successfully deleted %d/%d empty albums!", cleaned_album_count, empty_album_count)
