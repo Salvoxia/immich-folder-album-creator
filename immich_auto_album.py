@@ -2277,45 +2277,45 @@ class AlbumCreatorLogFormatter(logging.Formatter):
         return logging.Formatter.format(self, record)
 
 
-# # Set up logging
-# handler = logging.StreamHandler()
-# formatter = AlbumCreatorLogFormatter('time="%(asctime)s" level=%(levelname)s msg="%(message)s"')
-# formatter.init_formatter(False)
-# handler.setFormatter(formatter)
-# # Initialize logging with default log level, we might have to log something when initializing the global configuration (which includes the log level we should use)
-# logging.basicConfig(level=Configuration.CONFIG_DEFAULTS["log_level"], handlers=[handler])
-# # Initialize global config
-# Configuration.init_global_config()
-# # Update log level with the level this configuration dictates
-# logging.getLogger().setLevel(Configuration.log_level)
-# if 'DEBUG' == Configuration.log_level:
-#     formatter.init_formatter(True)
+# Set up logging
+handler = logging.StreamHandler()
+formatter = AlbumCreatorLogFormatter('time="%(asctime)s" level=%(levelname)s msg="%(message)s"')
+formatter.init_formatter(False)
+handler.setFormatter(formatter)
+# Initialize logging with default log level, we might have to log something when initializing the global configuration (which includes the log level we should use)
+logging.basicConfig(level=Configuration.CONFIG_DEFAULTS["log_level"], handlers=[handler])
+# Initialize global config
+Configuration.init_global_config()
+# Update log level with the level this configuration dictates
+logging.getLogger().setLevel(Configuration.log_level)
+if 'DEBUG' == Configuration.log_level:
+    formatter.init_formatter(True)
 
 
-# is_docker = os.environ.get(ENV_IS_DOCKER, False)
+is_docker = os.environ.get(ENV_IS_DOCKER, False)
 
-# try:
-#     configs = Configuration.get_configurations()
-#     logging.info("Created %d configurations", len(configs))
-# except(HTTPError, ValueError, AssertionError) as e:
-#     logging.fatal(e.msg)
-#     sys.exit(1)
+try:
+    configs = Configuration.get_configurations()
+    logging.info("Created %d configurations", len(configs))
+except(HTTPError, ValueError, AssertionError) as e:
+    logging.fatal(e.msg)
+    sys.exit(1)
 
-# Configuration.log_debug_global()
+Configuration.log_debug_global()
 
-# for config in configs:
-#     try:
-#         folder_album_creator = FolderAlbumCreator(config)
+for config in configs:
+    try:
+        folder_album_creator = FolderAlbumCreator(config)
 
-#         processing_api_key = folder_album_creator.api_client.api_key[:5] + '*' * (len(folder_album_creator.api_client.api_key)-5)
-#         # Log the full API key when DEBUG logging is enabled
-#         if 'DEBUG' == config.log_level:
-#             processing_api_key = folder_album_creator.api_client.api_key
+        processing_api_key = folder_album_creator.api_client.api_key[:5] + '*' * (len(folder_album_creator.api_client.api_key)-5)
+        # Log the full API key when DEBUG logging is enabled
+        if 'DEBUG' == config.log_level:
+            processing_api_key = folder_album_creator.api_client.api_key
 
-#         logging.info("Processing API Key %s", processing_api_key)
-#         # Log config to DEBUG level
-#         config.log_debug()
-#         folder_album_creator.run()
-#     except (AlbumMergeError, AlbumModelValidationError, HTTPError, ValueError, AssertionError) as e:
-#         logging.fatal("Fatal error while processing configuration!")
-#         logging.fatal(e)
+        logging.info("Processing API Key %s", processing_api_key)
+        # Log config to DEBUG level
+        config.log_debug()
+        folder_album_creator.run()
+    except (AlbumMergeError, AlbumModelValidationError, HTTPError, ValueError, AssertionError) as e:
+        logging.fatal("Fatal error while processing configuration!")
+        logging.fatal(e)
