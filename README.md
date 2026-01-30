@@ -11,7 +11,7 @@ This is a python script designed to automatically create albums in [Immich](http
 This is useful for automatically creating and populating albums for external libraries.
 Using the provided docker image, the script can simply be added to the Immich compose stack and run along the rest of Immich's containers.
 
-**Compatibility:** Requires Immich server **v2.4.1+**. The script uses the [immich-py](https://github.com/timonrieger/immich-py) client for all API calls; supported server versions are listed in [immich-py COMPATIBILITY.csv](https://github.com/timonrieger/immich-py/blob/main/COMPATIBILITY.csv). Older versions of this script support Immich server versions **v1.106.1 - v2.4.0**.
+**Compatibility:** Requires Immich server **v2.4.1+**. The script uses the [immich-py](https://github.com/timonrieger/immich-py) client for all API calls; supported server versions are listed in [immich-py COMPATIBILITY.csv](https://github.com/timonrieger/immich-py/blob/main/COMPATIBILITY.csv). **Update [`requirements.txt`](requirements.txt)** so the `immich` package version matches your Immich server version (see COMPATIBILITY.csv for the mapping). Older versions of this script support Immich server versions **v1.106.1 - v2.4.0**.
 
 ### Disclaimer
 This script is mostly based on the following original script: [REDVM/immich_auto_album.py](https://gist.github.com/REDVM/d8b3830b2802db881f5b59033cf35702)
@@ -85,7 +85,7 @@ The list contains API key permissions valid for **Immich v2.1.0**.
     curl https://raw.githubusercontent.com/Salvoxia/immich-folder-album-creator/main/immich_auto_album.py -o immich_auto_album.py
     curl https://raw.githubusercontent.com/Salvoxia/immich-folder-album-creator/main/requirements.txt -o requirements.txt
     ```
-2. Install requirements
+2. Install requirements (ensure the `immich` version in `requirements.txt` matches your Immich server version—see [immich-py COMPATIBILITY.csv](https://github.com/timonrieger/immich-py/blob/main/COMPATIBILITY.csv))
     ```bash
     pip3 install -r requirements.txt
     ```
