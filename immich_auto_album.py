@@ -320,23 +320,23 @@ class ApiClient:
 
         return self.__request_api(lambda c: c.albums.get_album_info(id=album_id_for_info))
 
-    def delete_album(self, album_delete: AlbumResponseDto) -> bool:
+    def delete_album(self, album_delete_id: str) -> bool:
         """
-        Deletes an album identified by album_to_delete['id']
+        Deletes an album identified by album_delete_id
 
         If the album could not be deleted, logs an error.
 
-        :param album_delete: Dictionary with the following keys: `id`, `albumName`
+        :param album_delete_id: The ID of the album to delete
 
         :returns: True if the album was deleted, otherwise False
         :rtype: bool
         """
-        logging.debug("Deleting Album: Album ID = %s, Album Name = %s", album_delete['id'], album_delete['albumName'])
+        logging.debug("Deleting Album: Album ID = %s", album_delete_id)
         try:
-            self.__request_api(lambda c: c.albums.delete_album(id=album_delete['id']))
+            self.__request_api(lambda c: c.albums.delete_album(id=album_delete_id))
             return True
         except Exception as e:
-            logging.error("Error deleting album %s: %s", album_delete['albumName'], e)
+            logging.error("Error deleting album %s: %s", album_delete_id, e)
             return False
 
     def create_album(self, album_name_to_create: str) -> str:
@@ -543,16 +543,15 @@ class ApiClient:
 
         deleted_album_count = 0
         for album_to_delete in all_albums:
-            if self.delete_album(album_to_delete):
-                # If the archived flag is set it means we need to unarchived all images of deleted albums;
-                # In order to do so, we need to fetch all assets of the album we're going to delete
-                assets_in_deleted_album = []
-                if assets_visibility is not None:
-                    album_to_delete_info = self.fetch_album_info(album_to_delete.id)
-                    assets_in_deleted_album = album_to_delete_info.assets
+            # Fetch assets before delete so we can set visibility after; once deleted, album is gone
+            assets_in_deleted_album: list = []
+            if assets_visibility is not None:
+                album_to_delete_info = self.fetch_album_info(album_to_delete.id)
+                assets_in_deleted_album = album_to_delete_info.assets or []
+            if self.delete_album(album_to_delete.id):
                 logging.info("Deleted album %s", album_to_delete.album_name)
                 deleted_album_count += 1
-                if len(assets_in_deleted_album) > 0 and assets_visibility is not None:
+                if assets_in_deleted_album and assets_visibility is not None:
                     self.set_assets_visibility([asset['id'] for asset in assets_in_deleted_album], assets_visibility)
                     logging.info("Set visibility for %d assets to %s", len(assets_in_deleted_album), assets_visibility)
         logging.info("Deleted %d/%d albums", deleted_album_count, len(all_albums))
