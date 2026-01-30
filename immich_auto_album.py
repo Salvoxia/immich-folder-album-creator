@@ -6,8 +6,7 @@ from concurrent.futures import ThreadPoolExecutor
 from functools import partial
 from time import perf_counter
 import asyncio
-from token import OP
-from typing import Awaitable, Callable, Optional, Tuple, TypeVar, TypedDict
+from typing import Awaitable, Callable, Optional, Tuple, TypeVar
 import argparse
 import logging
 import sys
@@ -1150,7 +1149,7 @@ class Configuration():
         :returns: The original expression if it contained a slash or an asterisk, otherwise `**/*<expr>*/**`
         :rtype: str
         """
-        if not '/' in expr and not '*' in expr:
+        if '/' not in expr and '*' not in expr:
             glob_expr = f'**/*{expr}*/**'
             logging.debug("expanding %s to %s", expr, glob_expr)
             return glob_expr
