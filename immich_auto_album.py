@@ -5,9 +5,8 @@ from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial
 from time import perf_counter
-import warnings
 import asyncio
-from typing import Any, Awaitable, Callable, Optional, Tuple, TypeVar, TypedDict
+from typing import Awaitable, Callable, Optional, Tuple, TypeVar, TypedDict
 import argparse
 import logging
 import sys
@@ -19,13 +18,11 @@ import random
 from urllib.error import HTTPError
 import traceback
 
+import aiohttp
 from immich.client.generated import AddUsersDto, AlbumResponseDto, AlbumUserAddDto, AlbumUserRole, AssetBulkDeleteDto, AssetBulkUpdateDto, AssetResponseDto, AssetVisibility, BulkIdsDto, CreateAlbumDto, LibraryResponseDto, MetadataSearchDto, SearchResponseDto, ServerVersionResponseDto, UpdateAlbumDto, UpdateAlbumUserDto, UserResponseDto
 import regex
 import yaml
-
-import urllib3
-import requests
-from requests import Response
+from aiohttp import ClientSession, ClientTimeout
 
 from immich import AsyncClient
 from immich.client.generated.exceptions import ApiException
@@ -95,11 +92,6 @@ class ApiClient:
             'verify' : not self.insecure
         }
 
-        if self.insecure:
-            urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-        else:
-            warnings.resetwarnings()
-
         self.server_version = self.__fetch_server_version_safe()
         if self.server_version is None:
             raise AssertionError("Communication with Immich Server API failed! Make sure the API URL is correct and verify the API Key!")
@@ -146,7 +138,7 @@ class ApiClient:
         :raises: ApiException or Exception on failure.
         """
         async def _run() -> T:
-            async with AsyncClient(api_key=self.api_key, base_url=self.api_url) as client:
+            async with AsyncClient(api_key=self.api_key, base_url=self.api_url, http_client=ClientSession(timeout=ClientTimeout(connect=self.api_timeout, sock_read=self.api_timeout))) as client:
                 return await fn(client)
 
         try:
@@ -154,6 +146,10 @@ class ApiClient:
         except ApiException as e:
             msg = str(e.body) if e.body else "API error"
             logging.error("%s (status %s)", msg, e.status)
+            logging.debug(traceback.format_exc())
+            raise
+        except aiohttp.ServerTimeoutError as e:
+            logging.error("Server timeout error: %s", str(e).strip())
             logging.debug(traceback.format_exc())
             raise
         except Exception as e:
