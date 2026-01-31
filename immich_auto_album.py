@@ -17,12 +17,30 @@ from collections import OrderedDict, defaultdict
 import random
 from urllib.error import HTTPError
 import traceback
-
-from immichpy.client.generated import AddUsersDto, AlbumResponseDto, AlbumUserAddDto, AlbumUserRole, AssetBulkDeleteDto, AssetBulkUpdateDto, AssetOrder, AssetResponseDto, AssetVisibility, BulkIdsDto, CreateAlbumDto, LibraryResponseDto, MetadataSearchDto, SearchResponseDto, ServerVersionResponseDto, UpdateAlbumDto, UpdateAlbumUserDto, UserResponseDto
 import regex
 import yaml
 from aiohttp import ClientSession, ClientTimeout
 
+from immichpy.client.generated import (
+    AddUsersDto,
+    AlbumResponseDto,
+    AlbumUserAddDto,
+    AlbumUserRole,
+    AssetBulkDeleteDto,
+    AssetBulkUpdateDto,
+    AssetOrder,
+    AssetResponseDto,
+    AssetVisibility,
+    BulkIdsDto,
+    CreateAlbumDto,
+    LibraryResponseDto,
+    MetadataSearchDto,
+    SearchResponseDto,
+    ServerVersionResponseDto,
+    UpdateAlbumDto,
+    UpdateAlbumUserDto,
+    UserResponseDto,
+)
 from immichpy import AsyncClient
 from immichpy.client.generated.exceptions import ApiException
 
@@ -401,7 +419,6 @@ class ApiClient:
         :raises: Exception if the API call fails
         """
         self.__request_api(lambda c: c.albums.remove_user_from_album(id=album_id_to_unshare, user_id=unshare_user_id))
-        return None
 
     def update_album_share_user_role(self, album_id_to_share: str, share_user_id: str, share_user_role: AlbumUserRole) -> None:
         """
@@ -414,7 +431,6 @@ class ApiClient:
         :raises: Exception if the API call fails
         """
         self.__request_api(lambda c: c.albums.update_album_user(id=album_id_to_share, user_id=share_user_id, update_album_user_dto=UpdateAlbumUserDto(role=share_user_role)))
-        return None
 
     def share_album_with_user_and_role(self, album_id_to_share: str, user_ids_to_share_with: list[str], user_share_role: AlbumUserRole) -> None:
         """
@@ -427,9 +443,17 @@ class ApiClient:
         :raises: AssertionError if user_share_role contains an invalid value
         :raises: HTTPError if the API call fails
         """
-        self.__request_api(lambda c: c.albums.add_users_to_album(id=album_id_to_share, add_users_dto=AddUsersDto(albumUsers=[AlbumUserAddDto(userId=user_id, role=user_share_role) for user_id in user_ids_to_share_with])))
-        return None
-
+        self.__request_api(
+            lambda c: c.albums.add_users_to_album(
+                id=album_id_to_share,
+                add_users_dto=AddUsersDto(
+                    albumUsers=[
+                        AlbumUserAddDto(userId=user_id, role=user_share_role)
+                        for user_id in user_ids_to_share_with
+                    ]
+                ),
+            )
+        )
     def trigger_offline_asset_removal(self) -> None:
         """
         Synchronously deletes offline assets.
@@ -459,7 +483,6 @@ class ApiClient:
         """
 
         self.__request_api(lambda c: c.assets.delete_assets(asset_bulk_delete_dto=AssetBulkDeleteDto(ids=[asset.id for asset in assets_to_delete], force=force)))
-        return None
 
     def fetch_libraries(self) -> list[LibraryResponseDto]:
         """
@@ -480,7 +503,6 @@ class ApiClient:
         :raises: Exception if the API call fails
         """
         self.__request_api(lambda c: c.albums.update_album_info(id=thumbnail_album_id, update_album_dto=UpdateAlbumDto(albumThumbnailAssetId=thumbnail_asset_id)))
-        return None
 
     def update_album_properties(self, album_to_update: AlbumModel) -> None:
         """
@@ -498,7 +520,6 @@ class ApiClient:
         )
 
         self.__request_api(lambda c: c.albums.update_album_info(id=album_to_update.id, update_album_dto=data))
-        return None
 
     def set_assets_visibility(self, asset_ids_for_visibility: list[str], visibility_setting: AssetVisibility) -> None:
         """
@@ -510,7 +531,6 @@ class ApiClient:
         :raises: Exception if the API call fails
         """
         self.__request_api(lambda c: c.assets.update_assets(asset_bulk_update_dto=AssetBulkUpdateDto(ids=asset_ids_for_visibility, visibility=visibility_setting)))
-        return None
 
     def delete_all_albums(self, assets_visibility: AssetVisibility, force_delete: bool):
         """
