@@ -18,14 +18,13 @@ import random
 from urllib.error import HTTPError
 import traceback
 
-import aiohttp
-from immich.client.generated import AddUsersDto, AlbumResponseDto, AlbumUserAddDto, AlbumUserRole, AssetBulkDeleteDto, AssetBulkUpdateDto, AssetOrder, AssetResponseDto, AssetVisibility, BulkIdsDto, CreateAlbumDto, LibraryResponseDto, MetadataSearchDto, SearchResponseDto, ServerVersionResponseDto, UpdateAlbumDto, UpdateAlbumUserDto, UserResponseDto
+from immichpy.client.generated import AddUsersDto, AlbumResponseDto, AlbumUserAddDto, AlbumUserRole, AssetBulkDeleteDto, AssetBulkUpdateDto, AssetOrder, AssetResponseDto, AssetVisibility, BulkIdsDto, CreateAlbumDto, LibraryResponseDto, MetadataSearchDto, SearchResponseDto, ServerVersionResponseDto, UpdateAlbumDto, UpdateAlbumUserDto, UserResponseDto
 import regex
 import yaml
 from aiohttp import ClientSession, ClientTimeout
 
-from immich import AsyncClient
-from immich.client.generated.exceptions import ApiException
+from immichpy import AsyncClient
+from immichpy.client.generated.exceptions import ApiException
 
 # Script Constants
 # Environment variable to check if the script is running inside Docker
