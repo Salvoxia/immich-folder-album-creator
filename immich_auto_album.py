@@ -137,8 +137,12 @@ class ApiClient:
         :raises: ApiException or Exception on failure.
         """
         async def _run() -> T:
-            async with AsyncClient(api_key=self.api_key, base_url=self.api_url, http_client=ClientSession(timeout=ClientTimeout(connect=self.api_timeout, sock_read=self.api_timeout))) as client:
-                return await fn(client)
+            session = ClientSession(timeout=ClientTimeout(total=self.api_timeout))
+            try:
+                async with AsyncClient(api_key=self.api_key, base_url=self.api_url, http_client=session) as client:
+                    return await fn(client)
+            finally:
+                await session.close()
 
         try:
             return asyncio.run(_run())
