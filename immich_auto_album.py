@@ -6,7 +6,7 @@ from concurrent.futures import ThreadPoolExecutor
 from functools import partial
 from time import perf_counter
 import asyncio
-from typing import Awaitable, Callable, Optional, Tuple, TypeVar
+from typing import Awaitable, Callable, Optional, Tuple, TypeVar, Union
 import argparse
 import logging
 import sys
@@ -20,6 +20,7 @@ import traceback
 import regex
 import yaml
 from aiohttp import ClientSession, ClientTimeout
+import backoff
 
 from immichpy.client.generated import (
     AddUsersDto,
@@ -144,6 +145,18 @@ class ApiClient:
         except ValueError as e:
             raise ValueError("insecure argument must be a boolean!") from e
 
+    def _is_retryable_api_error(self, e: Union[ApiException, asyncio.TimeoutError]) -> bool:
+        """
+        Checks if the API error is retryable.
+
+        :param e: The API error to check
+        :returns: True if the API error is retryable, otherwise False
+        :rtype: bool
+        """
+        return isinstance(e, asyncio.TimeoutError) or (
+            isinstance(e, ApiException) and e.status in {429, 500, 502, 503, 504}
+        )
+
     def __request_api(self, fn: Callable[[AsyncClient], Awaitable[T]]) -> T:
         """
         Run an Immich client API call. Creates an AsyncClient with self.api_key and self.api_url,
@@ -154,7 +167,13 @@ class ApiClient:
         :returns: The API method return value.
         :raises: ApiException or Exception on failure.
         """
-        async def _run() -> T:
+        @backoff.on_exception(
+            backoff.expo,
+            (ApiException, asyncio.TimeoutError),
+            max_tries=self.max_retry_count,
+            giveup=lambda e: not self._is_retryable_api_error(e),
+        )
+        async def _run_with_retry() -> T:
             session = ClientSession(timeout=ClientTimeout(total=self.api_timeout))
             try:
                 async with AsyncClient(api_key=self.api_key, base_url=self.api_url, http_client=session) as client:
@@ -163,7 +182,7 @@ class ApiClient:
                 await session.close()
 
         try:
-            return asyncio.run(_run())
+            return asyncio.run(_run_with_retry())
         except ApiException as e:
             msg = str(e.body) if e.body else "API error"
             logging.error("%s (status %s)", msg, e.status)
