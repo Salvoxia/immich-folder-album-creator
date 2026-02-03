@@ -1,6 +1,5 @@
 urllib3
 pyyaml
-backoff==2.2.1
 regex==2024.11.6
 # check https://github.com/timonrieger/immichpy/blob/main/COMPATIBILITY.csv
 # for the exact version to use that supports the server version you are using
