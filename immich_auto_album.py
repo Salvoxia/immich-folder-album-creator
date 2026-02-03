@@ -43,6 +43,13 @@ from immichpy.client.generated import (
 )
 from immichpy import AsyncClient
 from immichpy.client.generated.exceptions import ApiException
+from tenacity import (
+    retry_if_exception,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_exponential,
+    AsyncRetrying,
+)
 
 # Script Constants
 # Environment variable to check if the script is running inside Docker
@@ -144,6 +151,18 @@ class ApiClient:
         except ValueError as e:
             raise ValueError("insecure argument must be a boolean!") from e
 
+    def _is_retryable(self, e: Exception) -> bool:
+        """
+        Checks if the exception is retryable.
+
+        :param e: The exception to check
+        :returns: True if the exception is retryable, otherwise False
+        :rtype: bool
+        """
+        return isinstance(e, asyncio.TimeoutError) or (
+            isinstance(e, ApiException) and e.status in {429, 500, 502, 503, 504}
+        )
+
     def __request_api(self, fn: Callable[[AsyncClient], Awaitable[T]]) -> T:
         """
         Run an Immich client API call. Creates an AsyncClient with self.api_key and self.api_url,
@@ -154,7 +173,7 @@ class ApiClient:
         :returns: The API method return value.
         :raises: ApiException or Exception on failure.
         """
-        async def _run() -> T:
+        async def call() -> T:
             session = ClientSession(timeout=ClientTimeout(total=self.api_timeout))
             try:
                 async with AsyncClient(api_key=self.api_key, base_url=self.api_url, http_client=session) as client:
@@ -162,8 +181,18 @@ class ApiClient:
             finally:
                 await session.close()
 
+        async def runner() -> T:
+            async for attempt in AsyncRetrying(
+                retry=retry_if_exception_type(Exception) & retry_if_exception(self._is_retryable),
+                wait=wait_exponential(multiplier=1, min=1, max=30),
+                stop=stop_after_attempt(self.max_retry_count),
+                reraise=True,
+            ):
+                with attempt:
+                    return await call()
+
         try:
-            return asyncio.run(_run())
+            return asyncio.run(runner())
         except ApiException as e:
             msg = str(e.body) if e.body else "API error"
             logging.error("%s (status %s)", msg, e.status)
