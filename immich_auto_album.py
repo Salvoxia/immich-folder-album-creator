@@ -1118,29 +1118,34 @@ class AlbumModel:
 
         :raises YAMLError: If the provided album properties file could not be found or parsed
         """
-        with open(album_properties_file_path, 'r', encoding="utf-8") as stream:
-            album_properties = yaml.safe_load(stream)
-            if album_properties:
-                album_props_template = AlbumModel(None)
-                album_props_template_vars = vars(album_props_template)
+        try:
+            with open(album_properties_file_path, 'r', encoding="utf-8") as stream:
+                album_properties = yaml.safe_load(stream)
+        except UnicodeDecodeError:
+            logging.warning("File '%s' is not UTF-8 encoded. Please save it as UTF-8.", album_properties_file_path)
+            raise
 
-                # Parse standard album properties
-                for album_prop_name in AlbumModel.ALBUM_PROPERTIES_VARIABLES:
-                    if album_prop_name in album_properties:
-                        album_props_template_vars[album_prop_name] = album_properties[album_prop_name]
+        if album_properties:
+            album_props_template = AlbumModel(None)
+            album_props_template_vars = vars(album_props_template)
 
-                # Parse inheritance properties
-                for inheritance_prop_name in AlbumModel.ALBUM_INHERITANCE_VARIABLES:
-                    if inheritance_prop_name in album_properties:
-                        album_props_template_vars[inheritance_prop_name] = album_properties[inheritance_prop_name]
+            # Parse standard album properties
+            for album_prop_name in AlbumModel.ALBUM_PROPERTIES_VARIABLES:
+                if album_prop_name in album_properties:
+                    album_props_template_vars[album_prop_name] = album_properties[album_prop_name]
 
-                # Backward compatibility, remove when archive is removed:
-                if album_props_template.archive is not None:
-                    logging.warning("Found deprecated property archive in %s! This will be removed in the future, use visibility: archive instead!", album_properties_file_path)
-                    if album_props_template.visibility is None:
-                        album_props_template.visibility = 'archive'
-                #  End backward compatibility
-                return album_props_template
+            # Parse inheritance properties
+            for inheritance_prop_name in AlbumModel.ALBUM_INHERITANCE_VARIABLES:
+                if inheritance_prop_name in album_properties:
+                    album_props_template_vars[inheritance_prop_name] = album_properties[inheritance_prop_name]
+
+            # Backward compatibility, remove when archive is removed:
+            if album_props_template.archive is not None:
+                logging.warning("Found deprecated property archive in %s! This will be removed in the future, use visibility: archive instead!", album_properties_file_path)
+                if album_props_template.visibility is None:
+                    album_props_template.visibility = 'archive'
+            #  End backward compatibility
+            return album_props_template
 
         return None
 
