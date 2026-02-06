@@ -3,10 +3,11 @@
 # pylint: disable=too-many-lines
 from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
 from functools import partial
 from time import perf_counter
 import asyncio
-from typing import Awaitable, Callable, Optional, Tuple, TypeVar
+from typing import Awaitable, Callable, Optional, Tuple, TypedDict, TypeVar
 import argparse
 import logging
 import sys
@@ -754,7 +755,7 @@ class AlbumModel:
     # List of class attribute names that are relevant for inheritance
     ALBUM_INHERITANCE_VARIABLES = ['inherit', 'inherit_properties']
 
-    class ShareWith:
+    class ShareWith(TypedDict):
         user: str
         role: Optional[AlbumUserRole]
 
@@ -931,7 +932,7 @@ class AlbumModel:
                     user_roles[current_user.user] = current_user.role
 
         # Convert back to list format
-        return [AlbumModel.ShareWith(user=user, role=role) for user, role in user_roles.items()]
+        return [{"user": user, "role": role} for user, role in user_roles.items()]
 
     def get_final_name(self) -> str:
         """
@@ -1898,10 +1899,10 @@ class FolderAlbumCreator():
                 if share_user_role_local is None:
                     share_user_role_local = self.config.share_role
 
-                album_share_with = AlbumModel.ShareWith(
-                    user=share_user_name,
-                    role=share_user_role_local
-                )
+                album_share_with: AlbumModel.ShareWith = {
+                    "user": share_user_name,
+                    "role": share_user_role_local
+                }
                 album_model_to_update.share_with.append(album_share_with)
 
         # Thumbnail Setting
