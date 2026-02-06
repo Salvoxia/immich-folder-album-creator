@@ -601,7 +601,7 @@ class ApiClient:
                 deleted_album_count += 1
                 if assets_in_deleted_album and assets_visibility is not None:
                     self.set_assets_visibility([str(asset.id) for asset in assets_in_deleted_album], assets_visibility)
-                    logging.info("Set visibility for %d assets to %s", len(assets_in_deleted_album), assets_visibility)
+                    logging.info("Set visibility for %d assets to %s", len(assets_in_deleted_album), assets_visibility.value)
         logging.info("Deleted %d/%d albums", deleted_album_count, len(all_albums))
 
     def cleanup_albums(self, albums_to_delete: list[AlbumModel], asset_visibility: AssetVisibility, force_delete: bool) -> int:
@@ -647,7 +647,7 @@ class ApiClient:
                 # Archive flag is set, so we need to unarchive assets
                 if asset_visibility is not None and len(assets_in_album) > 0:
                     self.set_assets_visibility([asset.id for asset in assets_in_album], asset_visibility)
-                    logging.info("Set visibility for %d assets to %s", len(assets_in_album), asset_visibility)
+                    logging.info("Set visibility for %d assets to %s", len(assets_in_album), asset_visibility.value)
         return cpt
 
     # Disable pylint for too many branches
@@ -701,9 +701,9 @@ class ApiClient:
             elif album_share_info[user_to_share_with] != share_role_expected:
                 try:
                     self.update_album_share_user_role(album_to_share.id, user_to_share_with, share_role_expected)
-                    logging.debug("Sharing: Updated share role for user %s in album %s to %s", user_to_share_with, album_to_share.get_final_name(), share_role_expected)
+                    logging.debug("Sharing: Updated share role for user %s in album %s to %s", user_to_share_with, album_to_share.get_final_name(), share_role_expected.value)
                 except HTTPError as ex:
-                    logging.warning("Sharing: Error updating share role for user %s in album %s to %s", user_to_share_with, album_to_share.get_final_name(), share_role_expected)
+                    logging.warning("Sharing: Error updating share role for user %s in album %s to %s", user_to_share_with, album_to_share.get_final_name(), share_role_expected.value)
                     logging.debug("Error: %s", ex)
 
         # Now check if the album is shared with any users it should not be shared with
@@ -724,9 +724,9 @@ class ApiClient:
                 # Convert list of user dicts to list of user IDs
                 try:
                     self.share_album_with_user_and_role(album_to_share.id, share_users, share_role_group)
-                    logging.debug("Album %s shared with users IDs %s in role: %s", album_to_share.get_final_name(), share_users, share_role_group)
+                    logging.debug("Album %s shared with users IDs %s in role: %s", album_to_share.get_final_name(), share_users, share_role_group.value)
                 except (AssertionError, HTTPError) as ex:
-                    logging.warning("Error sharing album %s for users %s in role %s", album_to_share.get_final_name(), share_users, share_role_group)
+                    logging.warning("Error sharing album %s for users %s in role %s", album_to_share.get_final_name(), share_users, share_role_group.value)
                     logging.debug("Album share error: %s", ex)
 
 class AlbumMergeError(Exception):
@@ -2141,7 +2141,7 @@ class FolderAlbumCreator():
             # Set assets visibility
             if album.visibility is not None:
                 self.api_client.set_assets_visibility(assets_added, album.visibility)
-                logging.info("Set visibility for %d assets to %s", len(assets_added), album.visibility)
+                logging.info("Set visibility for %d assets to %s", len(assets_added), album.visibility.value)
 
             # Update album properties depending on mode or if newly created
             if self.config.update_album_props_mode > 0 or (album in created_albums):
