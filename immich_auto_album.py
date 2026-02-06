@@ -3,7 +3,6 @@
 # pylint: disable=too-many-lines
 from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
 from functools import partial
 from time import perf_counter
 import asyncio
