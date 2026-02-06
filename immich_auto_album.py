@@ -1901,7 +1901,7 @@ class FolderAlbumCreator():
 
                 album_share_with: AlbumModel.ShareWith = {
                     "user": share_user_name,
-                    "role": share_user_role_local
+                    "role": AlbumUserRole(share_user_role_local)
                 }
                 album_model_to_update.share_with.append(album_share_with)
 
