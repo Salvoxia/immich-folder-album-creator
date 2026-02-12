@@ -6,7 +6,8 @@ from concurrent.futures import ThreadPoolExecutor
 from functools import partial
 from time import perf_counter
 import asyncio
-from typing import Awaitable, Callable, Optional, Tuple, TypedDict, TypeVar
+from dataclasses import dataclass
+from typing import Awaitable, Callable, Optional, Tuple, TypeVar
 import argparse
 import logging
 import sys
@@ -754,9 +755,10 @@ class AlbumModel:
     # List of class attribute names that are relevant for inheritance
     ALBUM_INHERITANCE_VARIABLES = ['inherit', 'inherit_properties']
 
-    class ShareWith(TypedDict):
+    @dataclass
+    class ShareWith:
         user: str
-        role: Optional[AlbumUserRole]
+        role: Optional[AlbumUserRole] = None
 
     def __init__(self, name : str):
         # The album ID, set after it was created
@@ -931,7 +933,7 @@ class AlbumModel:
                     user_roles[current_user.user] = current_user.role
 
         # Convert back to list format
-        return [{"user": user, "role": role} for user, role in user_roles.items()]
+        return [AlbumModel.ShareWith(user=user, role=role) for user, role in user_roles.items()]
 
     def get_final_name(self) -> str:
         """
@@ -971,7 +973,11 @@ class AlbumModel:
             # Parse standard album properties
             for album_prop_name in AlbumModel.ALBUM_PROPERTIES_VARIABLES:
                 if album_prop_name in album_properties:
-                    album_props_template_vars[album_prop_name] = album_properties[album_prop_name]
+                    value = album_properties[album_prop_name]
+                    # Convert raw dicts from YAML to ShareWith dataclass instances
+                    if album_prop_name == 'share_with' and isinstance(value, list):
+                        value = [AlbumModel.ShareWith(**entry) if isinstance(entry, dict) else entry for entry in value]
+                    album_props_template_vars[album_prop_name] = value
 
             # Parse inheritance properties
             for inheritance_prop_name in AlbumModel.ALBUM_INHERITANCE_VARIABLES:
@@ -1898,11 +1904,9 @@ class FolderAlbumCreator():
                 if share_user_role_local is None:
                     share_user_role_local = self.config.share_role
 
-                album_share_with: AlbumModel.ShareWith = {
-                    "user": share_user_name,
-                    "role": AlbumUserRole(share_user_role_local)
-                }
-                album_model_to_update.share_with.append(album_share_with)
+                album_model_to_update.share_with.append(
+                    AlbumModel.ShareWith(user=share_user_name, role=AlbumUserRole(share_user_role_local))
+                )
 
         # Thumbnail Setting
         if self.config.set_album_thumbnail:
