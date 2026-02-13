@@ -1,4 +1,8 @@
-requests
 urllib3
 pyyaml
 regex==2024.11.6
+tenacity>=9.0.0,<10.0.0
+# check https://github.com/timonrieger/immichpy/blob/main/COMPATIBILITY.csv
+# for the exact version to use that supports the server version you are using
+# 1.6.5 supports server version 2.4.1+
+immichpy==1.6.5

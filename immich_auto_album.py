@@ -5,29 +5,58 @@ from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial
 from time import perf_counter
-import warnings
-from typing import Tuple
+import asyncio
+from dataclasses import dataclass
+from typing import Awaitable, Callable, Optional, Tuple, TypeVar
 import argparse
 import logging
 import sys
 import fnmatch
 import os
 import datetime
-from collections import OrderedDict
+from collections import OrderedDict, defaultdict
 import random
 from urllib.error import HTTPError
 import traceback
-
 import regex
 import yaml
+from aiohttp import ClientSession, ClientTimeout
 
-import urllib3
-import requests
-from requests import Response
+from immichpy.client.generated import (
+    AddUsersDto,
+    AlbumResponseDto,
+    AlbumUserAddDto,
+    AlbumUserRole,
+    AssetBulkDeleteDto,
+    AssetBulkUpdateDto,
+    AssetOrder,
+    AssetResponseDto,
+    AssetVisibility,
+    BulkIdsDto,
+    CreateAlbumDto,
+    LibraryResponseDto,
+    MetadataSearchDto,
+    SearchResponseDto,
+    ServerVersionResponseDto,
+    UpdateAlbumDto,
+    UpdateAlbumUserDto,
+    UserResponseDto,
+)
+from immichpy import AsyncClient
+from immichpy.client.generated.exceptions import ApiException
+from tenacity import (
+    retry_if_exception,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_exponential,
+    AsyncRetrying,
+)
 
 # Script Constants
 # Environment variable to check if the script is running inside Docker
 ENV_IS_DOCKER = "IS_DOCKER"
+
+T = TypeVar("T")
 
 # pylint: disable=R0902,R0904
 class ApiClient:
@@ -49,7 +78,7 @@ class ApiClient:
     THREADS_MAX = 20
 
     # List of allowed share user roles
-    SHARE_ROLES = ["editor", "viewer"]
+    SHARE_ROLES = [AlbumUserRole.EDITOR, AlbumUserRole.VIEWER]
 
     def __init__(self, api_url : str, api_key : str, **kwargs: dict):
         """
@@ -88,18 +117,9 @@ class ApiClient:
             'verify' : not self.insecure
         }
 
-        if self.insecure:
-            urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-        else:
-            warnings.resetwarnings()
-
         self.server_version = self.__fetch_server_version_safe()
         if self.server_version is None:
             raise AssertionError("Communication with Immich Server API failed! Make sure the API URL is correct and verify the API Key!")
-
-        # Check version
-        if self.server_version ['major'] == 1 and self.server_version  ['minor'] < 106:
-            raise AssertionError("This script only works with Immich Server v1.106.0 and newer! Update Immich Server or use script version 0.8.1!")
 
     def __validate_config(self):
         """
@@ -132,106 +152,98 @@ class ApiClient:
         except ValueError as e:
             raise ValueError("insecure argument must be a boolean!") from e
 
-    def __request_api(self, http_method: str, endpoint: str, body: any = None, no_retries: bool = False) -> Response:
+    def _is_retryable(self, e: Exception) -> bool:
         """
-        Performs an HTTP request using `http_method` to `endpoint`, sending headers `self.request_args` and `body` as payload.  
-        Uses `self.api_timeout` as a timeout and respects `self.max_retry_count` on timeout if `not_retries` is not `True`. 
-        If the HTTP request fails for any other reason than a timeout, no retries are performed.
+        Checks if the exception is retryable.
 
-        :param http_method: The HTTP method to send the request with, must be one of `GET`, `POST`, `PUT`, `DELETE`, `HEAD`, `CONNECT`, `OPTIONS`, `TRACE` or `PATCH`.
-        :param endpoint: The URL to request
-        :param body: The request body to send. Defaults to an empty dict.
-        :param no_retries: Flag indicating whether to fail immediately on request timeout
-
-        :returns: The HTTP response
-        :raises: HTTPError if the request failed (timeouts only if occurred too many times)
+        :param e: The exception to check
+        :returns: True if the exception is retryable, otherwise False
+        :rtype: bool
         """
+        return isinstance(e, asyncio.TimeoutError) or (
+            isinstance(e, ApiException) and e.status in {429, 500, 502, 503, 504}
+        )
 
-        http_method_function = getattr(requests, http_method)
-        assert http_method_function is not None
+    def __request_api(self, fn: Callable[[AsyncClient], Awaitable[T]]) -> T:
+        """
+        Run an Immich client API call. Creates an AsyncClient with self.api_key and self.api_url,
+        passes it to fn, runs the returned awaitable, and handles ApiException and generic
+        exceptions (log and re-raise). Return type is inferred from the callable.
 
-        if body is None:
-            body = {}
-        number_of_retries : int = 0
-        ex = None
-        while number_of_retries == 0 or ( not no_retries and number_of_retries <= self.max_retry_count ):
+        :param fn: Callable that receives the AsyncClient and returns an awaitable (e.g. lambda c: c.server.get_server_version()).
+        :returns: The API method return value.
+        :raises: ApiException or Exception on failure.
+        """
+        async def call() -> T:
+            session = ClientSession(timeout=ClientTimeout(total=self.api_timeout))
             try:
-                return http_method_function(endpoint, **self.request_args, json=body , timeout=self.api_timeout)
-            except (requests.exceptions.Timeout, urllib3.exceptions.ReadTimeoutError, requests.exceptions.ConnectionError) as e:
-                # either not a ConnectionError or a ConectionError caused by ReadTimeoutError
-                if not isinstance(e, requests.exceptions.ConnectionError) or (len(e.args) > 0 and isinstance(e.args[0], urllib3.exceptions.ReadTimeoutError)):
-                    ex = e
-                    number_of_retries += 1
-                    if number_of_retries > self.max_retry_count:
-                        raise e
-                    logging.warning("Request to %s timed out, retry %s...", endpoint, number_of_retries)
-                else:
-                    raise e
-        # this point should not be reached
-        raise ex
+                async with AsyncClient(api_key=self.api_key, base_url=self.api_url, http_client=session) as client:
+                    return await fn(client)
+            finally:
+                await session.close()
 
-    @staticmethod
-    def __check_api_response(response: requests.Response) -> None:
-        """
-        Checks the HTTP return code for the provided response and
-        logs any errors before raising an HTTPError
+        async def runner() -> T:
+            async for attempt in AsyncRetrying(
+                retry=retry_if_exception_type(Exception) & retry_if_exception(self._is_retryable),
+                wait=wait_exponential(multiplier=1, min=1, max=30),
+                stop=stop_after_attempt(self.max_retry_count),
+                reraise=True,
+            ):
+                with attempt:
+                    return await call()
 
-        :param response: A list of asset IDs to archive
-        :raises: HTTPError if the API call fails
-        """
         try:
-            response.raise_for_status()
-        except HTTPError:
-            if response.json():
-                logging.error("Error in API call: %s", response.json())
-            else:
-                logging.error("API response did not contain a payload")
-        response.raise_for_status()
+            return asyncio.run(runner())
+        except ApiException as e:
+            msg = str(e.body) if e.body else "API error"
+            logging.error("%s (status %s)", msg, e.status)
+            logging.debug(traceback.format_exc())
+            raise
+        except asyncio.TimeoutError as e:
+            logging.error("Timeout error: %s", str(e).strip())
+            logging.debug(traceback.format_exc())
+            raise
+        except Exception as e:
+            logging.error("Unexpected error: %s", str(e).strip())
+            logging.debug(traceback.format_exc())
+            raise
 
-    def fetch_server_version(self) -> dict:
+    def fetch_server_version(self) -> ServerVersionResponseDto:
         """
         Fetches the API version from the immich server.
 
         If the API endpoint for getting the server version cannot be reached,
         raises HTTPError
 
-        :returns: Dictionary with keys `major`, `minor`, `patch`
-        :rtype: dict
-        :raises ConnectionError: If the connection to the API server cannot be establisehd
-        :raises JSONDecodeError: If the API response cannot be parsed
-        :raises ValueError: If the API response is malformed
+        :returns: ServerVersionResponseDto
+        :rtype: ServerVersionResponseDto
+        :raises ValueError: If the server version is not valid
+        :raises ApiException: If the API call fails
         """
-        api_endpoint = f'{self.api_url}server/version'
-        r = self.__request_api('get', api_endpoint, self.request_args)
-        # The API endpoint changed in Immich v1.118.0, if the new endpoint
-        # was not found try the legacy one
-        if r.status_code == 404:
-            api_endpoint = f'{self.api_url}server-info/version'
-            r = self.__request_api('get', api_endpoint, self.request_args)
-
-        if r.status_code == 200:
-            server_version = r.json()
-            try:
-                assert server_version['major'] is not None
-                assert server_version['minor'] is not None
-                assert server_version['patch'] is not None
-            except AssertionError as e:
-                raise ValueError from e
-            logging.info("Detected Immich server version %s.%s.%s", server_version['major'], server_version['minor'], server_version['patch'])
-            return server_version
-        return None
+        server_version = self.__request_api(lambda c: c.server.get_server_version())
+        try:
+            assert server_version.major is not None
+            assert server_version.minor is not None
+            assert server_version.patch is not None
+        except AssertionError as e:
+            raise ValueError from e
+        logging.info(
+            "Detected Immich server version %s.%s.%s",
+            server_version.major, server_version.minor, server_version.patch,
+        )
+        return server_version
 
     # pylint: disable=W0718
     # Catching too general exception Exception (broad-exception-caught
     # That's the whole point of this method
-    def __fetch_server_version_safe(self) -> dict:
+    def __fetch_server_version_safe(self) -> Optional[ServerVersionResponseDto]:
         """
         Fetches the API version from the Immich server, suppressing any raised errors.
         On error, an error message is getting logged to ERRRO level, and the exception stacktrace
         is logged to DEBUG level.
 
-        :returns: Dictionary with keys `major`, `minor`, `patch` or None in case of an error
-        :rtype: dict
+        :returns: ServerVersionResponseDto or None in case of an error
+        :rtype: ServerVersionResponseDto
         """
         try:
             return self.fetch_server_version()
@@ -243,7 +255,7 @@ class ApiClient:
         return None
 
 
-    def fetch_assets(self, is_not_in_album: bool, visibility_options: list[str]) -> list[dict]:
+    def fetch_assets(self, is_not_in_album: bool, visibility_options: list[AssetVisibility]) -> list[AssetResponseDto]:
         """
         Fetches assets from the Immich API.
 
@@ -254,20 +266,17 @@ class ApiClient:
                 of an album or not. If set to False, will find images in albums and not part of albums
         :param visibility_options: A list of visibility options to find and return assets with
         :returns: An array of asset objects
-        :rtype: list[dict]
+        :rtype: list[AssetResponseDto]
         """
-        if self.server_version['major'] == 1 and self.server_version['minor'] < 133:
-            return self.fetch_assets_with_options({'isNotInAlbum': is_not_in_album, 'withArchived': 'archive' in visibility_options})
-
-        asset_list = self.fetch_assets_with_options({'isNotInAlbum': is_not_in_album})
+        asset_list = self.fetch_assets_with_options(MetadataSearchDto(is_not_in_album=is_not_in_album))
         for visiblity_option in visibility_options:
             # Do not fetch agin for 'timeline', that's the default!
             if visiblity_option != 'timeline':
-                asset_list += self.fetch_assets_with_options({'isNotInAlbum': is_not_in_album, 'visibility': visiblity_option})
+                asset_list += self.fetch_assets_with_options(MetadataSearchDto(is_not_in_album=is_not_in_album, visibility=visiblity_option))
         return asset_list
 
     # pylint: disable=R0914
-    def fetch_assets_with_options(self, search_options: dict[str]) -> list[dict]:
+    def fetch_assets_with_options(self, search_options: MetadataSearchDto) -> list[AssetResponseDto]:
         """
         Fetches assets from the Immich API using specific search options.
         The search options directly correspond to the body used for the search API request.
@@ -275,27 +284,26 @@ class ApiClient:
 
         :param search_options: Dictionary containing options to pass to the search/metadata API endpoint
         :returns: An array of asset objects
-        :rtype: list[dict]
+        :rtype: list[AssetResponseDto]
         """
-        body = dict(search_options)
-        assets_found = []
+        assets_found: list[AssetResponseDto] = []
         # prepare request body
 
         # This API call allows a maximum page size of 1000
         number_of_assets_to_fetch_per_request_search = min(1000, self.fetch_chunk_size)
-        body['size'] = number_of_assets_to_fetch_per_request_search
+        search_options.size = number_of_assets_to_fetch_per_request_search
         # Initial API call, let's fetch our first chunk
         page = 1
         # Record time when we started fetching
         start_time = perf_counter()
-        page_fetched, response_json = self.__fetch_asset_chunk(body, page)
-        assets_received = response_json['assets']['items']
+        page_fetched, response = self.__fetch_asset_chunk(search_options, page)
+        assets_received = response.assets.items
         assets_found = assets_found + assets_received
         logging.debug("Received %s assets with chunk %s", len(assets_received), page_fetched)
 
         page += 1
         # Create a callable with the static arguments already set, we're going to iterate over the page to fetch only.
-        partial_fetch_asset_chunk = partial(self.__fetch_asset_chunk, body)
+        partial_fetch_asset_chunk = partial(self.__fetch_asset_chunk, search_options)
         # If we got a full chunk size back, let's perform subsequent calls until we get less than a full chunk size
         asset_count_received_with_chunk = len(assets_received)
         while asset_count_received_with_chunk == number_of_assets_to_fetch_per_request_search:
@@ -305,7 +313,7 @@ class ApiClient:
                 results = exe.map(partial_fetch_asset_chunk, pages_to_fetch_in_parallel)
 
             for page_fetched, result in results:
-                assets_received = result['assets']['items']
+                assets_received = result.assets.items
                 # Remember the minimum number of assets received with any chunk; if there is a chunk with
                 # less than our chunk size we know we fetched everything.
                 asset_count_received_with_chunk = min(asset_count_received_with_chunk, len(assets_received))
@@ -321,75 +329,61 @@ class ApiClient:
         logging.info("Fetching %s assets with %s threads took %s s", len(assets_found), self.threads, round(end_time - start_time, 2))
         return assets_found
 
-    def __fetch_asset_chunk(self, search_options: dict[str], page: int) -> Tuple[int, dict]:
+    def __fetch_asset_chunk(self, search_options: MetadataSearchDto, page: int) -> Tuple[int, SearchResponseDto]:
         """
         Fetches a single page of assets from the Immich API using specific search options.
         
-        :param search_options: Dictionary containing options to pass to the search/metadata API endpoint
+        :param search_options: MetadataSearchDto containing options to pass to the search/metadata API endpoint
         :param page: The result page to fetch
-        :returns: A tuple with the fetched page as first argument and the returned JSON as second argument
-        :rtype: Tuple[int, dict]
+        :returns: A tuple with the fetched page as first argument and the returned SearchResponseDto as second argument
+        :rtype: Tuple[int, SearchResponseDto]
         """
 
-        # copy search options, since we are going to inser the page number
-        body = dict(search_options)
-        body['page'] = str(page)
-        logging.debug("requesting %s", body)
-        r = self.__request_api('post', self.api_url+'search/metadata', body)
-        r.raise_for_status()
+        # copy search options, since we are going to insert the page number
+        metadata_search_dto = search_options.model_copy(update={"page": page})
+        logging.debug("requesting %s", metadata_search_dto)
+        r = self.__request_api(lambda c: c.search.search_assets(metadata_search_dto))
 
-        return (page, r.json())
+        return (page, r)
 
-    def fetch_albums(self) -> list[dict]:
+    def fetch_albums(self) -> list[AlbumResponseDto]:
         """
         Fetches albums from the Immich API
         
         :returns: A list of album objects
-        :rtype: list[dict]
+        :rtype: list[AlbumResponseDto]
         """
+        return self.__request_api(lambda c: c.albums.get_all_albums())
 
-        api_endpoint = 'albums'
-
-        r = self.__request_api('get', self.api_url+api_endpoint)
-        self.__check_api_response(r)
-        return r.json()
-
-    def fetch_album_info(self, album_id_for_info: str) -> dict:
+    def fetch_album_info(self, album_id_for_info: str) -> AlbumResponseDto:
         """
         Fetches information about a specific album
 
         :param album_id_for_info: The ID of the album to fetch information for
         
-        :returns: A dict containing album information
-        :rtype: dict
+        :returns: A AlbumResponseDto containing album information
+        :rtype: AlbumResponseDto
         """
 
-        api_endpoint = f'albums/{album_id_for_info}'
+        return self.__request_api(lambda c: c.albums.get_album_info(id=album_id_for_info))
 
-        r = self.__request_api('get', self.api_url+api_endpoint)
-        self.__check_api_response(r)
-        return r.json()
-
-    def delete_album(self, album_delete: dict) -> bool:
+    def delete_album(self, album_delete_id: str) -> bool:
         """
-        Deletes an album identified by album_to_delete['id']
+        Deletes an album identified by album_delete_id
 
         If the album could not be deleted, logs an error.
 
-        :param album_delete: Dictionary with the following keys: `id`, `albumName`
+        :param album_delete_id: The ID of the album to delete
 
         :returns: True if the album was deleted, otherwise False
         :rtype: bool
         """
-        api_endpoint = 'albums'
-
-        logging.debug("Deleting Album: Album ID = %s, Album Name = %s", album_delete['id'], album_delete['albumName'])
-        r = self.__request_api('delete', self.api_url+api_endpoint+'/'+album_delete['id'])
+        logging.debug("Deleting Album: Album ID = %s", album_delete_id)
         try:
-            self.__check_api_response(r)
+            self.__request_api(lambda c: c.albums.delete_album(id=album_delete_id))
             return True
-        except HTTPError:
-            logging.error("Error deleting album %s: %s", album_delete['albumName'], r.reason)
+        except Exception as e:
+            logging.error("Error deleting album %s: %s", album_delete_id, e)
             return False
 
     def create_album(self, album_name_to_create: str) -> str:
@@ -399,21 +393,13 @@ class ApiClient:
 
         :param album_name_to_create: Name of the album to create
 
-        :returns: True if the album was deleted, otherwise False
+        :returns: The ID of the created album
         :rtype: str
         
         :raises: Exception if the API call failed
         """
 
-        api_endpoint = 'albums'
-
-        data = {
-            'albumName': album_name_to_create
-        }
-        r = self.__request_api('post', self.api_url+api_endpoint, data)
-        self.__check_api_response(r)
-
-        return r.json()['id']
+        return self.__request_api(lambda c: c.albums.create_album(CreateAlbumDto(albumName=album_name_to_create))).id
 
     def add_assets_to_album(self, assets_add_album_id: str, asset_list: list[str]) -> list[str]:
         """
@@ -431,41 +417,27 @@ class ApiClient:
         :returns: The asset UUIDs that were actually added to the album (not respecting assets that were already part of the album)
         :rtype: list[str]
         """
-        api_endpoint = 'albums'
-
-        # Divide our assets into chunks of self.chunk_size,
-        # So the API can cope
-        assets_chunked = list(Utils.divide_chunks(asset_list, self.chunk_size))
-        asset_list_added = []
-
-        for assets_chunk in assets_chunked:
-            data = {'ids':assets_chunk}
-            r = self.__request_api('put', self.api_url+api_endpoint+f'/{assets_add_album_id}/assets', data)
-            self.__check_api_response(r)
-            response = r.json()
-
-            for res in response:
-                if not res['success']:
-                    if  res['error'] != 'duplicate':
-                        logging.warning("Error adding an asset to an album: %s", res['error'])
+        asset_list_added: list[str] = []
+        for assets_chunk in list(Utils.divide_chunks(asset_list, self.chunk_size)):
+            r = self.__request_api(lambda c: c.albums.add_assets_to_album(id=assets_add_album_id, bulk_ids_dto=BulkIdsDto(ids=assets_chunk)))
+            for res in r:
+                if not res.success:
+                    if  res.error != 'duplicate':
+                        logging.warning("Error adding an asset to an album: %s", res.error)
                 else:
-                    asset_list_added.append(res['id'])
+                    asset_list_added.append(res.id)
 
         return asset_list_added
 
-    def fetch_users(self) -> list[dict]:
+    def fetch_users(self) -> list[UserResponseDto]:
         """
         Queries and returns all users
         
         :returns: A list of user objects
-        :rtype: list[dict]
+        :rtype: list[UserResponseDto]
         """
 
-        api_endpoint = 'users'
-
-        r = self.__request_api('get', self.api_url+api_endpoint)
-        self.__check_api_response(r)
-        return r.json()
+        return self.__request_api(lambda c: c.users.search_users())
 
     def unshare_album_with_user(self, album_id_to_unshare: str, unshare_user_id: str) -> None:
         """
@@ -474,13 +446,11 @@ class ApiClient:
         :param album_id_to_unshare: The ID of the album to unshare
         :param unshare_user_id: The user ID to remove from the album's share list
         
-        :raises: HTTPError if the API call fails
+        :raises: Exception if the API call fails
         """
-        api_endpoint = f'albums/{album_id_to_unshare}/user/{unshare_user_id}'
-        r = self.__request_api('delete', self.api_url+api_endpoint)
-        self.__check_api_response(r)
+        self.__request_api(lambda c: c.albums.remove_user_from_album(id=album_id_to_unshare, user_id=unshare_user_id))
 
-    def update_album_share_user_role(self, album_id_to_share: str, share_user_id: str, share_user_role: str) -> None:
+    def update_album_share_user_role(self, album_id_to_share: str, share_user_id: str, share_user_role: AlbumUserRole) -> None:
         """
         Updates the user's share role for the provided album ID.
 
@@ -488,21 +458,11 @@ class ApiClient:
         :param share_user_id: The user ID to update the share role for
         :param share_user_role: The share role to update the user to
         
-        :raises: AssertionError if user_share_role contains an invalid value
-        :raises: HTTPError if the API call fails
+        :raises: Exception if the API call fails
         """
-        api_endpoint = f'albums/{album_id_to_share}/user/{share_user_id}'
+        self.__request_api(lambda c: c.albums.update_album_user(id=album_id_to_share, user_id=share_user_id, update_album_user_dto=UpdateAlbumUserDto(role=share_user_role)))
 
-        assert share_user_role in ApiClient.SHARE_ROLES
-
-        data = {
-            'role': share_user_role
-        }
-
-        r = self.__request_api('put', self.api_url+api_endpoint, data)
-        self.__check_api_response(r)
-
-    def share_album_with_user_and_role(self, album_id_to_share: str, user_ids_to_share_with: list[str], user_share_role: str) -> None:
+    def share_album_with_user_and_role(self, album_id_to_share: str, user_ids_to_share_with: list[str], user_share_role: AlbumUserRole) -> None:
         """
         Shares the album with the provided album_id with all provided share_user_ids
         using share_role as a role.
@@ -513,137 +473,57 @@ class ApiClient:
         :raises: AssertionError if user_share_role contains an invalid value
         :raises: HTTPError if the API call fails
         """
-        api_endpoint = f'albums/{album_id_to_share}/users'
-
-        assert user_share_role in ApiClient.SHARE_ROLES
-
-        # build payload
-        album_users = []
-        for user_id_to_share_with in user_ids_to_share_with:
-            share_info = {}
-            share_info['role'] = user_share_role
-            share_info['userId'] = user_id_to_share_with
-            album_users.append(share_info)
-
-        data = {
-            'albumUsers': album_users
-        }
-
-        r = self.__request_api('put', self.api_url+api_endpoint, data)
-        self.__check_api_response(r)
-
+        self.__request_api(
+            lambda c: c.albums.add_users_to_album(
+                id=album_id_to_share,
+                add_users_dto=AddUsersDto(
+                    albumUsers=[
+                        AlbumUserAddDto(userId=user_id, role=user_share_role)
+                        for user_id in user_ids_to_share_with
+                    ]
+                ),
+            )
+        )
     def trigger_offline_asset_removal(self) -> None:
-        """
-        Removes offline assets.
-
-        Takes into account API changes happening between v1.115.0 and v1.116.0.
-
-        Before v1.116.0, offline asset removal was an asynchronous job that could only be
-        triggered by an Administrator for a specific library.
-
-        Since v1.116.0, offline assets are no longer displayed in the main timeline but shown in the trash. They automatically
-        come back from the trash when they are no longer offline. The only way to delete them is either by emptying the trash
-        (along with everything else) or by selectively deleting all offline assets. This is option the script now uses.
-
-        :raises: HTTPException if any API call fails
-        """
-        if self.server_version['major'] == 1 and self.server_version['minor'] < 116:
-            self.__trigger_offline_asset_removal_pre_minor_version_116()
-        else:
-            self.__trigger_offline_asset_removal_since_minor_version_116()
-
-    def __trigger_offline_asset_removal_since_minor_version_116(self) -> None:
         """
         Synchronously deletes offline assets.
 
         Uses the searchMetadata endpoint to find all assets marked as offline, then
         issues a delete call for these asset UUIDs.
 
-        :raises: HTTPException if any API call fails
+        :raises: Exception if any API call fails
         """
-        # Workaround for a bug where isOffline option is not respected:
-        # Search all trashed assets and manually filter for offline assets.
-        # WARNING! This workaround must NOT be removed to keep compatibility with Immich v1.116.x to at
-        # least v1.117.x (reported issue for v1.117.0, might be fixed with v1.118.0)!
-        # If removed the assets for users of v1.116.0 - v1.117.x might be deleted completely!!!
-        # 2024/03/01: With Immich v1.128.0 isOffline filter is fixed. Remember to also request archived assets.
-        trashed_assets = self.fetch_assets_with_options({'isTrashed': True, 'isOffline': True, 'withArchived': True})
-        #logging.debug("search results: %s", offline_assets)
-
-        offline_assets = [asset for asset in trashed_assets if asset['isOffline']]
+        offline_assets = self.fetch_assets_with_options(MetadataSearchDto(is_offline=True))
 
         if len(offline_assets) > 0:
             logging.info("Deleting %s offline assets", len(offline_assets))
-            logging.debug("Deleting the following offline assets (count: %d): %s", len(offline_assets), [asset['originalPath'] for asset in offline_assets])
+            logging.debug("Deleting the following offline assets (count: %d): %s", len(offline_assets), [asset.original_file_name for asset in offline_assets])
             self.delete_assets(offline_assets, True)
         else:
             logging.info("No offline assets found!")
 
-    def __trigger_offline_asset_removal_pre_minor_version_116(self):
-        """
-        Triggers Offline Asset Removal Job.
-        Only supported in Immich prior v1.116.0.
-        Requires the script to run with an Administrator level API key.
-
-        Works by fetching all libraries and triggering the Offline Asset Removal job
-        one by one.
-
-        :raises: HTTPError if the API call fails
-        """
-        libraries = self.fetch_libraries()
-        for library in libraries:
-            self.__trigger_offline_asset_removal_async(library['id'])
-
-    def delete_assets(self, assets_to_delete: list, force: bool):
+    def delete_assets(self, assets_to_delete: list[AssetResponseDto], force: bool) -> None:
         """
         Deletes the provided assets from Immich.
 
         :param assets_to_delete: A list of asset objects with key `id`
         :param force: Force flag to pass to the API call
 
-        :raises: HTTPException if the API call fails
+        :raises: Exception if the API call fails
         """
 
-        api_endpoint = 'assets'
-        asset_ids_to_delete = [asset['id'] for asset in assets_to_delete]
-        data = {
-            'force': force,
-            'ids': asset_ids_to_delete
-        }
+        self.__request_api(lambda c: c.assets.delete_assets(asset_bulk_delete_dto=AssetBulkDeleteDto(ids=[asset.id for asset in assets_to_delete], force=force)))
 
-        r = self.__request_api('delete', self.api_url+api_endpoint, data)
-        self.__check_api_response(r)
-
-    def __trigger_offline_asset_removal_async(self, library_id: str):
-        """
-        Triggers removal of offline assets in the library identified by libraryId.
-
-        :param library_id: The ID of the library to trigger offline asset removal for
-        :raises: Exception if any API call fails
-        """
-
-        api_endpoint = f'libraries/{library_id}/removeOffline'
-
-        r = self.__request_api('post', self.api_url+api_endpoint)
-        if r.status_code == 403:
-            logging.fatal("--sync-mode 2 requires an Admin User API key!")
-        else:
-            self.__check_api_response(r)
-
-    def fetch_libraries(self) -> list[dict]:
+    def fetch_libraries(self) -> list[LibraryResponseDto]:
         """
         Queries and returns all libraries
 
         :raises: Exception if any API call fails
         """
 
-        api_endpoint = 'libraries'
+        return self.__request_api(lambda c: c.libraries.get_all_libraries())
 
-        r = self.__request_api('get', self.api_url+api_endpoint)
-        self.__check_api_response(r)
-        return r.json()
-
-    def set_album_thumb(self, thumbnail_album_id: str, thumbnail_asset_id: str):
+    def set_album_thumb(self, thumbnail_album_id: str, thumbnail_asset_id: str) -> None:
         """
         Sets asset as thumbnail of album
 
@@ -652,14 +532,9 @@ class ApiClient:
 
         :raises: Exception if the API call fails
         """
-        api_endpoint = f'albums/{thumbnail_album_id}'
+        self.__request_api(lambda c: c.albums.update_album_info(id=thumbnail_album_id, update_album_dto=UpdateAlbumDto(albumThumbnailAssetId=thumbnail_asset_id)))
 
-        data = {"albumThumbnailAssetId": thumbnail_asset_id}
-
-        r = self.__request_api('patch', self.api_url+api_endpoint, data)
-        self.__check_api_response(r)
-
-    def update_album_properties(self, album_to_update: AlbumModel):
+    def update_album_properties(self, album_to_update: AlbumModel) -> None:
         """
         Sets album properties in Immich to the properties of the AlbumModel
 
@@ -667,67 +542,34 @@ class ApiClient:
 
         :raises: Exception if the API call fails
         """
-        # Initialize payload
-        data = {}
+        data = UpdateAlbumDto(
+            description=album_to_update.description,
+            order=album_to_update.sort_order,
+            is_activity_enabled=album_to_update.comments_and_likes_enabled,
+            album_thumbnail_asset_id=album_to_update.thumbnail_asset_uuid,
+        )
 
-        # Thumbnail Asset
-        if album_to_update.thumbnail_asset_uuid:
-            data['albumThumbnailAssetId'] = album_to_update.thumbnail_asset_uuid
+        self.__request_api(lambda c: c.albums.update_album_info(id=album_to_update.id, update_album_dto=data))
 
-        # Description
-        if album_to_update.description:
-            data['description'] = album_to_update.description
-
-        # Sorting Order
-        if album_to_update.sort_order:
-            data['order'] = album_to_update.sort_order
-
-        # Comments / Likes enabled
-        if album_to_update.comments_and_likes_enabled is not None:
-            data['isActivityEnabled'] = album_to_update.comments_and_likes_enabled
-
-        # Only update album if there is something to update
-        if len(data) > 0:
-            api_endpoint = f'albums/{album_to_update.id}'
-
-            response = self.__request_api('patch',self.api_url+api_endpoint, data)
-            self.__check_api_response(response)
-
-    def set_assets_visibility(self, asset_ids_for_visibility: list[str], visibility_setting: str):
+    def set_assets_visibility(self, asset_ids_for_visibility: list[str], visibility_setting: AssetVisibility) -> None:
         """
         Sets the visibility of assets identified by the passed list of UUIDs.
 
         :param asset_ids_for_visibility: A list of asset IDs to set visibility for
-        :param visibility: The visibility to set
+        :param visibility_setting: The visibility to set
 
         :raises: Exception if the API call fails
         """
-        api_endpoint = 'assets'
-        data = {"ids": asset_ids_for_visibility}
-        # Remove when minimum supported version is >= 133
-        if self.server_version['major'] == 1 and self.server_version ['minor'] < 133:
-            if visibility_setting is not None and visibility_setting not in ['archive', 'timeline']:
-                # Warnings have been logged earlier, silently abort
-                return
-            is_archived = True
-            if visibility_setting == 'timeline':
-                is_archived = False
-            data["isArchived"] = is_archived
-        # Up-to-date Immich Server versions
-        else:
-            data["visibility"] = visibility_setting
+        self.__request_api(lambda c: c.assets.update_assets(asset_bulk_update_dto=AssetBulkUpdateDto(ids=asset_ids_for_visibility, visibility=visibility_setting)))
 
-        r = self.__request_api('put', self.api_url+api_endpoint, data)
-        self.__check_api_response(r)
-
-    def delete_all_albums(self, assets_visibility: str, force_delete: bool):
+    def delete_all_albums(self, assets_visibility: AssetVisibility, force_delete: bool):
         """
         Deletes all albums in Immich if force_delete is True. Otherwise lists all albums
         that would be deleted.
         If assets_visibility is set, all assets in deleted albums
         will be set to that visibility.
 
-        :param assets_visibility: Flag indicating whether to unarchive archived assets
+        :param assets_visibility: The visibility to set for assets for which an album was deleted. Can be used to. e.g. revert archival
         :param force_delete: Flag indicating whether to actually delete albums (True) or only to perform a dry-run (False)
 
         :raises: HTTPError if the API call fails
@@ -739,7 +581,7 @@ class ApiClient:
         if not force_delete:
             album_names = []
             for album_to_delete in all_albums:
-                album_names.append(album_to_delete['albumName'])
+                album_names.append(album_to_delete.album_name)
             print("Would delete the following albums (ALL albums!):")
             print(album_names)
             if is_docker:
@@ -750,21 +592,20 @@ class ApiClient:
 
         deleted_album_count = 0
         for album_to_delete in all_albums:
-            if self.delete_album(album_to_delete):
-                # If the archived flag is set it means we need to unarchived all images of deleted albums;
-                # In order to do so, we need to fetch all assets of the album we're going to delete
-                assets_in_deleted_album = []
-                if assets_visibility is not None:
-                    album_to_delete_info = self.fetch_album_info(album_to_delete['id'])
-                    assets_in_deleted_album = album_to_delete_info['assets']
-                logging.info("Deleted album %s", album_to_delete['albumName'])
+            # Fetch assets before delete so we can set visibility after; once deleted, album is gone
+            assets_in_deleted_album: list[AssetResponseDto] = []
+            if assets_visibility is not None:
+                album_to_delete_info = self.fetch_album_info(album_to_delete.id)
+                assets_in_deleted_album = album_to_delete_info.assets or []
+            if self.delete_album(album_to_delete.id):
+                logging.info("Deleted album %s", album_to_delete.album_name)
                 deleted_album_count += 1
-                if len(assets_in_deleted_album) > 0 and assets_visibility is not None:
-                    self.set_assets_visibility([asset['id'] for asset in assets_in_deleted_album], assets_visibility)
-                    logging.info("Set visibility for %d assets to %s", len(assets_in_deleted_album), assets_visibility)
+                if assets_in_deleted_album and assets_visibility is not None:
+                    self.set_assets_visibility([str(asset.id) for asset in assets_in_deleted_album], assets_visibility)
+                    logging.info("Set visibility for %d assets to %s", len(assets_in_deleted_album), assets_visibility.value)
         logging.info("Deleted %d/%d albums", deleted_album_count, len(all_albums))
 
-    def cleanup_albums(self, albums_to_delete: list[AlbumModel], asset_visibility: str, force_delete: bool) -> int:
+    def cleanup_albums(self, albums_to_delete: list[AlbumModel], asset_visibility: AssetVisibility, force_delete: bool) -> int:
         """
         Instead of creating, deletes albums in Immich if force_delete is True. Otherwise lists all albums
         that would be deleted.
@@ -772,7 +613,7 @@ class ApiClient:
         will be unarchived.
 
         :param  albums_to_delete: A list of AlbumModel records to delete
-        :param asset_visibility: The visibility to set for assets for which an album was deleted. Can be used to. e.g. revert archival
+        :param asset_visibility: The visibility to set for assets for which an album was deleted. Can be used to e.g. revert archival
         :param force_delete: Flag indicating whether to actually delete albums (True) or only to perform a dry-run (False)
 
         :returns: Number of successfully deleted albums
@@ -800,19 +641,19 @@ class ApiClient:
             # visibility at all, or to override whatever might be set in .ablumprops and revert to something else
             if asset_visibility is not None:
                 album_to_delete_info = self.fetch_album_info(album_to_delete.id)
-                assets_in_album = album_to_delete_info['assets']
-            if self.delete_album({'id': album_to_delete.id, 'albumName': album_to_delete.get_final_name()}):
+                assets_in_album = album_to_delete_info.assets
+            if self.delete_album(album_to_delete.id):
                 logging.info("Deleted album %s", album_to_delete.get_final_name())
                 cpt += 1
                 # Archive flag is set, so we need to unarchive assets
                 if asset_visibility is not None and len(assets_in_album) > 0:
-                    self.set_assets_visibility([asset['id'] for asset in assets_in_album], asset_visibility)
-                    logging.info("Set visibility for %d assets to %s", len(assets_in_album), asset_visibility)
+                    self.set_assets_visibility([asset.id for asset in assets_in_album], asset_visibility)
+                    logging.info("Set visibility for %d assets to %s", len(assets_in_album), asset_visibility.value)
         return cpt
 
     # Disable pylint for too many branches
     # pylint: disable=R0912,R0914
-    def update_album_shared_state(self, album_to_share: AlbumModel, unshare_users: bool, known_users: list[dict]) -> None:
+    def update_album_shared_state(self, album_to_share: AlbumModel, unshare_users: bool, known_users: list[UserResponseDto]) -> None:
         """
         Makes sure the album is shared with the users set in the model with the correct roles.
         This involves fetching album info from Immich to check if/who the album is shared with and the share roles,
@@ -826,16 +667,16 @@ class ApiClient:
         """
         # Parse and prepare expected share roles
         # List all share users by share role
-        share_users_to_roles_expected = {}
+        share_users_to_roles_expected: dict[str, AlbumUserRole] = {}
         for share_user in album_to_share.share_with:
             # Find the user by configured name or email
-            share_user_in_immich = FolderAlbumCreator.find_user_by_name_or_email(share_user['user'], known_users)
+            share_user_in_immich = FolderAlbumCreator.find_user_by_name_or_email(share_user.user, known_users)
             if not share_user_in_immich:
-                logging.warning("User %s to share album %s with does not exist!", share_user['user'], album_to_share.get_final_name())
+                logging.warning("User %s to share album %s with does not exist!", share_user.user, album_to_share.get_final_name())
                 continue
             # Use 'viewer' as default role if not specified
-            share_role_local = share_user.get('role', 'viewer')
-            share_users_to_roles_expected[share_user_in_immich['id']] = share_role_local
+            share_role_local = share_user.role or AlbumUserRole.VIEWER
+            share_users_to_roles_expected[share_user_in_immich.id] = share_role_local
 
         # No users to share with and unsharing is disabled?
         if len(share_users_to_roles_expected) == 0 and not unshare_users:
@@ -844,28 +685,26 @@ class ApiClient:
         # Now fetch reality
         album_to_share_info = self.fetch_album_info(album_to_share.id)
         # Dict mapping a user ID to share role
-        album_share_info = {}
-        for share_user_actual in album_to_share_info['albumUsers']:
-            album_share_info[share_user_actual['user']['id']] = share_user_actual['role']
+        album_share_info: dict[str, AlbumUserRole] = {}
+        for share_user_actual in album_to_share_info.album_users:
+            album_share_info[share_user_actual.user.id] = share_user_actual.role
 
         # Group share users by share role
-        share_roles_to_users_expected = {}
+        share_roles_to_users_expected: dict[AlbumUserRole, list[str]] = defaultdict(list)
         # Now compare expectation with reality and update
         for user_to_share_with, share_role_expected in share_users_to_roles_expected.items():
             # Case: Album is not share with user
             if user_to_share_with not in album_share_info:
                 # Gather all users to share the album with for this role
-                if not share_role_expected in share_roles_to_users_expected:
-                    share_roles_to_users_expected[share_role_expected] = []
                 share_roles_to_users_expected[share_role_expected].append(user_to_share_with)
 
             # Case: Album is shared, but with wrong role
             elif album_share_info[user_to_share_with] != share_role_expected:
                 try:
                     self.update_album_share_user_role(album_to_share.id, user_to_share_with, share_role_expected)
-                    logging.debug("Sharing: Updated share role for user %s in album %s to %s", user_to_share_with, album_to_share.get_final_name(), share_role_expected)
+                    logging.debug("Sharing: Updated share role for user %s in album %s to %s", user_to_share_with, album_to_share.get_final_name(), share_role_expected.value)
                 except HTTPError as ex:
-                    logging.warning("Sharing: Error updating share role for user %s in album %s to %s", user_to_share_with, album_to_share.get_final_name(), share_role_expected)
+                    logging.warning("Sharing: Error updating share role for user %s in album %s to %s", user_to_share_with, album_to_share.get_final_name(), share_role_expected.value)
                     logging.debug("Error: %s", ex)
 
         # Now check if the album is shared with any users it should not be shared with
@@ -886,9 +725,9 @@ class ApiClient:
                 # Convert list of user dicts to list of user IDs
                 try:
                     self.share_album_with_user_and_role(album_to_share.id, share_users, share_role_group)
-                    logging.debug("Album %s shared with users IDs %s in role: %s", album_to_share.get_final_name(), share_users, share_role_group)
+                    logging.debug("Album %s shared with users IDs %s in role: %s", album_to_share.get_final_name(), share_users, share_role_group.value)
                 except (AssertionError, HTTPError) as ex:
-                    logging.warning("Error sharing album %s for users %s in role %s", album_to_share.get_final_name(), share_users, share_role_group)
+                    logging.warning("Error sharing album %s for users %s in role %s", album_to_share.get_final_name(), share_users, share_role_group.value)
                     logging.debug("Album share error: %s", ex)
 
 class AlbumMergeError(Exception):
@@ -911,40 +750,50 @@ class AlbumModel:
     ALBUM_MERGE_MODE_OVERRIDE = 3
     # List of class attribute names that are relevant for album properties handling
     # This list is used for album model merging and validation
-    ALBUM_PROPERTIES_VARIABLES = ['override_name', 'description', 'share_with', 'thumbnail_setting', 'sort_order', 'archive', 'visibility', 'comments_and_likes_enabled']
+    ALBUM_PROPERTIES_VARIABLES = ['override_name', 'description', 'share_with', 'thumbnail_setting', 'sort_order', 'visibility', 'comments_and_likes_enabled']
 
     # List of class attribute names that are relevant for inheritance
     ALBUM_INHERITANCE_VARIABLES = ['inherit', 'inherit_properties']
 
+    @dataclass
+    class ShareWith:
+        user: str
+        role: Optional[AlbumUserRole] = None
+        
+        def __post_init__(self) -> None:
+            if self.role is None or isinstance(self.role, AlbumUserRole):
+                return
+            if self.role == "none":
+                self.role = None
+                return
+            self.role = AlbumUserRole(self.role)
+
     def __init__(self, name : str):
         # The album ID, set after it was created
-        self.id = None
+        self.id: Optional[str] = None
         # The album name
-        self.name = name
+        self.name: str = name
         # The override album name, takes precedence over name for album creation
-        self.override_name = None
+        self.override_name: Optional[str] = None
         # The description to set for the album
-        self.description = None
+        self.description: Optional[str] = None
         # A list of dicts with Immich assets
-        self.assets = []
+        self.assets: list[AssetResponseDto] = []
         # a list of dicts with keys user and role, listing all users and their role to share the album with
-        self.share_with = []
+        self.share_with: list[AlbumModel.ShareWith] = []
         # Either a fully qualified asset path or one of 'first', 'last', 'random'
-        self.thumbnail_setting = None
-        self.thumbnail_asset_uuid = None
+        self.thumbnail_setting: Optional[str] = None
+        self.thumbnail_asset_uuid: Optional[str] = None
         # Sorting order for this album, 'asc' or 'desc'
-        self.sort_order = None
-        # Boolean indicating whether assets in this album should be archived after adding
-        # Deprecated, use visibility = archive instead!
-        self.archive = None
+        self.sort_order: Optional[AssetOrder] = None
         # String indicating asset visibility, allowed values: archive, locked, timeline
-        self.visibility = None
+        self.visibility: Optional[AssetVisibility] = None
         # Boolean indicating whether assets in this albums can be commented on and liked
-        self.comments_and_likes_enabled = None
+        self.comments_and_likes_enabled: Optional[bool] = None
         # Boolean indicating whether properties should be inherited down the directory tree
-        self.inherit = None
+        self.inherit: Optional[bool] = None
         # List of property names that should be inherited
-        self.inherit_properties = None
+        self.inherit_properties: Optional[list[str]] = None
 
     def get_album_properties_dict(self) -> dict:
         """
@@ -976,7 +825,7 @@ class AlbumModel:
         :returns: A list of asset UUIDs
         :rtype: list[str]
         """
-        return [asset_to_add['id'] for asset_to_add in self.assets]
+        return [str(asset_to_add.id) for asset_to_add in self.assets]
 
     def find_incompatible_properties(self, other) -> list[str]:
         """
@@ -995,7 +844,7 @@ class AlbumModel:
         :rtype: list[str]
         """
         if not isinstance(other, AlbumModel):
-            return False
+            return []
         incompatible_props = []
         props = self.get_album_properties_dict()
         other_props = other.get_album_properties_dict()
@@ -1041,7 +890,7 @@ class AlbumModel:
                         raise AlbumMergeError(f"Attempting to override {prop_name} in {self.name} with {other_attribs[prop_name]}")
                     own_attribs[prop_name] = other_attribs[prop_name]
 
-    def merge_inherited_share_with(self, inherited_share_with: list[dict]) -> list[dict]:
+    def merge_inherited_share_with(self, inherited_share_with: list[AlbumModel.ShareWith]) -> list[AlbumModel.ShareWith]:
         """
         Merges inherited share_with settings with current share_with settings.
         Handles special share_with inheritance logic:
@@ -1065,34 +914,34 @@ class AlbumModel:
 
         # Add inherited users first
         for inherited_user in inherited_share_with:
-            if inherited_user['role'] == 'none':
-                users_set_to_none.add(inherited_user['user'])
+            if inherited_user.role == None:
+                users_set_to_none.add(inherited_user.user)
             else:
-                user_roles[inherited_user['user']] = inherited_user['role']
+                user_roles[inherited_user.user] = inherited_user.role
 
         # Apply current folder's share_with settings
         for current_user in self.share_with:
-            if current_user['role'] == 'none':
+            if current_user.role == None:
                 # Remove user from sharing and mark as explicitly set to none
-                user_roles.pop(current_user['user'], None)
-                users_set_to_none.add(current_user['user'])
-            elif current_user['user'] not in users_set_to_none:
+                user_roles.pop(current_user.user, None)
+                users_set_to_none.add(current_user.user)
+            elif current_user.user not in users_set_to_none:
                 # Only add/modify user if they haven't been set to 'none'
-                if current_user['user'] in user_roles:
+                if current_user.user in user_roles:
                     # Apply most restrictive role: viewer is more restrictive than editor
-                    current_role = user_roles[current_user['user']]
-                    new_role = current_user['role']
+                    current_role = user_roles[current_user.user]
+                    new_role = current_user.role
 
-                    if current_role == 'viewer' or new_role == 'viewer':
-                        user_roles[current_user['user']] = 'viewer'
+                    if current_role == AlbumUserRole.VIEWER or new_role == AlbumUserRole.VIEWER:
+                        user_roles[current_user.user] = AlbumUserRole.VIEWER
                     else:
-                        user_roles[current_user['user']] = new_role
+                        user_roles[current_user.user] = new_role
                 else:
                     # Add new user with their role
-                    user_roles[current_user['user']] = current_user['role']
+                    user_roles[current_user.user] = current_user.role
 
         # Convert back to list format
-        return [{'user': user, 'role': role} for user, role in user_roles.items()]
+        return [AlbumModel.ShareWith(user=user, role=role) for user, role in user_roles.items()]
 
     def get_final_name(self) -> str:
         """
@@ -1132,19 +981,17 @@ class AlbumModel:
             # Parse standard album properties
             for album_prop_name in AlbumModel.ALBUM_PROPERTIES_VARIABLES:
                 if album_prop_name in album_properties:
-                    album_props_template_vars[album_prop_name] = album_properties[album_prop_name]
+                    value = album_properties[album_prop_name]
+                    # Convert raw dicts from YAML to ShareWith dataclass instances
+                    if album_prop_name == 'share_with' and isinstance(value, list):
+                        value = [AlbumModel.ShareWith(**entry) if isinstance(entry, dict) else entry for entry in value]
+                    album_props_template_vars[album_prop_name] = value
 
             # Parse inheritance properties
             for inheritance_prop_name in AlbumModel.ALBUM_INHERITANCE_VARIABLES:
                 if inheritance_prop_name in album_properties:
                     album_props_template_vars[inheritance_prop_name] = album_properties[inheritance_prop_name]
 
-            # Backward compatibility, remove when archive is removed:
-            if album_props_template.archive is not None:
-                logging.warning("Found deprecated property archive in %s! This will be removed in the future, use visibility: archive instead!", album_properties_file_path)
-                if album_props_template.visibility is None:
-                    album_props_template.visibility = 'archive'
-            #  End backward compatibility
             return album_props_template
 
         return None
@@ -1183,7 +1030,7 @@ class Configuration():
         "insecure": False,
         "mode": SCRIPT_MODE_CREATE,
         "delete_confirm": False,
-        "share_role": "viewer",
+        "share_role": AlbumUserRole.VIEWER,
         "sync_mode": 0,
         "find_assets_in_albums": False,
         "find_archived_assets": False,
@@ -1241,14 +1088,14 @@ class Configuration():
         self.insecure = Utils.get_value_or_config_default("insecure", args, Configuration.CONFIG_DEFAULTS["insecure"])
         self.ignore_albums = args["ignore"]
         self.mode = Utils.get_value_or_config_default("mode", args, Configuration.CONFIG_DEFAULTS["mode"])
-        self.delete_confirm = Utils.get_value_or_config_default("delete_confirm", args, Configuration.CONFIG_DEFAULTS["delete_confirm"])
-        self.share_with = args["share_with"]
+        self.delete_confirm: bool = Utils.get_value_or_config_default("delete_confirm", args, Configuration.CONFIG_DEFAULTS["delete_confirm"])
+        self.share_with: Optional[list[str]] = args["share_with"]
         self.share_role = Utils.get_value_or_config_default("share_role", args, Configuration.CONFIG_DEFAULTS["share_role"])
         self.sync_mode = Utils.get_value_or_config_default("sync_mode", args, Configuration.CONFIG_DEFAULTS["sync_mode"])
         self.find_assets_in_albums = Utils.get_value_or_config_default("find_assets_in_albums", args, Configuration.CONFIG_DEFAULTS["find_assets_in_albums"])
         self.path_filter = args["path_filter"]
         self.set_album_thumbnail = args["set_album_thumbnail"]
-        self.visibility = args["visibility"]
+        self.visibility: Optional[AssetVisibility] = AssetVisibility(args["visibility"]) if args["visibility"] else None
         self.find_archived_assets = Utils.get_value_or_config_default("find_archived_assets", args, Configuration.CONFIG_DEFAULTS["find_archived_assets"])
         self.read_album_properties = Utils.get_value_or_config_default("read_album_properties", args, Configuration.CONFIG_DEFAULTS["read_album_properties"])
         self.api_timeout = Utils.get_value_or_config_default("api_timeout", args, Configuration.CONFIG_DEFAULTS["api_timeout"])
@@ -1368,7 +1215,7 @@ class Configuration():
         :returns: The original expression if it contained a slash or an asterisk, otherwise `**/*<expr>*/**`
         :rtype: str
         """
-        if not '/' in expr and not '*' in expr:
+        if '/' not in expr and '*' not in expr:
             glob_expr = f'**/*{expr}*/**'
             logging.debug("expanding %s to %s", expr, glob_expr)
             return glob_expr
@@ -1609,112 +1456,6 @@ class FolderAlbumCreator():
                 return root_path
         return None
 
-    def build_album_properties_templates(self) -> dict:
-        """
-        Searches all root paths for album properties files,
-        applies ignore/filtering mechanisms, parses the files,
-        creates AlbumModel objects from them, performs validations and returns
-        a dictionary mapping mapping the album name (generated from the path the album properties file was found in)
-        to the album model file.
-        If a fatal error occurs during processing of album properties files (i.e. two files encountered targeting the same album with incompatible properties), the
-        program exits.
-
-        :returns: A dictionary mapping the album name (generated from the path the album properties file was found in) to the album model files
-        :rtype: dict
-        """
-        fatal_error_occurred = False
-        album_properties_file_paths = FolderAlbumCreator.find_albumprops_files(self.config.root_paths)
-        # Dictionary mapping album name generated from album properties' path to the AlbumModel representing the
-        # album properties
-        album_props_templates = {}
-        album_name_to_album_properties_file_path = {}
-        for album_properties_file_path in album_properties_file_paths:
-            # First check global path_filter and ignore options
-            if self.is_path_ignored(album_properties_file_path):
-                continue
-
-            # Identify the root path
-            album_props_root_path = FolderAlbumCreator.__identify_root_path(album_properties_file_path, self.config.root_paths)
-            if not album_props_root_path:
-                continue
-
-            # Chunks of the asset's path below root_path
-            path_chunks = album_properties_file_path.replace(album_props_root_path, '').split('/')
-            # A single chunk means it's just the image file in no sub folder, ignore
-            if len(path_chunks) == 1:
-                continue
-
-            # remove last item from path chunks, which is the file name
-            del path_chunks[-1]
-            album_name = self.create_album_name(path_chunks, self.config.album_level_separator, self.config.album_name_post_regex)
-            if album_name is None:
-                continue
-            try:
-                # Parse the album properties into an album model
-                album_props_template = AlbumModel.parse_album_properties_file(album_properties_file_path)
-                if not album_props_template:
-                    logging.warning("Unable to parse album properties file %s", album_properties_file_path)
-                    continue
-
-                album_props_template.name = album_name
-                if not album_name in album_props_templates:
-                    album_props_templates[album_name] = album_props_template
-                    album_name_to_album_properties_file_path[album_name] = album_properties_file_path
-                # There is already an album properties template with the same album name (maybe from a different root_path)
-                else:
-                    incompatible_props = album_props_template.find_incompatible_properties(album_props_templates[album_name])
-                    if len(incompatible_props) > 0:
-                        logging.fatal("Album Properties files %s and %s create an album with identical name but have conflicting properties:",
-                                    album_name_to_album_properties_file_path[album_name], album_properties_file_path)
-                        for incompatible_prop in incompatible_props:
-                            logging.fatal(incompatible_prop)
-                        fatal_error_occurred = True
-
-            except yaml.YAMLError as ex:
-                logging.error("Could not parse album properties file %s: %s", album_properties_file_path, ex)
-
-        if fatal_error_occurred:
-            raise AlbumModelValidationError("Encountered at least one fatal error during parsing or validating of album properties files!")
-
-        # Now validate that all album properties templates with the same override_name are compatible with each other
-        FolderAlbumCreator.validate_album_props_templates(album_props_templates.values(), album_name_to_album_properties_file_path)
-
-        return album_props_templates
-
-    @staticmethod
-    def validate_album_props_templates(album_props_templates: list[AlbumModel], album_name_to_album_properties_file_path: dict):
-        """
-        Validates the provided list of album properties.
-        Specifically, checks that if multiple album properties files specify the same override_name, all other specified properties
-        are the same as well.
-
-        If a validation error occurs, the program exits.
-
-        :param album_props_templates: The list of `AlbumModel` objects to validate
-        :param album_name_to_album_properties_file_path: A dictionary where the key is an album name and the value is the path to the album properties file the
-                album was generated from. This method expects one entry in this dictionary for every `AlbumModel` in album_props_templates.
-
-        :raises AlbumMergeError: If validations do not pass
-        """
-        fatal_error_occurred = False
-        # This is a cache to remember checked names - keep time complexity down
-        checked_override_names = []
-        # Loop over all album properties templates
-        for album_props_template in album_props_templates:
-            # Check if override_name is set and not already checked
-            if album_props_template.override_name and album_props_template.override_name not in checked_override_names:
-                # Inner loop through album properties template
-                for album_props_template_to_check in album_props_templates:
-                    # Do not check against ourselves and only check if the other template has the same override name (we already checked above that override_name is not None)
-                    if (album_props_template is not album_props_template_to_check
-                        and album_props_template.override_name == album_props_template_to_check.override_name):
-                        if FolderAlbumCreator.check_for_and_log_incompatible_properties(album_props_template, album_props_template_to_check, album_name_to_album_properties_file_path):
-                            fatal_error_occurred = True
-                checked_override_names.append(album_props_template.override_name)
-
-        if fatal_error_occurred:
-            raise AlbumMergeError("Encountered at least one fatal error while validating album properties files, stopping!")
-
     @staticmethod
     def check_for_and_log_incompatible_properties(model1: AlbumModel, model2: AlbumModel, album_name_to_album_properties_file_path: dict) -> bool:
         """
@@ -1842,15 +1583,15 @@ class FolderAlbumCreator():
 
         return inherited_model
 
-    def build_albumprops_cache(self) -> dict:
+    def build_albumprops_cache(self) -> dict[str, AlbumModel]:
         """
         Builds a cache of all .albumprops files found in root paths.
 
         :returns: Dictionary mapping .albumprops file paths to AlbumModel objects
-        :rtype: dict
+        :rtype: dict[str, AlbumModel]
         """
         albumprops_files = FolderAlbumCreator.find_albumprops_files(self.config.root_paths)
-        albumprops_path_to_model_dict = {}
+        albumprops_path_to_model_dict: dict[str, AlbumModel] = {}
 
         # Parse all .albumprops files
         for albumprops_path in albumprops_files:
@@ -1868,7 +1609,7 @@ class FolderAlbumCreator():
         return albumprops_path_to_model_dict
 
     @staticmethod
-    def get_album_properties_with_inheritance(album_name: str, album_path: str, root_path: str, albumprops_cache_param: dict) -> AlbumModel:
+    def get_album_properties_with_inheritance(album_name: str, album_path: str, root_path: str, albumprops_cache_param: dict[str, AlbumModel]) -> AlbumModel:
         """
         Gets the album properties for an album, applying inheritance from parent folders.
 
@@ -1882,7 +1623,7 @@ class FolderAlbumCreator():
         """
         # Check if the album directory has its own .albumprops file
         albumprops_path = os.path.join(album_path, FolderAlbumCreator.ALBUMPROPS_FILE_NAME)
-        local_album_model = None
+        local_album_model: Optional[AlbumModel] = None
 
         logging.debug("Checking for album properties: album_path=%s, albumprops_path=%s", album_path, albumprops_path)
 
@@ -1918,7 +1659,7 @@ class FolderAlbumCreator():
 
 
     @staticmethod
-    def __parse_separated_string(separated_string: str, separator: str) -> Tuple[str, str]:
+    def __parse_separated_string(separated_string: str, separator: str) -> tuple[str, str]:
         """
         Parse a key, value pair, separated by the provided separator.
 
@@ -1939,7 +1680,7 @@ class FolderAlbumCreator():
         if len(items) > 1:
             # rejoin the rest:
             value = separator.join(items[1:])
-        return (key, value)
+        return key, value
 
     # pylint: disable=R0912
     def create_album_name(self, asset_path_chunks: list[str], album_separator: str, album_name_postprocess_regex: list) -> str:
@@ -2016,7 +1757,7 @@ class FolderAlbumCreator():
 
         return album_name.strip()
 
-    def choose_thumbnail(self, thumbnail_setting: str, thumbnail_asset_list: list[dict]) -> str:
+    def choose_thumbnail(self, thumbnail_setting: str, thumbnail_asset_list: list[AssetResponseDto]) -> Optional[AssetResponseDto]:
         """
         Tries to find an asset to use as thumbnail depending on thumbnail_setting.
 
@@ -2024,12 +1765,12 @@ class FolderAlbumCreator():
         :param asset_list: A list of assets to choose a thumbnail from, based on thumbnail_setting
 
         :returns: An Immich asset dict or None if no thumbnail was found based on thumbnail_setting
-        :rtype: str
+        :rtype: Optional[AssetResponseDto]
         """
         # Case: fully qualified path
         if thumbnail_setting not in Configuration.ALBUM_THUMBNAIL_SETTINGS_GLOBAL:
             for asset in thumbnail_asset_list:
-                if asset['originalPath'] == thumbnail_setting:
+                if asset.original_path == thumbnail_setting:
                     return asset
             # at this point we could not find the thumbnail asset by path
             return None
@@ -2038,11 +1779,11 @@ class FolderAlbumCreator():
         # Apply filtering to assets
         thumbnail_assets = thumbnail_asset_list
         if thumbnail_setting == Configuration.ALBUM_THUMBNAIL_RANDOM_FILTERED:
-            thumbnail_assets[:] = [asset for asset in thumbnail_assets if not self.is_path_ignored(asset['originalPath'])]
+            thumbnail_assets[:] = [asset for asset in thumbnail_assets if not self.is_path_ignored(asset.original_path)]
 
         if len(thumbnail_assets) > 0:
             # Sort assets by creation date
-            thumbnail_assets.sort(key=lambda x: x['fileCreatedAt'])
+            thumbnail_assets.sort(key=lambda x: x.file_created_at)
             if thumbnail_setting not in Configuration.ALBUM_THUMBNAIL_STATIC_INDICES:
                 idx = random.randint(0, len(thumbnail_assets)-1)
             else:
@@ -2091,7 +1832,7 @@ class FolderAlbumCreator():
         return is_path_ignored_result
 
     @staticmethod
-    def get_album_id_by_name(albums_list: list[dict], album_name: str, ) -> str:
+    def get_album_id_by_name(albums_list: list[AlbumResponseDto], album_name: str) -> str:
         """ 
         Finds the album with the provided name in the list of albums and returns its id.
         
@@ -2102,11 +1843,11 @@ class FolderAlbumCreator():
         :rtype: str
         """
         for _ in albums_list:
-            if _['albumName'] == album_name:
-                return _['id']
+            if _.album_name == album_name:
+                return str(_.id)
         return None
 
-    def check_for_and_remove_live_photo_video_components(self, asset_list: list[dict], is_not_in_album: bool, find_archived: bool) -> list[dict]:
+    def check_for_and_remove_live_photo_video_components(self, asset_list: list[AssetResponseDto], is_not_in_album: bool, find_archived: bool) -> list[AssetResponseDto]:
         """
         Checks asset_list for any asset with file ending .mov. This is indicative of a possible video component
         of an Apple Live Photo. There is display bug in the Immich iOS app that prevents live photos from being
@@ -2121,11 +1862,11 @@ class FolderAlbumCreator():
                 True, we can assume asset_list is complete and should contain any static components.
 
         :returns: An asset list without live photo video components
-        :rtype: list[dict]
+        :rtype: list[AssetResponseDto]
         """
         logging.info("Checking for live photo video components")
         # Filter for all quicktime assets
-        asset_list_mov = [asset for asset in asset_list if 'video' in asset['originalMimeType']]
+        asset_list_mov = [asset for asset in asset_list if asset.original_mime_type == 'video']
 
         if len(asset_list_mov) == 0:
             logging.debug("No live photo video components found")
@@ -2134,28 +1875,25 @@ class FolderAlbumCreator():
         # If either is not True, we need to fetch all assets
         if is_not_in_album or not find_archived:
             logging.debug("Fetching all assets for live photo video component check")
-            if self.api_client.server_version['major'] == 1 and self.api_client.server_version['minor'] < 133:
-                full_asset_list = self.api_client.fetch_assets_with_options({'isNotInAlbum': False, 'withArchived': True})
-            else:
-                full_asset_list = self.api_client.fetch_assets_with_options({'isNotInAlbum': False})
-                full_asset_list += self.api_client.fetch_assets_with_options({'isNotInAlbum': False, 'visibility': 'archive'})
+            full_asset_list = self.api_client.fetch_assets_with_options(MetadataSearchDto(is_not_in_album=False))
+            full_asset_list += self.api_client.fetch_assets_with_options(MetadataSearchDto(is_not_in_album=False, visibility=AssetVisibility.ARCHIVE))
         else:
             full_asset_list = asset_list
 
         # Find all assets with a live ID set
-        asset_list_with_live_id = [asset for asset in full_asset_list if asset['livePhotoVideoId'] is not None]
+        asset_list_with_live_id = [asset for asset in full_asset_list if asset.live_photo_video_id is not None]
 
         # Find all video components
         asset_list_video_components_ids = []
         for asset_static_component in asset_list_with_live_id:
             for asset_mov in asset_list_mov:
-                if asset_mov['id'] == asset_static_component['livePhotoVideoId']:
-                    asset_list_video_components_ids.append(asset_mov['id'])
-                    logging.debug("File %s is a video component of a live photo, removing from list", asset_mov['originalPath'])
+                if asset_mov.id == asset_static_component.live_photo_video_id:
+                    asset_list_video_components_ids.append(asset_mov.id)
+                    logging.debug("File %s is a video component of a live photo, removing from list", asset_mov.original_path)
 
         logging.info("Removing %s live photo video components from asset list", len(asset_list_video_components_ids))
         # Remove all video components from the asset list
-        asset_list_without_video_components = [asset for asset in asset_list if asset['id'] not in asset_list_video_components_ids]
+        asset_list_without_video_components = [asset for asset in asset_list if asset.id not in asset_list_video_components_ids]
         return asset_list_without_video_components
 
     # pylint: disable=R0914
@@ -2174,11 +1912,9 @@ class FolderAlbumCreator():
                 if share_user_role_local is None:
                     share_user_role_local = self.config.share_role
 
-                album_share_with = {
-                    'user': share_user_name,
-                    'role': share_user_role_local
-                }
-                album_model_to_update.share_with.append(album_share_with)
+                album_model_to_update.share_with.append(
+                    AlbumModel.ShareWith(user=share_user_name, role=AlbumUserRole(share_user_role_local))
+                )
 
         # Thumbnail Setting
         if self.config.set_album_thumbnail:
@@ -2199,7 +1935,7 @@ class FolderAlbumCreator():
             album_model_to_update.comments_and_likes_enabled = False
 
     # pylint: disable=R0914,R1702,R0915
-    def build_album_list(self, asset_list : list[dict], root_path_list : list[str], album_props_templates: dict, albumprops_cache_param: dict = None) -> dict:
+    def build_album_list(self, asset_list : list[AssetResponseDto], root_path_list : list[str], albumprops_cache_param: Optional[dict[str, AlbumModel]] = None) -> dict[str, AlbumModel]:
         """
         Builds a list of album models, enriched with assets assigned to each album.
         Returns a dict where the key is the album name and the value is the model.
@@ -2207,17 +1943,16 @@ class FolderAlbumCreator():
 
         :param asset_list: List of assets dictionaries fetched from Immich API
         :param root_path_list: List of root paths to use for album creation
-        :param album_props_templates: Dictionary mapping an album name to album properties
-        :param albumprops_cache: Dictionary mapping .albumprops file paths to AlbumModel objects (for inheritance)
+        :param albumprops_cache_param: Dictionary mapping .albumprops file paths to AlbumModel objects (for inheritance)
 
         :returns: A dict with album names as keys and an AlbumModel as value
-        :rtype: dict
+        :rtype: dict[str, AlbumModel]
         """
-        album_models = {}
+        album_models: dict[str, AlbumModel] = {}
         logged_albums = set()  # Track which albums we've already logged properties for
 
         for asset_to_add in asset_list:
-            asset_path = asset_to_add['originalPath']
+            asset_path = asset_to_add.original_path
             # This method will log the ignore reason, so no need to log anything again.
             if self.is_path_ignored(asset_path):
                 continue
@@ -2252,11 +1987,6 @@ class FolderAlbumCreator():
                     inherited_album_model = FolderAlbumCreator.get_album_properties_with_inheritance(album_name, album_dir_path, asset_root_path, albumprops_cache_param)
                     if inherited_album_model and inherited_album_model.override_name:
                         final_album_name = inherited_album_model.override_name
-
-                # Check if there are traditional album properties for this album (backward compatibility)
-                album_props_template = album_props_templates.get(album_name)
-                if album_props_template and album_props_template.override_name:
-                    final_album_name = album_props_template.override_name
 
                 # Check if we already have this album model
                 if final_album_name in album_models:
@@ -2296,15 +2026,6 @@ class FolderAlbumCreator():
                         if final_album_name not in logged_albums:
                             logging.info("Final album properties for '%s' (with inheritance): %s", final_album_name, new_album_model)
                             logged_albums.add(final_album_name)
-
-                    # Apply traditional album properties if available (backward compatibility)
-                    elif album_props_template:
-                        new_album_model.merge_from(album_props_template, AlbumModel.ALBUM_MERGE_MODE_OVERRIDE)
-
-                        # Log final album properties (only once per album)
-                        if final_album_name not in logged_albums:
-                            logging.info("Final album properties for '%s': %s", final_album_name, new_album_model)
-                            logged_albums.add(final_album_name)
                     else:
                         # Log final album properties for albums without .albumprops (only once per album)
                         if final_album_name not in logged_albums:
@@ -2320,19 +2041,19 @@ class FolderAlbumCreator():
 
     # pylint: disable=R1705
     @staticmethod
-    def find_user_by_name_or_email(name_or_email: str, user_list: list[dict]) -> dict:
+    def find_user_by_name_or_email(name_or_email: str, user_list: list[UserResponseDto]) -> Optional[UserResponseDto]:
         """
         Finds a user identified by name_or_email in the provided user_list.
 
         :param name_or_email: The user name or email address to find the user by
         :param user_list: A list of user dictionaries with the following mandatory keys: `id`, `name`, `email`
         
-        :returns: A user dict with matching name or email or None if no matching user was found
-        :rtype: dict
+        :returns: A user with matching name or email or None if no matching user was found
+        :rtype: UserResponseDto
         """
         for user in user_list:
             # Search by name or mail address
-            if name_or_email in (user['name'], user['email']):
+            if name_or_email in (user.name, user.email):
                 return user
         return None
 
@@ -2345,37 +2066,26 @@ class FolderAlbumCreator():
             self.api_client.delete_all_albums(self.config.visibility, self.config.delete_confirm)
             return
 
-        album_properties_templates = {}
-        albumprops_cache = {}
+        albumprops_cache: Optional[dict[str, AlbumModel]] = None
         if self.config.read_album_properties:
             logging.debug("Albumprops: Finding, parsing and loading %s files with inheritance support", FolderAlbumCreator.ALBUMPROPS_FILE_NAME)
             albumprops_cache = self.build_albumprops_cache()
-            # Keep the old templates for backward compatibility with existing logic that expects album name keys
-            album_properties_templates = self.build_album_properties_templates()
-            for album_properties_path, album_properties_template in album_properties_templates.items():
-                logging.debug("Albumprops: %s -> %s", album_properties_path, album_properties_template)
 
         logging.info("Requesting all assets")
         # only request images that are not in any album if we are running in CREATE mode,
         # otherwise we need all images, even if they are part of an album
         if self.config.mode == Configuration.SCRIPT_MODE_CREATE:
-            assets = self.api_client.fetch_assets(not self.config.find_assets_in_albums, ['archive'] if self.config.find_archived_assets else [])
+            assets = self.api_client.fetch_assets(not self.config.find_assets_in_albums, [AssetVisibility.ARCHIVE] if self.config.find_archived_assets else [])
         else:
-            assets = self.api_client.fetch_assets(False, ['archive'])
+            assets = self.api_client.fetch_assets(False, [AssetVisibility.ARCHIVE])
 
         # Remove live photo video components
         assets = self.check_for_and_remove_live_photo_video_components(assets, not self.config.find_assets_in_albums, self.config.find_archived_assets)
         logging.info("%d photos found", len(assets))
 
         logging.info("Sorting assets to corresponding albums using folder name")
-        albums_to_create = self.build_album_list(assets, self.config.root_paths, album_properties_templates, albumprops_cache)
+        albums_to_create = self.build_album_list(assets, self.config.root_paths, albumprops_cache)
         albums_to_create = dict(sorted(albums_to_create.items(), key=lambda item: item[0]))
-
-        if self.api_client.server_version['major'] == 1 and self.api_client.server_version['minor'] < 133:
-            albums_with_visibility = [album_check_to_check for album_check_to_check in albums_to_create.values()
-                                    if album_check_to_check.visibility is not None and album_check_to_check.visibility != 'archive']
-            if len(albums_with_visibility) > 0:
-                logging.warning("Option 'visibility' is only supported in Immich Server v1.133.x and newer! Option will be ignored!")
 
         logging.info("%d albums identified", len(albums_to_create))
         logging.info("Album list: %s", list(albums_to_create.keys()))
@@ -2401,13 +2111,13 @@ class FolderAlbumCreator():
         # mode CLEANUP
         if self.config.mode == Configuration.SCRIPT_MODE_CLEANUP:
             # Filter list of albums to create for existing albums only
-            albums_to_cleanup = {}
+            albums_to_cleanup: dict[str, AlbumModel] = {}
             for album in albums_to_create.values():
                 # Only cleanup existing albums (has id set) and no duplicates (due to override_name)
                 if album.id and album.id not in albums_to_cleanup:
                     albums_to_cleanup[album.id] = album
             # pylint: disable=C0103
-            number_of_deleted_albums = self.api_client.cleanup_albums(albums_to_cleanup.values(), self.config.visibility, self.config.delete_confirm)
+            number_of_deleted_albums = self.api_client.cleanup_albums(list(albums_to_cleanup.values()), self.config.visibility, self.config.delete_confirm)
             logging.info("Deleted %d/%d albums", number_of_deleted_albums, len(albums_to_cleanup))
             return
 
@@ -2417,13 +2127,13 @@ class FolderAlbumCreator():
 
         # mode CREATE
         logging.info("Create / Append to Albums")
-        created_albums = []
+        created_albums: list[AlbumModel] = []
         # List for gathering all asset UUIDs for later archiving
-        asset_uuids_added = []
+        asset_uuids_added: list[str] = []
         for album in albums_to_create.values():
             # Special case: Add assets to Locked folder
             # Locked assets cannot be part of an album, so don't create albums in the first place
-            if album.visibility == 'locked':
+            if album.visibility == AssetVisibility.LOCKED:
                 self.api_client.set_assets_visibility(album.get_asset_uuids(), album.visibility)
                 logging.info("Added %d assets to locked folder", len(album.get_asset_uuids()))
                 continue
@@ -2443,7 +2153,7 @@ class FolderAlbumCreator():
             # Set assets visibility
             if album.visibility is not None:
                 self.api_client.set_assets_visibility(assets_added, album.visibility)
-                logging.info("Set visibility for %d assets to %s", len(assets_added), album.visibility)
+                logging.info("Set visibility for %d assets to %s", len(assets_added), album.visibility.value)
 
             # Update album properties depending on mode or if newly created
             if self.config.update_album_props_mode > 0 or (album in created_albums):
@@ -2452,11 +2162,11 @@ class FolderAlbumCreator():
                 if album.thumbnail_setting and album.thumbnail_setting != Configuration.ALBUM_THUMBNAIL_RANDOM_ALL:
                     # Fetch assets to be sure to have up-to-date asset list
                     album_to_update_info = self.api_client.fetch_album_info(album.id)
-                    album_assets = album_to_update_info['assets']
+                    album_assets = album_to_update_info.assets
                     thumbnail_asset = self.choose_thumbnail(album.thumbnail_setting, album_assets)
                     if thumbnail_asset:
-                        logging.info("Using asset %s as thumbnail for album %s", thumbnail_asset['originalPath'], album.get_final_name())
-                        album.thumbnail_asset_uuid = thumbnail_asset['id']
+                        logging.info("Using asset %s as thumbnail for album %s", thumbnail_asset.original_path, album.get_final_name())
+                        album.thumbnail_asset_uuid = thumbnail_asset.id
                     else:
                         logging.warning("Unable to determine thumbnail for setting '%s' in album %s", album.thumbnail_setting, album.get_final_name())
                 # Update album properties
@@ -2476,18 +2186,18 @@ class FolderAlbumCreator():
         if self.config.set_album_thumbnail == Configuration.ALBUM_THUMBNAIL_RANDOM_ALL:
             logging.info("Picking a new random thumbnail for all albums")
             albums = self.api_client.fetch_albums()
-            for album in albums:
-                album_info = self.api_client.fetch_album_info(album['id'])
+            for a in albums:
+                album_info = self.api_client.fetch_album_info(a.id)
                 # Create album model for thumbnail randomization
-                album_model = AlbumModel(album['albumName'])
-                album_model.id = album['id']
-                album_model.assets = album_info['assets']
+                album_model = AlbumModel(a.album_name)
+                album_model.id = a.id
+                album_model.assets = album_info.assets
                 # Set thumbnail setting to 'random' in model
                 album_model.thumbnail_setting = 'random'
                 thumbnail_asset = self.choose_thumbnail(album_model.thumbnail_setting, album_model.assets)
                 if thumbnail_asset:
-                    logging.info("Using asset %s as thumbnail for album %s", thumbnail_asset['originalPath'], album.get_final_name())
-                    album_model.thumbnail_asset_uuid = thumbnail_asset['id']
+                    logging.info("Using asset %s as thumbnail for album %s", thumbnail_asset.original_path, album.get_final_name())
+                    album_model.thumbnail_asset_uuid = thumbnail_asset.id
                 else:
                     logging.warning("Unable to determine thumbnail for setting '%s' in album %s", album.thumbnail_setting, album.get_final_name())
                 # Update album properties (which will only pick a random thumbnail and set it, no other properties are changed)
@@ -2511,11 +2221,11 @@ class FolderAlbumCreator():
             empty_album_count = 0
             # pylint: disable=C0103
             cleaned_album_count = 0
-            for album in albums:
-                if album['assetCount'] == 0:
+            for a in albums:
+                if a.asset_count == 0:
                     empty_album_count += 1
-                    logging.info("Deleting empty album %s", album['albumName'])
-                    if self.api_client.delete_album(album):
+                    logging.info("Deleting empty album %s", a.album_name)
+                    if self.api_client.delete_album(a.id):
                         cleaned_album_count += 1
             if empty_album_count > 0:
                 logging.info("Successfully deleted %d/%d empty albums!", cleaned_album_count, empty_album_count)
@@ -2625,6 +2335,7 @@ class AlbumCreatorLogFormatter(logging.Formatter):
     def format(self, record):
         record.levelname = record.levelname.lower()
         return logging.Formatter.format(self, record)
+
 
 # Set up logging
 handler = logging.StreamHandler()
