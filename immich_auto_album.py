@@ -78,7 +78,7 @@ class ApiClient:
     THREADS_MAX = 20
 
     # List of allowed share user roles
-    SHARE_ROLES = ["editor", "viewer"]
+    SHARE_ROLES = [AlbumUserRole.EDITOR, AlbumUserRole.VIEWER]
 
     def __init__(self, api_url : str, api_key : str, **kwargs: dict):
         """
@@ -759,6 +759,14 @@ class AlbumModel:
     class ShareWith:
         user: str
         role: Optional[AlbumUserRole] = None
+        
+        def __post_init__(self) -> None:
+            if self.role is None or isinstance(self.role, AlbumUserRole):
+                return
+            if self.role == "none":
+                self.role = None
+                return
+            self.role = AlbumUserRole(self.role)
 
     def __init__(self, name : str):
         # The album ID, set after it was created
@@ -906,14 +914,14 @@ class AlbumModel:
 
         # Add inherited users first
         for inherited_user in inherited_share_with:
-            if inherited_user.role == 'none':
+            if inherited_user.role == None:
                 users_set_to_none.add(inherited_user.user)
             else:
                 user_roles[inherited_user.user] = inherited_user.role
 
         # Apply current folder's share_with settings
         for current_user in self.share_with:
-            if current_user.role == 'none':
+            if current_user.role == None:
                 # Remove user from sharing and mark as explicitly set to none
                 user_roles.pop(current_user.user, None)
                 users_set_to_none.add(current_user.user)
@@ -924,8 +932,8 @@ class AlbumModel:
                     current_role = user_roles[current_user.user]
                     new_role = current_user.role
 
-                    if current_role == 'viewer' or new_role == 'viewer':
-                        user_roles[current_user.user] = 'viewer'
+                    if current_role == AlbumUserRole.VIEWER or new_role == AlbumUserRole.VIEWER:
+                        user_roles[current_user.user] = AlbumUserRole.VIEWER
                     else:
                         user_roles[current_user.user] = new_role
                 else:
@@ -1022,7 +1030,7 @@ class Configuration():
         "insecure": False,
         "mode": SCRIPT_MODE_CREATE,
         "delete_confirm": False,
-        "share_role": "viewer",
+        "share_role": AlbumUserRole.VIEWER,
         "sync_mode": 0,
         "find_assets_in_albums": False,
         "find_archived_assets": False,
@@ -1081,7 +1089,7 @@ class Configuration():
         self.ignore_albums = args["ignore"]
         self.mode = Utils.get_value_or_config_default("mode", args, Configuration.CONFIG_DEFAULTS["mode"])
         self.delete_confirm: bool = Utils.get_value_or_config_default("delete_confirm", args, Configuration.CONFIG_DEFAULTS["delete_confirm"])
-        self.share_with: list[str] = args["share_with"]
+        self.share_with: Optional[list[str]] = args["share_with"]
         self.share_role = Utils.get_value_or_config_default("share_role", args, Configuration.CONFIG_DEFAULTS["share_role"])
         self.sync_mode = Utils.get_value_or_config_default("sync_mode", args, Configuration.CONFIG_DEFAULTS["sync_mode"])
         self.find_assets_in_albums = Utils.get_value_or_config_default("find_assets_in_albums", args, Configuration.CONFIG_DEFAULTS["find_assets_in_albums"])
