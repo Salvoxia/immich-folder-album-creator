@@ -1095,7 +1095,7 @@ class Configuration():
         self.find_assets_in_albums = Utils.get_value_or_config_default("find_assets_in_albums", args, Configuration.CONFIG_DEFAULTS["find_assets_in_albums"])
         self.path_filter = args["path_filter"]
         self.set_album_thumbnail = args["set_album_thumbnail"]
-        self.visibility = AssetVisibility(args["visibility"])
+        self.visibility: Optional[AssetVisibility] = AssetVisibility(args["visibility"]) if args["visibility"] else None
         self.find_archived_assets = Utils.get_value_or_config_default("find_archived_assets", args, Configuration.CONFIG_DEFAULTS["find_archived_assets"])
         self.read_album_properties = Utils.get_value_or_config_default("read_album_properties", args, Configuration.CONFIG_DEFAULTS["read_album_properties"])
         self.api_timeout = Utils.get_value_or_config_default("api_timeout", args, Configuration.CONFIG_DEFAULTS["api_timeout"])
