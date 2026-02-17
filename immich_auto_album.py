@@ -419,7 +419,7 @@ class ApiClient:
         """
         asset_list_added: list[str] = []
         for assets_chunk in list(Utils.divide_chunks(asset_list, self.chunk_size)):
-            r = self.__request_api(lambda c: c.albums.add_assets_to_album(id=assets_add_album_id, bulk_ids_dto=BulkIdsDto(ids=assets_chunk)))
+            r = self.__request_api(lambda c, chunk=assets_chunk: c.albums.add_assets_to_album(id=assets_add_album_id, bulk_ids_dto=BulkIdsDto(ids=chunk)))
             for res in r:
                 if not res.success:
                     if  res.error != 'duplicate':
@@ -757,9 +757,9 @@ class AlbumModel:
 
     @dataclass
     class ShareWith:
+        """Represents a user to share an album with and their role."""
         user: str
         role: Optional[AlbumUserRole] = None
-        
         def __post_init__(self) -> None:
             if self.role is None or isinstance(self.role, AlbumUserRole):
                 return
@@ -914,14 +914,14 @@ class AlbumModel:
 
         # Add inherited users first
         for inherited_user in inherited_share_with:
-            if inherited_user.role == None:
+            if inherited_user.role is None:
                 users_set_to_none.add(inherited_user.user)
             else:
                 user_roles[inherited_user.user] = inherited_user.role
 
         # Apply current folder's share_with settings
         for current_user in self.share_with:
-            if current_user.role == None:
+            if current_user.role is None:
                 # Remove user from sharing and mark as explicitly set to none
                 user_roles.pop(current_user.user, None)
                 users_set_to_none.add(current_user.user)
@@ -932,7 +932,7 @@ class AlbumModel:
                     current_role = user_roles[current_user.user]
                     new_role = current_user.role
 
-                    if current_role == AlbumUserRole.VIEWER or new_role == AlbumUserRole.VIEWER:
+                    if AlbumUserRole.VIEWER in (current_role, new_role):
                         user_roles[current_user.user] = AlbumUserRole.VIEWER
                     else:
                         user_roles[current_user.user] = new_role
