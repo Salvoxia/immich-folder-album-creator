@@ -11,10 +11,18 @@ This is a python script designed to automatically create albums in [Immich](http
 This is useful for automatically creating and populating albums for external libraries.
 Using the provided docker image, the script can simply be added to the Immich compose stack and run along the rest of Immich's containers.
 
-**Compatibility:** Requires Immich server **v2.4.1+**. The script uses the [immichpy](https://github.com/timonrieger/immichpy) client for all API calls; supported server versions are listed in [immichpy COMPATIBILITY.csv](https://github.com/timonrieger/immichpy/blob/main/COMPATIBILITY.csv). **Update [`requirements.txt`](requirements.txt)** so the `immichpy` package version matches your Immich server version (see COMPATIBILITY.csv for the mapping). Older versions of this script support Immich server versions **v1.106.1 - v2.4.0**.
+## Compatibility:
+ Requires Immich server **v2.4.1+**.  
+ The script uses the [immichpy](https://github.com/timonrieger/immichpy) client for all API calls; supported server versions are listed in [immichpy COMPATIBILITY.csv](https://github.com/timonrieger/immichpy/blob/main/COMPATIBILITY.csv).  
+
+ **Plain Python script:** Update [`requirements.txt`](requirements.txt) so the `immichpy` package version matches your Immich server version (see [COMPATIBILITY.csv](https://github.com/timonrieger/immichpy/blob/main/COMPATIBILITY.csv) for the mapping).  
+
+ **Docker images:** New container images are released whenever there is a breaking API change and as soon as there is a new `immichpy` version covering these changes. This means that the latest image versions will always support the latest Immich server versions.  
+ 
+ **Previous versions** of this script (up to `v0.24.0`) support Immich server versions **v1.106.1 - v2.5.x**.
 
 ### Disclaimer
-This script is mostly based on the following original script: [REDVM/immich_auto_album.py](https://gist.github.com/REDVM/d8b3830b2802db881f5b59033cf35702)
+This script is originally based on the following original script: [REDVM/immich_auto_album.py](https://gist.github.com/REDVM/d8b3830b2802db881f5b59033cf35702)
 
 ## Table of Contents
 - [Immich Folder Album Creator](#immich-folder-album-creator)
@@ -58,7 +66,7 @@ This script is mostly based on the following original script: [REDVM/immich_auto
 
 ## Usage
 ### Creating an API Key
-Regardless of how the script will be used later ([Bare Python Script](#bare-python-script) or [Docker](#docker)), an API Key is required for each user the script should be used for.
+Regardless of how the script will be used ([Bare Python Script](#bare-python-script) or [Docker](#docker)), an API Key is required for each user the script should be used for.
 Since Immich Server v1.135.x, creating API keys allows the user to specify permissions. The following permissions are required for the script to work with any possible option.  
 The list contains API key permissions valid for **Immich v2.1.0**.
   - `asset`
@@ -335,6 +343,11 @@ services:
 ```
 
 This will periodically re-scan the library as per `CRON_EXPRESSION` settings and create albums (the cron script sets `UNATTENDED=1` explicitly).
+
+> [!IMPORTANT]  
+> If you choose to omit `CRON_EXPRESSION`, do **NOT** set `restart: unless-stopped`.  
+> When `CRON_EXPRESSION` is not set the script will perform a single run, then exit.  
+> If `restart: unless-stopped` is set as well, the container will continously perform a single run, exit, and restart in an endless loop, generating load.
 
 To perform a manually triggered __dry run__ (only list albums that __would__ be created) in an already running container, use the following command:
 
