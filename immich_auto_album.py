@@ -985,6 +985,8 @@ class AlbumModel:
                     # Convert raw dicts from YAML to ShareWith dataclass instances
                     if album_prop_name == 'share_with' and isinstance(value, list):
                         value = [AlbumModel.ShareWith(**entry) if isinstance(entry, dict) else entry for entry in value]
+                    elif album_prop_name == 'visibility':
+                        value = AssetVisibility(value)
                     album_props_template_vars[album_prop_name] = value
 
             # Parse inheritance properties
