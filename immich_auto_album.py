@@ -2096,9 +2096,11 @@ class FolderAlbumCreator():
             if is_docker:
                 print("Check that this is the list of albums you want to create. Run the container with environment variable UNATTENDED set to 1 to actually create these albums.")
                 return
-            else:
-                print("Press enter to create these albums, Ctrl+C to abort")
-                input()
+            try:
+                input("Press enter to create these albums, Ctrl+C to abort")
+            except KeyboardInterrupt:
+                print("Aborting...")
+                return
 
         logging.info("Listing existing albums on immich")
 
