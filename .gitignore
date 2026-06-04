@@ -3,3 +3,6 @@
 
 .history
 .venv/
+.claude/
+__pycache__/
+*.py[cod]

@@ -255,7 +255,7 @@ class ApiClient:
         return None
 
 
-    def fetch_assets(self, is_not_in_album: bool, visibility_options: list[AssetVisibility]) -> list[AssetResponseDto]:
+    def fetch_assets(self, is_not_in_album: bool, visibility_options: list[AssetVisibility], rating: Optional[int] = None) -> list[AssetResponseDto]:
         """
         Fetches assets from the Immich API.
 
@@ -265,15 +265,37 @@ class ApiClient:
         :param is_not_in_album: Flag indicating whether to fetch only assets that are not part
                 of an album or not. If set to False, will find images in albums and not part of albums
         :param visibility_options: A list of visibility options to find and return assets with
+        :param rating: If set, only assets with exactly this rating (as imported from XMP/EXIF metadata)
+                are fetched. Valid values are -1 to 5. None (default) does not filter by rating.
         :returns: An array of asset objects
         :rtype: list[AssetResponseDto]
         """
-        asset_list = self.fetch_assets_with_options(MetadataSearchDto(is_not_in_album=is_not_in_album))
+        asset_list = self.fetch_assets_with_options(MetadataSearchDto(is_not_in_album=is_not_in_album, rating=rating))
         for visiblity_option in visibility_options:
             # Do not fetch agin for 'timeline', that's the default!
             if visiblity_option != 'timeline':
-                asset_list += self.fetch_assets_with_options(MetadataSearchDto(is_not_in_album=is_not_in_album, visibility=visiblity_option))
+                asset_list += self.fetch_assets_with_options(MetadataSearchDto(is_not_in_album=is_not_in_album, visibility=visiblity_option, rating=rating))
         return asset_list
+
+    def fetch_excluded_rating_asset_ids(self, ratings: list[int], is_not_in_album: bool, visibility_options: list[AssetVisibility]) -> set[str]:
+        """
+        Fetches the IDs of all assets whose rating (as imported from XMP/EXIF metadata) matches any of
+        the provided ratings.
+
+        The same is_not_in_album and visibility_options as for the main asset fetch must be passed to
+        make sure the returned set covers the same universe of assets.
+
+        :param ratings: A list of ratings to find matching assets for. Valid values are -1 to 5.
+        :param is_not_in_album: Flag indicating whether to consider only assets that are not part of an album
+        :param visibility_options: A list of visibility options to find and return assets with
+        :returns: A set of asset IDs matching any of the provided ratings
+        :rtype: set[str]
+        """
+        excluded_asset_ids: set[str] = set()
+        for rating in ratings:
+            for asset in self.fetch_assets(is_not_in_album, visibility_options, rating):
+                excluded_asset_ids.add(asset.id)
+        return excluded_asset_ids
 
     # pylint: disable=R0914
     def fetch_assets_with_options(self, search_options: MetadataSearchDto) -> list[AssetResponseDto]:
@@ -1096,6 +1118,7 @@ class Configuration():
         self.sync_mode = Utils.get_value_or_config_default("sync_mode", args, Configuration.CONFIG_DEFAULTS["sync_mode"])
         self.find_assets_in_albums = Utils.get_value_or_config_default("find_assets_in_albums", args, Configuration.CONFIG_DEFAULTS["find_assets_in_albums"])
         self.path_filter = args["path_filter"]
+        self.exclude_rating = args["exclude_rating"]
         self.set_album_thumbnail = args["set_album_thumbnail"]
         self.visibility: Optional[AssetVisibility] = AssetVisibility(args["visibility"]) if args["visibility"] else None
         self.find_archived_assets = Utils.get_value_or_config_default("find_archived_assets", args, Configuration.CONFIG_DEFAULTS["find_archived_assets"])
@@ -1293,6 +1316,10 @@ class Configuration():
         parser.add_argument("-f", "--path-filter", action="append",
                             help="""Use either literals or glob-like patterns to filter assets before album name creation.
                                     This filter is evaluated before any values passed with --ignore. May be specified multiple times.""")
+        parser.add_argument("--exclude-rating", action="append", type=int, choices=[-1, 0, 1, 2, 3, 4, 5],
+                            help="""Exclude assets carrying the given rating (as imported from XMP/EXIF metadata by Immich) from album creation.
+                                    Primarily intended to skip Darktable-rejected photos (rating -1). Excluded assets are never added to any album.
+                                    Use the '--exclude-rating=-1' syntax for negative values. May be specified multiple times.""")
         parser.add_argument("--set-album-thumbnail", choices=Configuration.ALBUM_THUMBNAIL_SETTINGS_GLOBAL,
                             help="""Set first/last/random image as thumbnail for newly created albums or albums assets have been added to.
                                     If set to """+Configuration.ALBUM_THUMBNAIL_RANDOM_FILTERED+""", thumbnails are shuffled for all albums whose assets would not be
@@ -2077,13 +2104,25 @@ class FolderAlbumCreator():
         # only request images that are not in any album if we are running in CREATE mode,
         # otherwise we need all images, even if they are part of an album
         if self.config.mode == Configuration.SCRIPT_MODE_CREATE:
-            assets = self.api_client.fetch_assets(not self.config.find_assets_in_albums, [AssetVisibility.ARCHIVE] if self.config.find_archived_assets else [])
+            fetch_is_not_in_album = not self.config.find_assets_in_albums
+            fetch_visibility_options = [AssetVisibility.ARCHIVE] if self.config.find_archived_assets else []
         else:
-            assets = self.api_client.fetch_assets(False, [AssetVisibility.ARCHIVE])
+            fetch_is_not_in_album = False
+            fetch_visibility_options = [AssetVisibility.ARCHIVE]
+        assets = self.api_client.fetch_assets(fetch_is_not_in_album, fetch_visibility_options)
 
         # Remove live photo video components
         assets = self.check_for_and_remove_live_photo_video_components(assets, not self.config.find_assets_in_albums, self.config.find_archived_assets)
         logging.info("%d photos found", len(assets))
+
+        # Exclude assets carrying a rating configured via --exclude-rating (e.g. Darktable-rejected
+        # photos with rating -1). The rating originates from the asset's XMP/EXIF metadata as imported
+        # by Immich; excluded assets are simply dropped here so they are never added to any album.
+        if self.config.exclude_rating:
+            excluded_rating_asset_ids = self.api_client.fetch_excluded_rating_asset_ids(self.config.exclude_rating, fetch_is_not_in_album, fetch_visibility_options)
+            asset_count_before_rating_filter = len(assets)
+            assets = [asset for asset in assets if asset.id not in excluded_rating_asset_ids]
+            logging.info("Excluded %d photos based on rating filter %s", asset_count_before_rating_filter - len(assets), self.config.exclude_rating)
 
         logging.info("Sorting assets to corresponding albums using folder name")
         albums_to_create = self.build_album_list(assets, self.config.root_paths, albumprops_cache)

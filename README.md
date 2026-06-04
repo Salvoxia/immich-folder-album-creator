@@ -100,7 +100,7 @@ The list contains API key permissions valid for **Immich v2.1.0**.
 3. Run the script
 ```
     usage: immich_auto_album.py [-h] [--api-key API_KEY] [-t {literal,file}] [-r ROOT_PATH] [-u] [-a ALBUM_LEVELS] [-s ALBUM_SEPARATOR] [-R PATTERN [REPL ...]] [-c CHUNK_SIZE] [-C FETCH_CHUNK_SIZE] [-l {CRITICAL,ERROR,WARNING,INFO,DEBUG}] [-k] [-i IGNORE]
-                            [-m {CREATE,CLEANUP,DELETE_ALL}] [-d] [-x SHARE_WITH] [-o {editor,viewer}] [-S {0,1,2}] [-O {False,asc,desc}] [-A] [-f PATH_FILTER] [--set-album-thumbnail {first,last,random,random-all,random-filtered}] [--visibility {archive,locked,timeline}]
+                            [-m {CREATE,CLEANUP,DELETE_ALL}] [-d] [-x SHARE_WITH] [-o {editor,viewer}] [-S {0,1,2}] [-O {False,asc,desc}] [-A] [-f PATH_FILTER] [--exclude-rating {-1,0,1,2,3,4,5}] [--set-album-thumbnail {first,last,random,random-all,random-filtered}] [--visibility {archive,locked,timeline}]
                             [--find-archived-assets] [--read-album-properties] [--api-timeout API_TIMEOUT] [--comments-and-likes-enabled] [--comments-and-likes-disabled] [--update-album-props-mode {0,1,2}]
                             root_path api_url api_key
 
@@ -157,6 +157,9 @@ options:
                         assets is set as well, both options apply. (default: False)
   -f PATH_FILTER, --path-filter PATH_FILTER
                         Use either literals or glob-like patterns to filter assets before album name creation. This filter is evaluated before any values passed with --ignore. May be specified multiple times. (default: None)
+  --exclude-rating {-1,0,1,2,3,4,5}
+                        Exclude assets carrying the given rating (as imported from XMP/EXIF metadata by Immich) from album creation. Primarily intended to skip Darktable-rejected photos (rating -1). Excluded assets are never added to any
+                        album. Use the '--exclude-rating=-1' syntax for negative values. May be specified multiple times. (default: None)
   --set-album-thumbnail {first,last,random,random-all,random-filtered}
                         Set first/last/random image as thumbnail for newly created albums or albums assets have been added to. If set to random-filtered, thumbnails are shuffled for all albums whose assets would not be filtered out or
                         ignored by the ignore or path-filter options, even if no assets were added during the run. If set to random-all, the thumbnails for ALL albums will be shuffled on every run. (default: None)
@@ -236,6 +239,7 @@ The environment variables are analogous to the script's command line arguments.
 | `ALBUM_ORDER`                | no         | Set sorting order for newly created albums to newest (`desc`) or oldest (`asc`) file first, Immich defaults to newest file first, allowed values: `asc`, `desc` |
 | `FIND_ASSETS_IN_ALBUMS`      | no         | By default, the script only finds assets that are not assigned to any album yet. Set this option to make the script discover assets that are already part of an album and handle them as usual. If --find-archived-assets is set as well, both options apply. (default: `False`)<br>Refer to [Assets in Multiple Albums](#assets-in-multiple-albums). |
 | `PATH_FILTER`                | no         | A colon `:` separated list of literals or glob-style patterns to filter assets before album name creation. (default: ``)<br>Refer to [Filtering](#filtering). |
+| `EXCLUDE_RATING`             | no         | A colon `:` separated list of ratings (`-1` to `5`, as imported from XMP/EXIF metadata by Immich) whose assets should be excluded from album creation. Primarily intended to skip Darktable-rejected photos (rating `-1`). Excluded assets are never added to any album. (default: ``)<br>Refer to [Excluding Assets by Rating](#excluding-assets-by-rating). |
 | `SET_ALBUM_THUMBNAIL`        | no         | Set first/last/random image as thumbnail (based on image creation timestamp) for newly created albums or albums assets have been added to.<br> Allowed values: `first`,`last`,`random`,`random-filtered`,`random-all`<br>If set to `random-filtered`, thumbnails are shuffled for all albums whose assets would not be filtered out or ignored by the `IGNORE` or `PATH_FILTER` options, even if no assets were added during the run. If set to random-all, the thumbnails for ALL albums will be shuffled on every run. (default: `None`)<br>Refer to [Setting Album Thumbnails](#setting-album-thumbnails). |
 | `VISIBILITY`                 | no         | Set this option to automatically set the visibility of all assets that are discovered by the script and assigned to albums.<br>Exception for value 'locked': Assets will not be added to any albums, but to the 'locked' folder only.<br>Also applies if `MODE` is set to CLEAN_UP or DELETE_ALL; then it affects all assets in the deleted albums.<br>Always overrides `ARCHIVE`. (default: `None`)<br>Refer to [Asset Visibility & Locked Folder](#asset-visibility-locked-folder). |
 | `FIND_ARCHIVED_ASSETS`       | no         | By default, the script only finds assets with visibility set to 'timeline' (which is the default). Set this option to make the script discover assets with visibility 'archive' as well. If -A/--find-assets-in-albums is set as well, both options apply. (default: `False`)<br>Refer to [Asset Visibility & Locked Folder](#asset-visibility--locked-folder). |
@@ -513,6 +517,24 @@ Consider the following folder structure:
   - `root_path=/external_libs/photos`
   - `--album-level=-1`
   - `--path-filter=**/Vacation/*`
+
+## Excluding Assets by Rating
+
+While [Filtering](#filtering) operates on the asset's path, the option `--exclude-rating` (Docker: `EXCLUDE_RATING`) filters assets by their **rating**. The rating is read from each asset's XMP sidecar / EXIF metadata as imported into Immich by its metadata extraction job, so the file's metadata is the source of truth. Immich models ratings from `0` to `5`, but its API also stores and exposes the special value `-1`, which is what [Darktable](https://www.darktable.org/) writes for **rejected** photos.
+
+Any asset whose rating matches one of the configured values is excluded during discovery and is therefore **never added to any album**. The rating itself is not modified.
+
+The option can be specified multiple times (CLI) or as a colon `:` separated list (Docker) to exclude several ratings at once. For negative values on the command line, use the `--exclude-rating=-1` syntax.
+
+- To skip Darktable-rejected photos (rating `-1`) when building albums:
+  - CLI: `--exclude-rating=-1`
+  - Docker: `EXCLUDE_RATING=-1`
+- To skip both rejected (`-1`) and unrated-but-flagged-as-`0` photos:
+  - CLI: `--exclude-rating=-1 --exclude-rating=0`
+  - Docker: `EXCLUDE_RATING=-1:0`
+
+> [!NOTE]
+> This option only prevents matching assets from being **added** to albums. It does not remove assets that are already part of an album. To keep Immich's ratings in sync with your sidecar edits, make sure the external library mount stays read-write so Immich can (re-)import updated XMP ratings.
 
 ## Album Name Regex
 
