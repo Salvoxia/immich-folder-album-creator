@@ -11,6 +11,12 @@ This is a python script designed to automatically create albums in [Immich](http
 This is useful for automatically creating and populating albums for external libraries.
 Using the provided docker image, the script can simply be added to the Immich compose stack and run along the rest of Immich's containers.
 
+> [!NOTE]
+> **About this fork**
+> This is a fork of [Salvoxia/immich-folder-album-creator](https://github.com/Salvoxia/immich-folder-album-creator) that adds **rating-based filtering of rejected photos**, aimed at workflows where photos are culled in an external editor (e.g. Darktable) and the rejection is written back to the asset's XMP/EXIF metadata:
+> - **Exclude rejected photos from album creation** via `--exclude-rating` / `EXCLUDE_RATING` — assets carrying a configured rating (typically `-1` for Darktable-rejected) are never added to any album. See [Excluding Assets by Rating](#excluding-assets-by-rating).
+> - **Remove already-added rejected photos** via `--remove-rejected` / `REMOVE_REJECTED` — actively prunes assets carrying an excluded rating from the albums managed by this run (album membership only; assets are never deleted from Immich or disk). See [Removing already-added rejected assets](#removing-already-added-rejected-assets).
+
 ## Compatibility:
  Requires Immich server **v2.4.1+**.  
  The script uses the [immichpy](https://github.com/timonrieger/immichpy) client for all API calls; supported server versions are listed in [immichpy COMPATIBILITY.csv](https://github.com/timonrieger/immichpy/blob/main/COMPATIBILITY.csv).  
