@@ -185,6 +185,10 @@ if [ ! -z "$exclude_rating_list" ]; then
     args="$exclude_rating_list $args"
 fi
 
+if [ ! -z "$REMOVE_REJECTED" ]; then
+    args="--remove-rejected $args"
+fi
+
 if [ ! -z "$SET_ALBUM_THUMBNAIL" ]; then
     args="--set-album-thumbnail \"$SET_ALBUM_THUMBNAIL\" $args"
 fi

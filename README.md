@@ -80,6 +80,7 @@ The list contains API key permissions valid for **Immich v2.1.0**.
     - `album.delete`
   - `albumAsset`
     - `albumAsset.create`
+    - `albumAsset.delete` (only required for `--remove-rejected` / `REMOVE_REJECTED`)
   - `albumUser`
     - `albumUser.create`
     - `albumUser.update`
@@ -100,7 +101,7 @@ The list contains API key permissions valid for **Immich v2.1.0**.
 3. Run the script
 ```
     usage: immich_auto_album.py [-h] [--api-key API_KEY] [-t {literal,file}] [-r ROOT_PATH] [-u] [-a ALBUM_LEVELS] [-s ALBUM_SEPARATOR] [-R PATTERN [REPL ...]] [-c CHUNK_SIZE] [-C FETCH_CHUNK_SIZE] [-l {CRITICAL,ERROR,WARNING,INFO,DEBUG}] [-k] [-i IGNORE]
-                            [-m {CREATE,CLEANUP,DELETE_ALL}] [-d] [-x SHARE_WITH] [-o {editor,viewer}] [-S {0,1,2}] [-O {False,asc,desc}] [-A] [-f PATH_FILTER] [--exclude-rating {-1,0,1,2,3,4,5}] [--set-album-thumbnail {first,last,random,random-all,random-filtered}] [--visibility {archive,locked,timeline}]
+                            [-m {CREATE,CLEANUP,DELETE_ALL}] [-d] [-x SHARE_WITH] [-o {editor,viewer}] [-S {0,1,2}] [-O {False,asc,desc}] [-A] [-f PATH_FILTER] [--exclude-rating {-1,0,1,2,3,4,5}] [--remove-rejected] [--set-album-thumbnail {first,last,random,random-all,random-filtered}] [--visibility {archive,locked,timeline}]
                             [--find-archived-assets] [--read-album-properties] [--api-timeout API_TIMEOUT] [--comments-and-likes-enabled] [--comments-and-likes-disabled] [--update-album-props-mode {0,1,2}]
                             root_path api_url api_key
 
@@ -160,6 +161,9 @@ options:
   --exclude-rating {-1,0,1,2,3,4,5}
                         Exclude assets carrying the given rating (as imported from XMP/EXIF metadata by Immich) from album creation. Primarily intended to skip Darktable-rejected photos (rating -1). Excluded assets are never added to any
                         album. Use the '--exclude-rating=-1' syntax for negative values. May be specified multiple times. (default: None)
+  --remove-rejected
+                        In addition to never adding excluded-rating assets (see --exclude-rating), actively remove assets carrying an excluded rating from the albums managed by this run. Assets are only removed from album membership, never
+                        deleted from Immich or disk. Without this flag, a dry-run is performed that only logs which assets would be removed. Requires --exclude-rating to be set. (default: False)
   --set-album-thumbnail {first,last,random,random-all,random-filtered}
                         Set first/last/random image as thumbnail for newly created albums or albums assets have been added to. If set to random-filtered, thumbnails are shuffled for all albums whose assets would not be filtered out or
                         ignored by the ignore or path-filter options, even if no assets were added during the run. If set to random-all, the thumbnails for ALL albums will be shuffled on every run. (default: None)
@@ -240,6 +244,7 @@ The environment variables are analogous to the script's command line arguments.
 | `FIND_ASSETS_IN_ALBUMS`      | no         | By default, the script only finds assets that are not assigned to any album yet. Set this option to make the script discover assets that are already part of an album and handle them as usual. If --find-archived-assets is set as well, both options apply. (default: `False`)<br>Refer to [Assets in Multiple Albums](#assets-in-multiple-albums). |
 | `PATH_FILTER`                | no         | A colon `:` separated list of literals or glob-style patterns to filter assets before album name creation. (default: ``)<br>Refer to [Filtering](#filtering). |
 | `EXCLUDE_RATING`             | no         | A colon `:` separated list of ratings (`-1` to `5`, as imported from XMP/EXIF metadata by Immich) whose assets should be excluded from album creation. Primarily intended to skip Darktable-rejected photos (rating `-1`). Excluded assets are never added to any album. (default: ``)<br>Refer to [Excluding Assets by Rating](#excluding-assets-by-rating). |
+| `REMOVE_REJECTED`            | no         | Set to any non-empty value to actively remove assets carrying an excluded rating (see `EXCLUDE_RATING`) from the albums managed by this run. Assets are only removed from album membership, never deleted from Immich or disk. If not set, a dry-run logs which assets would be removed. Requires `EXCLUDE_RATING` to be set. (default: ``)<br>Refer to [Excluding Assets by Rating](#excluding-assets-by-rating). |
 | `SET_ALBUM_THUMBNAIL`        | no         | Set first/last/random image as thumbnail (based on image creation timestamp) for newly created albums or albums assets have been added to.<br> Allowed values: `first`,`last`,`random`,`random-filtered`,`random-all`<br>If set to `random-filtered`, thumbnails are shuffled for all albums whose assets would not be filtered out or ignored by the `IGNORE` or `PATH_FILTER` options, even if no assets were added during the run. If set to random-all, the thumbnails for ALL albums will be shuffled on every run. (default: `None`)<br>Refer to [Setting Album Thumbnails](#setting-album-thumbnails). |
 | `VISIBILITY`                 | no         | Set this option to automatically set the visibility of all assets that are discovered by the script and assigned to albums.<br>Exception for value 'locked': Assets will not be added to any albums, but to the 'locked' folder only.<br>Also applies if `MODE` is set to CLEAN_UP or DELETE_ALL; then it affects all assets in the deleted albums.<br>Always overrides `ARCHIVE`. (default: `None`)<br>Refer to [Asset Visibility & Locked Folder](#asset-visibility-locked-folder). |
 | `FIND_ARCHIVED_ASSETS`       | no         | By default, the script only finds assets with visibility set to 'timeline' (which is the default). Set this option to make the script discover assets with visibility 'archive' as well. If -A/--find-assets-in-albums is set as well, both options apply. (default: `False`)<br>Refer to [Asset Visibility & Locked Folder](#asset-visibility--locked-folder). |
@@ -533,8 +538,24 @@ The option can be specified multiple times (CLI) or as a colon `:` separated lis
   - CLI: `--exclude-rating=-1 --exclude-rating=0`
   - Docker: `EXCLUDE_RATING=-1:0`
 
+### Removing already-added rejected assets
+
+By itself, `--exclude-rating` only prevents matching assets from being **added** to albums; assets that were added before they were rejected stay in their albums. To also clean those up, add `--remove-rejected` (Docker: `REMOVE_REJECTED`). When set, after creating/updating albums the script removes any asset carrying an excluded rating from the albums it manages in that run.
+
+- **Album membership only:** assets are removed from the album, never deleted from Immich or from disk.
+- **Scope:** only the albums managed by the current run (i.e. those derived from your folder structure and root paths) are touched; manually-curated or shared albums the script did not create are left alone.
+- **Dry-run by default:** without `--remove-rejected`, the script performs a dry-run and only logs which assets *would* be removed, so you can review before enacting. Set `--remove-rejected` (CLI) or `REMOVE_REJECTED=1` (Docker) to actually remove them.
+
+```bash
+# Dry-run: log which rejected assets would be removed from managed albums
+python3 immich_auto_album.py /external_libs/photos http://localhost:2283/api <key> --exclude-rating=-1
+
+# Actually remove rejected assets from managed albums
+python3 immich_auto_album.py /external_libs/photos http://localhost:2283/api <key> --exclude-rating=-1 --remove-rejected
+```
+
 > [!NOTE]
-> This option only prevents matching assets from being **added** to albums. It does not remove assets that are already part of an album. To keep Immich's ratings in sync with your sidecar edits, make sure the external library mount stays read-write so Immich can (re-)import updated XMP ratings.
+> The rating the filter acts on is the value Immich imported from the asset's XMP/EXIF metadata, not the sidecar file read directly from disk. Keep the external library mount read-write so Immich can (re-)import updated XMP ratings; otherwise the filter acts on a stale rating.
 
 ## Album Name Regex
 

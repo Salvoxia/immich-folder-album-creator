@@ -451,6 +451,53 @@ class ApiClient:
 
         return asset_list_added
 
+    def remove_assets_from_album(self, assets_remove_album_id: str, asset_list: list[str]) -> list[str]:
+        """
+        Removes the asset IDs provided in asset_list from the provided album.
+
+        The assets are only removed from the album's membership; they are NOT deleted from Immich or disk.
+        If asset_list is larger than self.chunk_size, the list is chunked and one API call is performed per chunk.
+        Only logs errors and successes.
+
+        :param assets_remove_album_id: The ID of the album to remove assets from
+        :param asset_list: A list of asset IDs to remove from the album
+
+        :returns: The asset UUIDs that were actually removed from the album
+        :rtype: list[str]
+        """
+        asset_list_removed: list[str] = []
+        for assets_chunk in list(Utils.divide_chunks(asset_list, self.chunk_size)):
+            r = self.__request_api(lambda c, chunk=assets_chunk: c.albums.remove_asset_from_album(id=assets_remove_album_id, bulk_ids_dto=BulkIdsDto(ids=chunk)))
+            for res in r:
+                if not res.success:
+                    logging.warning("Error removing an asset from an album: %s", res.error)
+                else:
+                    asset_list_removed.append(res.id)
+
+        return asset_list_removed
+
+    def fetch_album_asset_ids_with_ratings(self, album_id: str, ratings: list[int], visibility_options: list[AssetVisibility]) -> list[str]:
+        """
+        Fetches the IDs of assets within the given album whose rating (as imported from XMP/EXIF metadata)
+        matches any of the provided ratings.
+
+        :param album_id: The ID of the album to search within
+        :param ratings: A list of ratings to find matching assets for. Valid values are -1 to 5.
+        :param visibility_options: A list of visibility options to find matching assets with. The default
+                'timeline' visibility is always searched; pass e.g. archive to also catch archived members.
+        :returns: A list of asset IDs within the album matching any of the provided ratings
+        :rtype: list[str]
+        """
+        matching_asset_ids: set[str] = set()
+        for rating in ratings:
+            for asset in self.fetch_assets_with_options(MetadataSearchDto(album_ids=[album_id], rating=rating)):
+                matching_asset_ids.add(asset.id)
+            for visibility_option in visibility_options:
+                if visibility_option != 'timeline':
+                    for asset in self.fetch_assets_with_options(MetadataSearchDto(album_ids=[album_id], visibility=visibility_option, rating=rating)):
+                        matching_asset_ids.add(asset.id)
+        return list(matching_asset_ids)
+
     def fetch_users(self) -> list[UserResponseDto]:
         """
         Queries and returns all users
@@ -1058,6 +1105,7 @@ class Configuration():
         "sync_mode": 0,
         "find_assets_in_albums": False,
         "find_archived_assets": False,
+        "remove_rejected": False,
         "read_album_properties": False,
         "api_timeout": ApiClient.API_TIMEOUT_DEFAULT,
         "comments_and_likes_enabled": False,
@@ -1119,6 +1167,7 @@ class Configuration():
         self.find_assets_in_albums = Utils.get_value_or_config_default("find_assets_in_albums", args, Configuration.CONFIG_DEFAULTS["find_assets_in_albums"])
         self.path_filter = args["path_filter"]
         self.exclude_rating = args["exclude_rating"]
+        self.remove_rejected = Utils.get_value_or_config_default("remove_rejected", args, Configuration.CONFIG_DEFAULTS["remove_rejected"])
         self.set_album_thumbnail = args["set_album_thumbnail"]
         self.visibility: Optional[AssetVisibility] = AssetVisibility(args["visibility"]) if args["visibility"] else None
         self.find_archived_assets = Utils.get_value_or_config_default("find_archived_assets", args, Configuration.CONFIG_DEFAULTS["find_archived_assets"])
@@ -1171,6 +1220,9 @@ class Configuration():
 
         if self.comments_and_likes_disabled and self.comments_and_likes_enabled:
             raise ValueError("Arguments --comments-and-likes-enabled and --comments-and-likes-disabled cannot be used together! Choose one!")
+
+        if self.remove_rejected and not self.exclude_rating:
+            logging.warning("--remove-rejected / REMOVE_REJECTED is set but no --exclude-rating / EXCLUDE_RATING is configured; no assets will be removed from albums.")
 
         if not Utils.is_integer(self.threads) or int(self.threads) < 1 or int(self.threads) > ApiClient.THREADS_MAX:
             raise ValueError(f'--threads must be an integer between 1 and {ApiClient.THREADS_MAX}')
@@ -1320,6 +1372,10 @@ class Configuration():
                             help="""Exclude assets carrying the given rating (as imported from XMP/EXIF metadata by Immich) from album creation.
                                     Primarily intended to skip Darktable-rejected photos (rating -1). Excluded assets are never added to any album.
                                     Use the '--exclude-rating=-1' syntax for negative values. May be specified multiple times.""")
+        parser.add_argument("--remove-rejected", action="store_true",
+                            help="""In addition to never adding excluded-rating assets (see --exclude-rating), actively remove assets carrying an excluded rating
+                                    from the albums managed by this run. Assets are only removed from album membership, never deleted from Immich or disk.
+                                    Without this flag, a dry-run is performed that only logs which assets would be removed. Requires --exclude-rating to be set.""")
         parser.add_argument("--set-album-thumbnail", choices=Configuration.ALBUM_THUMBNAIL_SETTINGS_GLOBAL,
                             help="""Set first/last/random image as thumbnail for newly created albums or albums assets have been added to.
                                     If set to """+Configuration.ALBUM_THUMBNAIL_RANDOM_FILTERED+""", thumbnails are shuffled for all albums whose assets would not be
@@ -1433,6 +1489,12 @@ class FolderAlbumCreator():
     # File name to use for album properties files
     ALBUMPROPS_FILE_NAME = '.albumprops'
 
+    # Well-known system/metadata directories that must never be descended into when scanning
+    # external libraries for .albumprops files. These hold transient or duplicate content
+    # (Synology snapshots and recycle bins, plus thumbnail metadata) that should never be
+    # indexed and whose files may vanish mid-run, causing FileNotFoundError.
+    SYSTEM_DIRS_TO_SKIP = ('@eaDir', '#recycle', '#snapshot')
+
     def __init__(self, configuration : Configuration):
         self.config = configuration
         # Create API client for configuration
@@ -1463,7 +1525,11 @@ class FolderAlbumCreator():
                 continue
             for path_tuple in os.walk(path):
                 root = path_tuple[0]
+                dirnames = path_tuple[1]
                 filenames = path_tuple[2]
+                # Prune well-known system directories in place so os.walk does not descend into them
+                # (e.g. Synology #snapshot / #recycle / @eaDir). Requires the default topdown=True.
+                dirnames[:] = [d for d in dirnames if d not in FolderAlbumCreator.SYSTEM_DIRS_TO_SKIP]
                 for filename in fnmatch.filter(filenames, FolderAlbumCreator.ALBUMPROPS_FILE_NAME):
                     albumprops_files.append(os.path.join(root, filename))
         return albumprops_files
@@ -1634,6 +1700,10 @@ class FolderAlbumCreator():
                     logging.debug("Loaded .albumprops from %s", albumprops_path)
             except yaml.YAMLError as ex:
                 logging.error("Could not parse album properties file %s: %s", albumprops_path, ex)
+            except (OSError, UnicodeDecodeError) as ex:
+                # The file may have vanished (e.g. snapshot rotation), be unreadable, or not be UTF-8.
+                # Skip it rather than aborting the entire run.
+                logging.warning("Could not read album properties file %s: %s", albumprops_path, ex)
 
         return albumprops_path_to_model_dict
 
@@ -2086,6 +2156,57 @@ class FolderAlbumCreator():
                 return user
         return None
 
+    def remove_rejected_assets_from_albums(self, managed_albums: list[AlbumModel]) -> None:
+        """
+        Removes assets carrying an excluded rating (see --exclude-rating) from the membership of the
+        provided managed albums. Assets are only removed from album membership, never deleted from
+        Immich or disk.
+
+        If --remove-rejected is not set, a dry-run is performed that only logs what would be removed.
+        Does nothing if no ratings are configured for exclusion.
+
+        :param managed_albums: The album models managed by this run to prune rejected assets from
+        """
+        if not self.config.exclude_rating:
+            return
+
+        # Album members may be archived, so always check the 'archive' visibility in addition to the default
+        prune_visibility_options = [AssetVisibility.ARCHIVE]
+        total_removed = 0
+        # An album may be referenced by multiple models (e.g. due to override_name); only process each once
+        processed_album_ids: set[str] = set()
+        for album in managed_albums:
+            if not album.id or album.id in processed_album_ids:
+                continue
+            processed_album_ids.add(album.id)
+
+            rejected_asset_ids = self.api_client.fetch_album_asset_ids_with_ratings(album.id, self.config.exclude_rating, prune_visibility_options)
+            if not rejected_asset_ids:
+                continue
+
+            if self.config.remove_rejected:
+                try:
+                    removed_asset_ids = self.api_client.remove_assets_from_album(album.id, rejected_asset_ids)
+                except ApiException as ex:
+                    if ex.status == 403:
+                        logging.error("Cannot remove rejected assets: the API key is missing the 'albumAsset.delete' permission. "
+                                      "Grant it in Immich (Account Settings > API Keys) or unset --remove-rejected / REMOVE_REJECTED. Skipping removal.")
+                        return
+                    logging.error("Failed to remove rejected assets from album %s; skipping it. Error: %s", album.get_final_name(), ex)
+                    continue
+                total_removed += len(removed_asset_ids)
+                logging.info("Removed %d rejected assets from album %s", len(removed_asset_ids), album.get_final_name())
+            else:
+                total_removed += len(rejected_asset_ids)
+                logging.info("Would remove %d rejected assets from album %s (dry-run; set --remove-rejected / REMOVE_REJECTED to actually remove)",
+                             len(rejected_asset_ids), album.get_final_name())
+
+        if total_removed > 0:
+            if self.config.remove_rejected:
+                logging.info("Removed %d rejected assets from albums in total", total_removed)
+            else:
+                logging.info("Would remove %d rejected assets from albums in total (dry-run)", total_removed)
+
     def run(self) -> None:
         """
         Performs the actual logic of the script, i.e. creating albums from external library folder structures and everything else.
@@ -2224,6 +2345,11 @@ class FolderAlbumCreator():
                 self.api_client.update_album_shared_state(album, True, users)
 
         logging.info("%d albums created", len(created_albums))
+
+        # Remove assets carrying an excluded rating from the albums managed by this run.
+        # Only affects album membership; assets are never deleted from Immich or disk.
+        if self.config.exclude_rating:
+            self.remove_rejected_assets_from_albums(list(albums_to_create.values()))
 
         # Perform album cover randomization
         if self.config.set_album_thumbnail == Configuration.ALBUM_THUMBNAIL_RANDOM_ALL:

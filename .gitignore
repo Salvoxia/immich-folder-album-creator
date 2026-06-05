@@ -5,4 +5,5 @@
 .venv/
 .claude/
 __pycache__/
-*.py[cod]
+priv/
+*.tar
