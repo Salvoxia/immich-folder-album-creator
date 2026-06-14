@@ -1095,10 +1095,10 @@ Option `1` leaves it up to the user to clear up "offline" assets by emptying the
 Option `2` will first delete all "offline" assets automatically, then do the same with any empty albums left.  
 
 > [!IMPORTANT]  
-> For Immich v1.116.0 - v1.127.x finding offline assets has been broken. Immich fixed the issue with v1.128.0.
+> If your library is on a network share or external drive that might be prone to not being available all the time, avoid using `Sync Mode = 2`.
 
 > [!IMPORTANT]  
-> If your library is on a network share or external drive that might be prone to not being available all the time, avoid using `Sync Mode = 2`.
+> Removing offline assets from the locked folder requires an API key with elevated privileges. If your API key is not elevated, a warning will be logged.
 
 > [!CAUTION]  
 > It is __not__ possible for the script to distinguish between an album that was left behind empty after Offline Asset Removal and a manually created album with no images added to it! All empty albums of that user will be deleted!
