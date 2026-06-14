@@ -20,7 +20,7 @@ from urllib.error import HTTPError
 import traceback
 import regex
 import yaml
-from aiohttp import ClientSession, ClientTimeout
+from aiohttp import TCPConnector, ClientSession, ClientTimeout
 
 from immichpy.client.generated import (
     AddUsersDto,
@@ -107,16 +107,6 @@ class ApiClient:
 
         self.__validate_config()
 
-        # Build request arguments to use for API calls
-        self.request_args = {
-            'headers' : {
-                'x-api-key': self.api_key,
-                'Content-Type': 'application/json',
-                'Accept': 'application/json'
-            },
-            'verify' : not self.insecure
-        }
-
         self.server_version = self.__fetch_server_version_safe()
         if self.server_version is None:
             raise AssertionError("Communication with Immich Server API failed! Make sure the API URL is correct and verify the API Key!")
@@ -175,7 +165,8 @@ class ApiClient:
         :raises: ApiException or Exception on failure.
         """
         async def call() -> T:
-            session = ClientSession(timeout=ClientTimeout(total=self.api_timeout))
+            connector = TCPConnector(ssl=not self.insecure)
+            session = ClientSession(timeout=ClientTimeout(total=self.api_timeout), connector=connector)
             try:
                 async with AsyncClient(api_key=self.api_key, base_url=self.api_url, http_client=session) as client:
                     return await fn(client)
