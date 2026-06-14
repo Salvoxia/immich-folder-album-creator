@@ -489,7 +489,7 @@ class ApiClient:
         for visibility_setting in AssetVisibility:
             try:
                 offline_assets += self.fetch_assets_with_options(MetadataSearchDto(is_offline=True, visibility=visibility_setting))
-            except UnauthorizedException as ex:
+            except UnauthorizedException:
                 logging.warning('Admin-level API key required to check for offline assets in locked folder, skipping...')
 
         if len(offline_assets) > 0:
