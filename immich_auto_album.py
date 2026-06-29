@@ -2197,10 +2197,10 @@ class FolderAlbumCreator():
                 album_model.thumbnail_setting = 'random'
                 thumbnail_asset = self.choose_thumbnail(album_model.thumbnail_setting, album_model.assets)
                 if thumbnail_asset:
-                    logging.info("Using asset %s as thumbnail for album %s", thumbnail_asset.original_path, album.get_final_name())
+                    logging.info("Using asset %s as thumbnail for album %s", thumbnail_asset.original_path, album_model.get_final_name())
                     album_model.thumbnail_asset_uuid = thumbnail_asset.id
                 else:
-                    logging.warning("Unable to determine thumbnail for setting '%s' in album %s", album.thumbnail_setting, album.get_final_name())
+                    logging.warning("Unable to determine thumbnail for setting '%s' in album %s", album_model.thumbnail_setting, album_model.get_final_name())
                 # Update album properties (which will only pick a random thumbnail and set it, no other properties are changed)
                 self.api_client.update_album_properties(album_model)
 
