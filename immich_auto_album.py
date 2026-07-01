@@ -18,6 +18,7 @@ from collections import OrderedDict, defaultdict
 import random
 from urllib.error import HTTPError
 import traceback
+from uuid import UUID
 import regex
 import yaml
 from aiohttp import TCPConnector, ClientSession, ClientTimeout
@@ -344,7 +345,7 @@ class ApiClient:
         :returns: A list of album objects
         :rtype: list[AlbumResponseDto]
         """
-        return self.__request_api(lambda c: c.albums.get_all_albums())
+        return self.__request_api(lambda c: c.albums.get_all_albums(is_owned=True))
 
     def fetch_album_info(self, album_id_for_info: str) -> AlbumResponseDto:
         """
@@ -358,7 +359,7 @@ class ApiClient:
 
         return self.__request_api(lambda c: c.albums.get_album_info(id=album_id_for_info))
 
-    def delete_album(self, album_delete_id: str) -> bool:
+    def delete_album(self, album_delete_id: UUID) -> bool:
         """
         Deletes an album identified by album_delete_id
 
@@ -416,7 +417,7 @@ class ApiClient:
                     if  res.error != 'duplicate':
                         logging.warning("Error adding an asset to an album: %s", res.error)
                 else:
-                    asset_list_added.append(res.id)
+                    asset_list_added.append(str(res.id))
 
         return asset_list_added
 
@@ -592,8 +593,7 @@ class ApiClient:
             # Fetch assets before delete so we can set visibility after; once deleted, album is gone
             assets_in_deleted_album: list[AssetResponseDto] = []
             if assets_visibility is not None:
-                album_to_delete_info = self.fetch_album_info(album_to_delete.id)
-                assets_in_deleted_album = album_to_delete_info.assets or []
+                assets_in_deleted_album = self.fetch_assets_with_options(MetadataSearchDto(album_ids=[album_to_delete.id]))
             if self.delete_album(album_to_delete.id):
                 logging.info("Deleted album %s", album_to_delete.album_name)
                 deleted_album_count += 1
@@ -637,14 +637,13 @@ class ApiClient:
             # For cleanup, we only respect the global visibility flag to be able to either do not change
             # visibility at all, or to override whatever might be set in .ablumprops and revert to something else
             if asset_visibility is not None:
-                album_to_delete_info = self.fetch_album_info(album_to_delete.id)
-                assets_in_album = album_to_delete_info.assets
+                assets_in_album = self.fetch_assets_with_options(MetadataSearchDto(album_ids=[album_to_delete.id]))
             if self.delete_album(album_to_delete.id):
                 logging.info("Deleted album %s", album_to_delete.get_final_name())
                 cpt += 1
                 # Archive flag is set, so we need to unarchive assets
                 if asset_visibility is not None and len(assets_in_album) > 0:
-                    self.set_assets_visibility([asset.id for asset in assets_in_album], asset_visibility)
+                    self.set_assets_visibility([str(asset.id) for asset in assets_in_album], asset_visibility)
                     logging.info("Set visibility for %d assets to %s", len(assets_in_album), asset_visibility.value)
         return cpt
 
@@ -673,7 +672,7 @@ class ApiClient:
                 continue
             # Use 'viewer' as default role if not specified
             share_role_local = share_user.role or AlbumUserRole.VIEWER
-            share_users_to_roles_expected[share_user_in_immich.id] = share_role_local
+            share_users_to_roles_expected[str(share_user_in_immich.id)] = share_role_local
 
         # No users to share with and unsharing is disabled?
         if len(share_users_to_roles_expected) == 0 and not unshare_users:
@@ -684,7 +683,7 @@ class ApiClient:
         # Dict mapping a user ID to share role
         album_share_info: dict[str, AlbumUserRole] = {}
         for share_user_actual in album_to_share_info.album_users:
-            album_share_info[share_user_actual.user.id] = share_user_actual.role
+            album_share_info[str(share_user_actual.user.id)] = share_user_actual.role
 
         # Group share users by share role
         share_roles_to_users_expected: dict[AlbumUserRole, list[str]] = defaultdict(list)
@@ -1874,8 +1873,8 @@ class FolderAlbumCreator():
         # If either is not True, we need to fetch all assets
         if is_not_in_album or not find_archived:
             logging.debug("Fetching all assets for live photo video component check")
-            full_asset_list = self.api_client.fetch_assets_with_options(MetadataSearchDto(is_not_in_album=False))
-            full_asset_list += self.api_client.fetch_assets_with_options(MetadataSearchDto(is_not_in_album=False, visibility=AssetVisibility.ARCHIVE))
+            full_asset_list = self.api_client.fetch_assets_with_options(MetadataSearchDto(isNotInAlbum=False))
+            full_asset_list += self.api_client.fetch_assets_with_options(MetadataSearchDto(isNotInAlbum=False, visibility=AssetVisibility.ARCHIVE))
         else:
             full_asset_list = asset_list
 
@@ -2162,12 +2161,11 @@ class FolderAlbumCreator():
                 # Thumbnail setting 'random-all' is handled separately
                 if album.thumbnail_setting and album.thumbnail_setting != Configuration.ALBUM_THUMBNAIL_RANDOM_ALL:
                     # Fetch assets to be sure to have up-to-date asset list
-                    album_to_update_info = self.api_client.fetch_album_info(album.id)
-                    album_assets = album_to_update_info.assets
+                    album_assets = self.api_client.fetch_assets_with_options(MetadataSearchDto(album_ids=[album.id]))
                     thumbnail_asset = self.choose_thumbnail(album.thumbnail_setting, album_assets)
                     if thumbnail_asset:
                         logging.info("Using asset %s as thumbnail for album %s", thumbnail_asset.original_path, album.get_final_name())
-                        album.thumbnail_asset_uuid = thumbnail_asset.id
+                        album.thumbnail_asset_uuid = str(thumbnail_asset.id)
                     else:
                         logging.warning("Unable to determine thumbnail for setting '%s' in album %s", album.thumbnail_setting, album.get_final_name())
                 # Update album properties
@@ -2188,17 +2186,16 @@ class FolderAlbumCreator():
             logging.info("Picking a new random thumbnail for all albums")
             albums = self.api_client.fetch_albums()
             for a in albums:
-                album_info = self.api_client.fetch_album_info(a.id)
                 # Create album model for thumbnail randomization
                 album_model = AlbumModel(a.album_name)
-                album_model.id = a.id
-                album_model.assets = album_info.assets
+                album_model.id = str(a.id)
+                album_model.assets = self.api_client.fetch_assets_with_options(MetadataSearchDto(album_ids=[a.id]))
                 # Set thumbnail setting to 'random' in model
                 album_model.thumbnail_setting = 'random'
                 thumbnail_asset = self.choose_thumbnail(album_model.thumbnail_setting, album_model.assets)
                 if thumbnail_asset:
                     logging.info("Using asset %s as thumbnail for album %s", thumbnail_asset.original_path, album_model.get_final_name())
-                    album_model.thumbnail_asset_uuid = thumbnail_asset.id
+                    album_model.thumbnail_asset_uuid = str(thumbnail_asset.id)
                 else:
                     logging.warning("Unable to determine thumbnail for setting '%s' in album %s", album_model.thumbnail_setting, album_model.get_final_name())
                 # Update album properties (which will only pick a random thumbnail and set it, no other properties are changed)
