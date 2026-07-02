@@ -1,5 +1,5 @@
 FROM python:3.13-alpine3.22
-LABEL maintainer="Salvoxia <salvoxia@blindfish.info>"
+LABEL maintainer="Salvoxia <salvoxia@blindfish.info>; goorkamateusz.github.io"
 ARG TARGETPLATFORM
 
 # Latest releases available at https://github.com/aptible/supercronic/releases

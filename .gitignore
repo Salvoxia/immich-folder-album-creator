@@ -3,3 +3,7 @@
 
 .history
 .venv/
+.claude/
+__pycache__/
+priv/
+*.tar

@@ -44,6 +44,14 @@ if [ ! -z "$IGNORE" ]; then
     done
 fi
 
+# parse EXCLUDE_RATING CSV
+exclude_rating_list=""
+if [ ! -z "$EXCLUDE_RATING" ]; then
+    for exclude_rating_entry in ${EXCLUDE_RATING}; do
+        exclude_rating_list="--exclude-rating=\"$exclude_rating_entry\" $exclude_rating_list"
+    done
+fi
+
 # parse API_KEY CSV
 main_api_key=""
 additional_api_keys=""
@@ -171,6 +179,14 @@ fi
 
 if [ ! -z "$path_filter_list" ]; then
     args="$path_filter_list $args"
+fi
+
+if [ ! -z "$exclude_rating_list" ]; then
+    args="$exclude_rating_list $args"
+fi
+
+if [ ! -z "$REMOVE_REJECTED" ]; then
+    args="--remove-rejected $args"
 fi
 
 if [ ! -z "$SET_ALBUM_THUMBNAIL" ]; then
