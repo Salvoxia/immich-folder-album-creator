@@ -260,10 +260,10 @@ class ApiClient:
         :returns: An array of asset objects
         :rtype: list[AssetResponseDto]
         """
-        asset_list = self.fetch_assets_with_options(MetadataSearchDto(is_not_in_album=is_not_in_album))
+        asset_list = self.fetch_assets_with_options(MetadataSearchDto(is_not_in_album=is_not_in_album, visibility=AssetVisibility.TIMELINE))
         for visiblity_option in visibility_options:
             # Do not fetch agin for 'timeline', that's the default!
-            if visiblity_option != 'timeline':
+            if visiblity_option != AssetVisibility.TIMELINE:
                 asset_list += self.fetch_assets_with_options(MetadataSearchDto(is_not_in_album=is_not_in_album, visibility=visiblity_option))
         return asset_list
 
@@ -2083,7 +2083,6 @@ class FolderAlbumCreator():
         # Remove live photo video components
         assets = self.check_for_and_remove_live_photo_video_components(assets, not self.config.find_assets_in_albums, self.config.find_archived_assets)
         logging.info("%d photos found", len(assets))
-
         logging.info("Sorting assets to corresponding albums using folder name")
         albums_to_create = self.build_album_list(assets, self.config.root_paths, albumprops_cache)
         albums_to_create = dict(sorted(albums_to_create.items(), key=lambda item: item[0]))
