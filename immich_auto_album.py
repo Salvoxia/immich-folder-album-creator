@@ -706,6 +706,9 @@ class ApiClient:
         # Now check if the album is shared with any users it should not be shared with
         if unshare_users:
             for shared_user in album_share_info:
+                # We never remove the owner
+                if album_share_info[shared_user] == AlbumUserRole.OWNER:
+                    continue
                 if shared_user not in share_users_to_roles_expected:
                     try:
                         self.unshare_album_with_user(album_to_share.id, shared_user)
