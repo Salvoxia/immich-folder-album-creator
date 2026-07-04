@@ -501,6 +501,9 @@ class ApiClient:
         offline_assets: list[AssetResponseDto] = []
         # To find all offline assets we need to check for each possible visibility
         for visibility_setting in AssetVisibility:
+            # exclude locked folder
+            if visibility_setting == AssetVisibility.LOCKED:
+                continue
             try:
                 offline_assets += self.fetch_assets_with_options(MetadataSearchDto(is_offline=True, visibility=visibility_setting))
             except UnauthorizedException:
