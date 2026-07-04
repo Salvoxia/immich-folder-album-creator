@@ -7,7 +7,7 @@ from functools import partial
 from time import perf_counter
 import asyncio
 from dataclasses import dataclass
-from typing import Awaitable, Callable, Optional, Tuple, TypeVar, Any, override
+from typing import Awaitable, Callable, Optional, Tuple, TypeVar, Any
 from logging import LogRecord
 import argparse
 import logging
@@ -2339,7 +2339,6 @@ class AlbumCreatorLogFormatter(logging.Formatter):
             datefmt=None: datetime.datetime.fromtimestamp(record.created, datetime.timezone.utc).astimezone().replace(microsecond=0).isoformat(sep="T",timespec=timespec_setting).replace('+00:00', 'Z')
             )
 
-    @override
     def format(self, record: LogRecord):
         record.levelname = record.levelname.lower()
         return logging.Formatter.format(self, record)
