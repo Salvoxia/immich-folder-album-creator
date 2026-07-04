@@ -12,14 +12,14 @@ This is useful for automatically creating and populating albums for external lib
 Using the provided docker image, the script can simply be added to the Immich compose stack and run along the rest of Immich's containers.
 
 ## Compatibility:
- Requires Immich server **v2.4.1+**.  
+ Requires Immich server **v3.0.0+**.  
  The script uses the [immichpy](https://github.com/timonrieger/immichpy) client for all API calls; supported server versions are listed in [immichpy COMPATIBILITY.csv](https://github.com/timonrieger/immichpy/blob/main/COMPATIBILITY.csv).  
 
  **Plain Python script:** Update [`requirements.txt`](requirements.txt) so the `immichpy` package version matches your Immich server version (see [COMPATIBILITY.csv](https://github.com/timonrieger/immichpy/blob/main/COMPATIBILITY.csv) for the mapping).  
 
  **Docker images:** New container images are released whenever there is a breaking API change and as soon as there is a new `immichpy` version covering these changes. This means that the latest image versions will always support the latest Immich server versions.  
  
- **Previous versions** of this script (up to `v0.24.0`) support Immich server versions **v1.106.1 - v2.5.x**.
+ **Previous versions** of this script (up to `v0.25.3`) support Immich server versions **v1.106.1 - v2.7.x**.
 
 ### Disclaimer
 This script is originally based on the following original script: [REDVM/immich_auto_album.py](https://gist.github.com/REDVM/d8b3830b2802db881f5b59033cf35702)
@@ -68,7 +68,7 @@ This script is originally based on the following original script: [REDVM/immich_
 ### Creating an API Key
 Regardless of how the script will be used ([Bare Python Script](#bare-python-script) or [Docker](#docker)), an API Key is required for each user the script should be used for.
 Since Immich Server v1.135.x, creating API keys allows the user to specify permissions. The following permissions are required for the script to work with any possible option.  
-The list contains API key permissions valid for **Immich v2.1.0**.
+The list contains API key permissions valid for **Immich v3.0.0**.
   - `asset`
     - `asset.read`
     - `asset.delete`
