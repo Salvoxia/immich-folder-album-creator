@@ -716,6 +716,7 @@ class ApiClient:
             elif album_share_info[user_to_share_with] != share_role_expected:
                 try:
                     self.update_album_share_user_role(album_to_share.id, user_to_share_with, share_role_expected)
+                    print(share_role_expected)
                     logging.debug("Sharing: Updated share role for user %s in album %s to %s", user_to_share_with, album_to_share.get_final_name(), share_role_expected.value)
                 except HTTPError as ex:
                     logging.warning("Sharing: Error updating share role for user %s in album %s to %s", user_to_share_with, album_to_share.get_final_name(), share_role_expected.value)
@@ -995,7 +996,11 @@ class AlbumModel:
                     value = album_properties[album_prop_name]
                     # Convert raw dicts from YAML to ShareWith dataclass instances
                     if album_prop_name == 'share_with' and isinstance(value, list):
-                        value = [AlbumModel.ShareWith(**entry) if isinstance(entry, dict) else entry for entry in value]
+                        share_with_list : list[AlbumModel.ShareWith] = []
+                        for entry in value:
+                            role : AlbumUserRole | None = AlbumUserRole(entry["role"]) if entry["role"] != "none" else None
+                            share_with_list.append(AlbumModel.ShareWith(user=entry["user"], role=role))
+                        value = share_with_list
                     elif album_prop_name == 'visibility':
                         value = AssetVisibility(value)
                     album_props_template_vars[album_prop_name] = value
@@ -1613,7 +1618,7 @@ class FolderAlbumCreator():
                 album_model_local = AlbumModel.parse_album_properties_file(albumprops_path)
                 if album_model_local:
                     albumprops_path_to_model_dict[albumprops_path] = album_model_local
-                    logging.debug("Loaded .albumprops from %s", albumprops_path)
+                    logging.debug("Loaded .albumprops from %s: %s", albumprops_path, album_model_local)
             except yaml.YAMLError as ex:
                 logging.error("Could not parse album properties file %s: %s", albumprops_path, ex)
 
