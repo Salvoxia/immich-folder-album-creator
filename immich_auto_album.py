@@ -1385,8 +1385,9 @@ class Configuration():
                             help="""Use either literals or glob-like patterns to filter assets before album name creation.
                                     This filter is evaluated before any values passed with --ignore. May be specified multiple times.""")
         parser.add_argument("--path-filter-regex", action="append",
-                            help="""Use regular expressions to for filter assets before album name creation. Only assets for which the path after the root path matches the regular expression are considered.
-                                    This filter is evaluated before any values passed with --ignore or --ignore-regex. May be specified multiple times.""")                         
+                            help="""Use regular expressions to for filter assets before album name creation. Only assets for which the path after the root path matches the regular expression
+                                    are considered.
+                                    This filter is evaluated before any values passed with --ignore or --ignore-regex. May be specified multiple times.""")
         parser.add_argument("--set-album-thumbnail", choices=Configuration.ALBUM_THUMBNAIL_SETTINGS_GLOBAL,
                             help="""Set first/last/random image as thumbnail for newly created albums or albums assets have been added to.
                                     If set to """+Configuration.ALBUM_THUMBNAIL_RANDOM_FILTERED+""", thumbnails are shuffled for all albums whose assets would not be
