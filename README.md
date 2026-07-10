@@ -136,6 +136,9 @@ options:
   -k, --insecure        Pass to ignore SSL verification (default: False)
   -i IGNORE, --ignore IGNORE
                         Use either literals or glob-like patterns to ignore assets for album name creation. This filter is evaluated after any values passed with --path-filter. May be specified multiple times. (default: None)
+  --ignore-regex IGNORE_REGEX
+                        As regular expressions to ignore assets from album name creation. If an asset's path after the root path is matching the regular expression, it is ignored. This filter is evaluated after any values passed with --path-filter or --path-filter-regex. May be specified multiple times.
+                        (default: None)
   -m {CREATE,CLEANUP,DELETE_ALL}, --mode {CREATE,CLEANUP,DELETE_ALL}
                         Mode for the script to run with. CREATE = Create albums based on folder names and provided arguments; CLEANUP = Create album names based on current images and script arguments, but delete albums if they exist;
                         DELETE_ALL = Delete all albums. If the mode is anything but CREATE, --unattended does not have any effect. Only performs deletion if -d/--delete-confirm option is set, otherwise only performs a dry-run. (default:
@@ -157,6 +160,9 @@ options:
                         assets is set as well, both options apply. (default: False)
   -f PATH_FILTER, --path-filter PATH_FILTER
                         Use either literals or glob-like patterns to filter assets before album name creation. This filter is evaluated before any values passed with --ignore. May be specified multiple times. (default: None)
+  --path-filter-regex PATH_FILTER_REGEX
+                        Use regular expressions to for filter assets before album name creation. Only assets for which the path after the root path matches the regular expression are considered. This filter is evaluated before any values passed with --ignore or --ignore-regex. May be specified multiple
+                        times. (default: None)
   --set-album-thumbnail {first,last,random,random-all,random-filtered}
                         Set first/last/random image as thumbnail for newly created albums or albums assets have been added to. If set to random-filtered, thumbnails are shuffled for all albums whose assets would not be filtered out or
                         ignored by the ignore or path-filter options, even if no assets were added during the run. If set to random-all, the thumbnails for ALL albums will be shuffled on every run. (default: None)
