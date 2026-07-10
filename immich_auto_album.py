@@ -1200,13 +1200,13 @@ class Configuration():
             self.unattended = False
 
         # Create ignore regular expressions
-        self.ignore_albums_regex = []
+        self.ignore_albums_regex : list[str] = args["ignore_regex"] if args["ignore_regex"] is not None else []
         if self.ignore_albums:
             for ignore_albums_entry in self.ignore_albums:
                 self.ignore_albums_regex.append(Configuration.__glob_to_re(Configuration.__expand_to_glob(ignore_albums_entry)))
 
         # Create path filter regular expressions
-        self.path_filter_regex = []
+        self.path_filter_regex : list[str] = args["path_filter_regex"] if args["path_filter_regex"] is not None else []
         if self.path_filter:
             for path_filter_entry in self.path_filter:
                 self.path_filter_regex.append(Configuration.__glob_to_re(Configuration.__expand_to_glob(path_filter_entry)))
@@ -1350,6 +1350,9 @@ class Configuration():
         parser.add_argument("-i", "--ignore", action="append",
                             help="""Use either literals or glob-like patterns to ignore assets for album name creation.
                                     This filter is evaluated after any values passed with --path-filter. May be specified multiple times.""")
+        parser.add_argument("--ignore-regex", action="append",
+                            help="""As regular expressions to ignore assets from album name creation. If an asset's path after the root path is matching the regular expression, it is ignored.
+                                    This filter is evaluated after any values passed with --path-filter or --path-filter-regex. May be specified multiple times.""")
         parser.add_argument("-m", "--mode", default=Configuration.CONFIG_DEFAULTS['mode'],
                             choices=[Configuration.SCRIPT_MODE_CREATE, Configuration.SCRIPT_MODE_CLEANUP, Configuration.SCRIPT_MODE_DELETE_ALL],
                             help="""Mode for the script to run with.
@@ -1381,6 +1384,10 @@ class Configuration():
         parser.add_argument("-f", "--path-filter", action="append",
                             help="""Use either literals or glob-like patterns to filter assets before album name creation.
                                     This filter is evaluated before any values passed with --ignore. May be specified multiple times.""")
+        parser.add_argument("--path-filter-regex", action="append",
+                            help="""Use regular expressions to for filter assets before album name creation. Only assets for which the path after the root path matches the regular expression
+                                    are considered.
+                                    This filter is evaluated before any values passed with --ignore or --ignore-regex. May be specified multiple times.""")
         parser.add_argument("--set-album-thumbnail", choices=Configuration.ALBUM_THUMBNAIL_SETTINGS_GLOBAL,
                             help="""Set first/last/random image as thumbnail for newly created albums or albums assets have been added to.
                                     If set to """+Configuration.ALBUM_THUMBNAIL_RANDOM_FILTERED+""", thumbnails are shuffled for all albums whose assets would not be

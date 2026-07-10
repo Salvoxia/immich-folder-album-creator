@@ -136,6 +136,9 @@ options:
   -k, --insecure        Pass to ignore SSL verification (default: False)
   -i IGNORE, --ignore IGNORE
                         Use either literals or glob-like patterns to ignore assets for album name creation. This filter is evaluated after any values passed with --path-filter. May be specified multiple times. (default: None)
+--ignore-regex IGNORE_REGEX
+                      Use regular expressions to ignore assets from album name creation. If an asset's path after the root path is matching the regular expression, it is ignored. This filter is evaluated after any values passed with --path-filter or --path-filter-regex. May be specified multiple times.
+                      (default: None)
   -m {CREATE,CLEANUP,DELETE_ALL}, --mode {CREATE,CLEANUP,DELETE_ALL}
                         Mode for the script to run with. CREATE = Create albums based on folder names and provided arguments; CLEANUP = Create album names based on current images and script arguments, but delete albums if they exist;
                         DELETE_ALL = Delete all albums. If the mode is anything but CREATE, --unattended does not have any effect. Only performs deletion if -d/--delete-confirm option is set, otherwise only performs a dry-run. (default:
@@ -157,6 +160,9 @@ options:
                         assets is set as well, both options apply. (default: False)
   -f PATH_FILTER, --path-filter PATH_FILTER
                         Use either literals or glob-like patterns to filter assets before album name creation. This filter is evaluated before any values passed with --ignore. May be specified multiple times. (default: None)
+  --path-filter-regex PATH_FILTER_REGEX
+                        Use regular expressions to for filter assets before album name creation. Only assets for which the path after the root path matches the regular expression are considered. This filter is evaluated before any values passed with --ignore or --ignore-regex. May be specified multiple
+                        times. (default: None)
   --set-album-thumbnail {first,last,random,random-all,random-filtered}
                         Set first/last/random image as thumbnail for newly created albums or albums assets have been added to. If set to random-filtered, thumbnails are shuffled for all albums whose assets would not be filtered out or
                         ignored by the ignore or path-filter options, even if no assets were added during the run. If set to random-all, the thumbnails for ALL albums will be shuffled on every run. (default: None)
@@ -228,6 +234,7 @@ The environment variables are analogous to the script's command line arguments.
 | `LOG_LEVEL`                  | no         | Log level to use (default: INFO), allowed values: `CRITICAL`,`ERROR`,`WARNING`,`INFO`,`DEBUG` |
 | `INSECURE`                   | no         | Set to `true` to disable SSL verification for the Immich API server, useful for self-signed certificates (default: `false`), allowed values: `true`, `false` |
 | `IGNORE`                     | no         | A colon `:` separated list of literals or glob-style patterns that will cause an image to be ignored if found in its path. |
+| `IGNORE_REGEX1..50`          | no         | Up to 50 numbered environment variables `IGNORE_REGEX1` to `IGNORE_REGEX50` for ignoring assets by regular expressions |
 | `MODE`                       | no         | Mode for the script to run with. <br> __`CREATE`__ = Create albums based on folder names and provided arguments<br>__`CLEANUP`__ = Create album names based on current images and script arguments, but delete albums if they exist <br> __`DELETE_ALL`__ = Delete all albums. <br> If the mode is anything but `CREATE`, `--unattended` does not have any effect. <br> (default: `CREATE`). <br>Refer to [Cleaning Up Albums](#cleaning-up-albums). |
 | `DELETE_CONFIRM`             | no         | Confirm deletion of albums when running in mode `CLEANUP` or `DELETE_ALL`. If this flag is not set, these modes will perform a dry run only. Has no effect in mode `CREATE` (default: `False`). <br>Refer to [Cleaning Up Albums](#cleaning-up-albums).|
 | `SHARE_WITH`                 | no         | A single or a colon (`:`) separated list of existing user names (or email addresses of existing users) to share newly created albums with. If the the share role should be specified by user, the format <userName>=<shareRole> must be used, where <shareRole> must be one of `viewer` or `editor`. May be specified multiple times to share albums with more than one user. (default: None) Sharing only happens if an album is actually created, not if new assets are added to it.  <br>Refer to [Automatic Album Sharing](#automatic-album-sharing).|
@@ -236,6 +243,7 @@ The environment variables are analogous to the script's command line arguments.
 | `ALBUM_ORDER`                | no         | Set sorting order for newly created albums to newest (`desc`) or oldest (`asc`) file first, Immich defaults to newest file first, allowed values: `asc`, `desc` |
 | `FIND_ASSETS_IN_ALBUMS`      | no         | By default, the script only finds assets that are not assigned to any album yet. Set this option to make the script discover assets that are already part of an album and handle them as usual. If --find-archived-assets is set as well, both options apply. (default: `False`)<br>Refer to [Assets in Multiple Albums](#assets-in-multiple-albums). |
 | `PATH_FILTER`                | no         | A colon `:` separated list of literals or glob-style patterns to filter assets before album name creation. (default: ``)<br>Refer to [Filtering](#filtering). |
+| `PATH_FILTER_REGEX1..50`     | no         | Up to 50 numbered environment variables `PATH_FILTER_REGEX1` to `PATH_FILTER_REGEX50` for filtering for assets by regular expressions.<br>Refer to [Filtering](#filtering). |
 | `SET_ALBUM_THUMBNAIL`        | no         | Set first/last/random image as thumbnail (based on image creation timestamp) for newly created albums or albums assets have been added to.<br> Allowed values: `first`,`last`,`random`,`random-filtered`,`random-all`<br>If set to `random-filtered`, thumbnails are shuffled for all albums whose assets would not be filtered out or ignored by the `IGNORE` or `PATH_FILTER` options, even if no assets were added during the run. If set to random-all, the thumbnails for ALL albums will be shuffled on every run. (default: `None`)<br>Refer to [Setting Album Thumbnails](#setting-album-thumbnails). |
 | `VISIBILITY`                 | no         | Set this option to automatically set the visibility of all assets that are discovered by the script and assigned to albums.<br>Exception for value 'locked': Assets will not be added to any albums, but to the 'locked' folder only.<br>Also applies if `MODE` is set to CLEAN_UP or DELETE_ALL; then it affects all assets in the deleted albums.<br>Always overrides `ARCHIVE`. (default: `None`)<br>Refer to [Asset Visibility & Locked Folder](#asset-visibility-locked-folder). |
 | `FIND_ARCHIVED_ASSETS`       | no         | By default, the script only finds assets with visibility set to 'timeline' (which is the default). Set this option to make the script discover assets with visibility 'archive' as well. If -A/--find-assets-in-albums is set as well, both options apply. (default: `False`)<br>Refer to [Asset Visibility & Locked Folder](#asset-visibility--locked-folder). |
@@ -472,12 +480,14 @@ The following wild-cards are supported:
 
 
 ### Ignoring Assets
-The option `-i / --ignore` can be specified multiple times for each literal or glob-style path pattern.  
-When using Docker, the environment variable `IGNORE` accepts a colon-separated `:` list of literals or glob-style patterns. If an image's path **below the root path** matches the pattern, it will be ignored.  
+The option `-i / --ignore` can be specified multiple times for each literal or glob-style path pattern. Additionally, the option `--ignore-regex` can be specified multiple times as well to ignore assets by regular expressions instead of glob-style patterns.  
+When using Docker, the environment variable `IGNORE` accepts a colon-separated `:` list of literals or glob-style patterns. For passing regular expressions, the Docker image supports up to 50 numbered environment variables from `IGNORE_REGEX1` to `IGNORE_REGEX50`, allowing for specifying one regular expression per environment variable.  
+If an image's path **below the root path** matches the pattern, it will be ignored.  
 
 ### Filtering for Assets
-The option `-f / ---path-filter` can be specified multiple times for each literal or glob-style path pattern. 
-When using Docker, the environment variable `PATH_FILTER` accepts a colon-separated `:` of literals or glob-style patterns. If an image's path **below the root path** does **NOT** match the pattern, it will be ignored.
+The option `-f / ---path-filter` can be specified multiple times for each literal or glob-style path pattern. Additionally, the option `--path-filter-regex` can be specified multiple times as well to filter for assets by regular expressions instead of glob-style patterns. 
+When using Docker, the environment variable `PATH_FILTER` accepts a colon-separated `:` of literals or glob-style patterns. For passing regular expressions, the Docker image supports up to 50 numbered environment variables from `PATH_FILTER_REGEX1` to `PATH_FILTER_REGEX50`, allowing for specifying one regular expression per environment variable.  
+If an image's path **below the root path** does **NOT** match the pattern, it will be ignored.
 
 > [!TIP]  
 > When working with path filters, consider setting the `-A / --find-assets-in-albums` option or Docker environment variable `FIND_ASSETS_IN_ALBUMS` for the script to discover assets that are already part of an album. That way, assets can be added to multiple albums by the script. Refer to the [Assets in Multiple Albums](#assets-in-multiple-albums) section for more information.

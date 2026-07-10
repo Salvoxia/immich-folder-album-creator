@@ -75,12 +75,48 @@ for regex_no in `seq 1 $regex_max`
 do
     for entry in `env`
     do
-        # check if env variable name begins with ALBUM_POST_NAME_REGEX followed by a the current regex no and and equal sign
+        # check if env variable name begins with ALBUM_POST_NAME_REGEX followed by the current regex no and and equal sign
         pattern=$(echo "^ALBUM_NAME_POST_REGEX${regex_no}+=.+")
         TEST=$(echo "${entry}" | grep -E "$pattern")
         if [ ! -z "${TEST}" ]; then
             value="${entry#*=}" # select everything after the first `=`
             album_name_post_regex_list="$album_name_post_regex_list --album-name-post-regex $value"
+        fi
+    done
+done
+
+## parse PATH_FILTER_REGEX<n>
+path_filter_regex_list=""
+# Support up to 50 regex patterns
+regex_max=50
+for regex_no in `seq 1 $regex_max`
+do
+    for entry in `env`
+    do
+        # check if env variable name begins with PATH_FILTER_REGEX followed by the current regex no and and equal sign
+        pattern=$(echo "^PATH_FILTER_REGEX${regex_no}+=.+")
+        TEST=$(echo "${entry}" | grep -E "$pattern")
+        if [ ! -z "${TEST}" ]; then
+            value="${entry#*=}" # select everything after the first `=`
+            path_filter_regex_list="$path_filter_regex_list --path-filter-regex $value"
+        fi
+    done
+done
+
+## parse IGNORE_REGEX<n>
+ignore_regex_list=""
+# Support up to 50 regex patterns
+regex_max=50
+for regex_no in `seq 1 $regex_max`
+do
+    for entry in `env`
+    do
+        # check if env variable name begins with IGNORE_REGEX followed by the current regex no and and equal sign
+        pattern=$(echo "^IGNORE_REGEX${regex_no}+=.+")
+        TEST=$(echo "${entry}" | grep -E "$pattern")
+        if [ ! -z "${TEST}" ]; then
+            value="${entry#*=}" # select everything after the first `=`
+            ignore_regex_list="$ignore_regex_list --ignore-regex $value"
         fi
     done
 done
@@ -133,6 +169,10 @@ if [ ! -z "$ignore_list" ]; then
     args="$ignore_list $args"
 fi
 
+if [ ! -z "$ignore_regex_list" ]; then
+    args="$ignore_regex_list $args"
+fi
+
 if [ ! -z "$additional_api_keys" ]; then
     args="$additional_api_keys $args"
 fi
@@ -171,6 +211,10 @@ fi
 
 if [ ! -z "$path_filter_list" ]; then
     args="$path_filter_list $args"
+fi
+
+if [ ! -z "$path_filter_regex_list" ]; then
+    args="$path_filter_regex_list $args"
 fi
 
 if [ ! -z "$SET_ALBUM_THUMBNAIL" ]; then
