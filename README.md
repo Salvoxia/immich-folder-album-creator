@@ -136,9 +136,9 @@ options:
   -k, --insecure        Pass to ignore SSL verification (default: False)
   -i IGNORE, --ignore IGNORE
                         Use either literals or glob-like patterns to ignore assets for album name creation. This filter is evaluated after any values passed with --path-filter. May be specified multiple times. (default: None)
-  --ignore-regex IGNORE_REGEX
-                        As regular expressions to ignore assets from album name creation. If an asset's path after the root path is matching the regular expression, it is ignored. This filter is evaluated after any values passed with --path-filter or --path-filter-regex. May be specified multiple times.
-                        (default: None)
+--ignore-regex IGNORE_REGEX
+                      Use regular expressions to ignore assets from album name creation. If an asset's path after the root path is matching the regular expression, it is ignored. This filter is evaluated after any values passed with --path-filter or --path-filter-regex. May be specified multiple times.
+                      (default: None)
   -m {CREATE,CLEANUP,DELETE_ALL}, --mode {CREATE,CLEANUP,DELETE_ALL}
                         Mode for the script to run with. CREATE = Create albums based on folder names and provided arguments; CLEANUP = Create album names based on current images and script arguments, but delete albums if they exist;
                         DELETE_ALL = Delete all albums. If the mode is anything but CREATE, --unattended does not have any effect. Only performs deletion if -d/--delete-confirm option is set, otherwise only performs a dry-run. (default:
