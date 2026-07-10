@@ -2,12 +2,13 @@
 
 # pylint: disable=too-many-lines
 from __future__ import annotations
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, Future
 from functools import partial
 from time import perf_counter
 import asyncio
+import threading
 from dataclasses import dataclass
-from typing import Awaitable, Callable, Optional, Tuple, TypeVar, Any
+from typing import Awaitable, Callable, Optional, Tuple, TypeVar, Any, Coroutine
 from logging import LogRecord
 import argparse
 import logging
@@ -123,10 +124,15 @@ class ApiClient:
         self.config: ApiClientConfig = api_client_config
 
         self.__validate_config()
+        # Define internal variables for long-lived loop keeping our ClientSession alive
+        self._loop: Optional[asyncio.AbstractEventLoop] = None
+        self._thread: Optional[threading.Thread] = None
+        self._session: Any = None  # aiohttp.ClientSession
+        self._session_fut: Optional[Future[None]] = None
 
-        self.server_version: ServerVersionResponseDto | None = self.__fetch_server_version_safe()
-        if self.server_version is None:
-            raise AssertionError("Communication with Immich Server API failed! Make sure the API URL is correct and verify the API Key!")
+        self.server_version: ServerVersionResponseDto | None = None
+
+        self._is_docker = bool(os.environ.get(ENV_IS_DOCKER, False))
 
     def __validate_config(self):
         """
@@ -154,6 +160,70 @@ class ApiClient:
         if not Utils.is_integer(self.config.threads) or self.config.threads < 1 or self.config.threads > ApiClient.THREADS_MAX:
             raise ValueError(f'api_timeout must be an integer between 1 and {ApiClient.THREADS_MAX}!')
 
+    async def __aenter__(self) -> ApiClient:
+        self._loop = asyncio.new_event_loop()
+
+        def run_loop() -> None:
+            asyncio.set_event_loop(self._loop)
+            assert self._loop is not None
+            self._loop.run_forever()
+
+        self._thread = threading.Thread(target=run_loop, daemon=True)
+        self._thread.start()
+
+        async def create_session() -> None:
+
+            connector = TCPConnector(
+                ssl=not self.config.insecure,
+                use_dns_cache=True,
+                ttl_dns_cache=900,
+            )
+            session = ClientSession(
+                timeout=ClientTimeout(total=self.config.api_timeout),
+                connector=connector,
+            )
+            # store on instance
+            self._session = session
+
+        async def go() -> None:
+            await create_session()
+
+        # Create session on the loop thread, await it from async context
+        self._session_fut = asyncio.run_coroutine_threadsafe(go(), self._loop)
+        await asyncio.wrap_future(self._session_fut)
+
+        # Verify server communication
+        self.server_version: ServerVersionResponseDto | None = self.__fetch_server_version_safe()
+        if self.server_version is None:
+            raise AssertionError("Communication with Immich Server API failed! Make sure the API URL is correct and verify the API Key!")
+
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb) -> None:
+        async def close_session() -> None:
+            if self._session is not None:
+                await self._session.close()
+
+        assert self._loop is not None
+        fut = asyncio.run_coroutine_threadsafe(close_session(), self._loop)
+        await asyncio.wrap_future(fut)
+
+        self._loop.call_soon_threadsafe(self._loop.stop)
+        assert self._thread is not None
+        self._thread.join(timeout=5)
+
+    def __run_in_loop(self, coro: Coroutine[object, object, T]) -> T:
+        """
+        Passes the coroutine to the long-living loop and returns the result
+
+        :param coro: The coroutine to run asynchronously
+        :returns: The routine's result
+        :rtype: T
+        """
+        assert self._loop is not None
+        fut = asyncio.run_coroutine_threadsafe(coro, self._loop)
+        return fut.result()
+
     def _is_retryable(self, e: BaseException) -> bool:
         """
         Checks if the exception is retryable.
@@ -176,16 +246,18 @@ class ApiClient:
         :returns: The API method return value.
         :raises: ApiException or Exception on failure.
         """
-        async def call() -> T:
-            connector = TCPConnector(ssl=not self.config.insecure)
-            session = ClientSession(timeout=ClientTimeout(total=self.config.api_timeout), connector=connector)
-            try:
-                async with AsyncClient(api_key=self.api_key, base_url=self.api_url, http_client=session) as client:
-                    return await fn(client)
-            finally:
-                await session.close()
-
         async def runner() -> T:
+            async def call_once() -> T:
+                if self._session is None:
+                    raise RuntimeError("ClientSession not initialized")
+
+                async with AsyncClient(
+                    api_key=self.api_key,
+                    base_url=self.api_url,
+                    http_client=self._session,
+                ) as client:
+                    return await fn(client)
+
             async for attempt in AsyncRetrying(
                 retry=retry_if_exception_type(Exception) & retry_if_exception(self._is_retryable),
                 wait=wait_exponential(multiplier=1, min=1, max=30),
@@ -193,12 +265,12 @@ class ApiClient:
                 reraise=True,
             ):
                 with attempt:
-                    return await call()
-            # Unreachable, but satisfies type checker
+                    return await call_once()
+
             raise RuntimeError("Should never reach here")
 
         try:
-            return asyncio.run(runner())
+            return self.__run_in_loop(runner())
         except ApiException as e:
             msg = e.body if e.body else "API error"
             logging.error("%s (status %s)", msg, e.status)
@@ -598,7 +670,7 @@ class ApiClient:
                 album_names.append(album_to_delete.album_name)
             print("Would delete the following albums (ALL albums!):")
             print(album_names)
-            if is_docker:
+            if self._is_docker:
                 print("Run the container with environment variable DELETE_CONFIRM set to 1 to actually delete these albums!")
             else:
                 print("Call with --delete-confirm to actually delete albums!")
@@ -638,7 +710,7 @@ class ApiClient:
         if not force_delete:
             print("Would delete the following albums:")
             print([a.get_final_name() for a in albums_to_delete])
-            if is_docker:
+            if self._is_docker:
                 print("Run the container with environment variable DELETE_CONFIRM set to 1 to actually delete these albums!")
             else:
                 print(" Call with --delete-confirm to actually delete albums!")
@@ -1427,6 +1499,7 @@ class FolderAlbumCreator():
         self.api_client = ApiClient(self.config.root_url,
                                     self.config.api_key,
                                     ApiClientConfig(configuration))
+        self._is_docker = bool(os.environ.get(ENV_IS_DOCKER, False))
 
     @staticmethod
     def find_albumprops_files(paths: list[str]) -> list[str]:
@@ -2073,181 +2146,182 @@ class FolderAlbumCreator():
                 return user
         return None
 
-    def run(self) -> None:
+    async def run(self) -> None:
         """
         Performs the actual logic of the script, i.e. creating albums from external library folder structures and everything else.
         """
-        # Special case: Run Mode DELETE_ALL albums
-        if self.config.mode == Configuration.SCRIPT_MODE_DELETE_ALL:
-            self.api_client.delete_all_albums(self.config.visibility, self.config.delete_confirm)
-            return
-
-        albumprops_cache: Optional[dict[str, AlbumModel]] = None
-        if self.config.read_album_properties:
-            logging.debug("Albumprops: Finding, parsing and loading %s files with inheritance support", FolderAlbumCreator.ALBUMPROPS_FILE_NAME)
-            albumprops_cache = self.build_albumprops_cache()
-
-        logging.info("Requesting all assets")
-        # only request images that are not in any album if we are running in CREATE mode,
-        # otherwise we need all images, even if they are part of an album
-        if self.config.mode == Configuration.SCRIPT_MODE_CREATE:
-            assets = self.api_client.fetch_assets(not self.config.find_assets_in_albums, [AssetVisibility.ARCHIVE] if self.config.find_archived_assets else [])
-        else:
-            assets = self.api_client.fetch_assets(False, [AssetVisibility.ARCHIVE])
-
-        # Remove live photo video components
-        assets = self.check_for_and_remove_live_photo_video_components(assets, not self.config.find_assets_in_albums, self.config.find_archived_assets)
-        logging.info("%d photos found", len(assets))
-        logging.info("Sorting assets to corresponding albums using folder name")
-        albums_to_create = self.build_album_list(assets, self.config.root_paths, albumprops_cache)
-        albums_to_create = dict(sorted(albums_to_create.items(), key=lambda item: item[0]))
-
-        logging.info("%d albums identified", len(albums_to_create))
-        logging.info("Album list: %s", list(albums_to_create.keys()))
-
-        if not self.config.unattended and self.config.mode == Configuration.SCRIPT_MODE_CREATE:
-            if is_docker:
-                print("Check that this is the list of albums you want to create. Run the container with environment variable UNATTENDED set to 1 to actually create these albums.")
-                return
-            try:
-                input("Press enter to create these albums, Ctrl+C to abort")
-            except KeyboardInterrupt:
-                print("Aborting...")
+        async with self.api_client:
+            # Special case: Run Mode DELETE_ALL albums
+            if self.config.mode == Configuration.SCRIPT_MODE_DELETE_ALL:
+                self.api_client.delete_all_albums(self.config.visibility, self.config.delete_confirm)
                 return
 
-        logging.info("Listing existing albums on immich")
+            albumprops_cache: Optional[dict[str, AlbumModel]] = None
+            if self.config.read_album_properties:
+                logging.debug("Albumprops: Finding, parsing and loading %s files with inheritance support", FolderAlbumCreator.ALBUMPROPS_FILE_NAME)
+                albumprops_cache = self.build_albumprops_cache()
 
-        albums = self.api_client.fetch_albums()
-        logging.info("%d existing albums identified", len(albums))
-
-        album: AlbumModel
-        for album in albums_to_create.values():
-            # fetch the id if same album name exist
-            album.id = FolderAlbumCreator.get_album_id_by_name(albums, album.get_final_name())
-
-        # mode CLEANUP
-        if self.config.mode == Configuration.SCRIPT_MODE_CLEANUP:
-            # Filter list of albums to create for existing albums only
-            albums_to_cleanup: dict[UUID, AlbumModel] = {}
-            for album in albums_to_create.values():
-                # Only cleanup existing albums (has id set) and no duplicates (due to override_name)
-                if album.id and album.id not in albums_to_cleanup:
-                    albums_to_cleanup[album.id] = album
-            # pylint: disable=C0103
-            number_of_deleted_albums = self.api_client.cleanup_albums(list(albums_to_cleanup.values()), self.config.visibility, self.config.delete_confirm)
-            logging.info("Deleted %d/%d albums", number_of_deleted_albums, len(albums_to_cleanup))
-            return
-
-        # Get all users in preparation for album sharing
-        users = self.api_client.fetch_users()
-        logging.debug("Found users: %s", users)
-
-        # mode CREATE
-        logging.info("Create / Append to Albums")
-        created_albums: list[AlbumModel] = []
-        # List for gathering all asset UUIDs for later archiving
-        asset_uuids_added: list[UUID] = []
-        for album in albums_to_create.values():
-            # Special case: Add assets to Locked folder
-            # Locked assets cannot be part of an album, so don't create albums in the first place
-            if album.visibility == AssetVisibility.LOCKED:
-                self.api_client.set_assets_visibility(album.get_asset_uuids(), album.visibility)
-                logging.info("Added %d assets to locked folder", len(album.get_asset_uuids()))
-                continue
-
-            # Create album if inexistent:
-            if not album.id:
-                album.id = self.api_client.create_album(album.get_final_name())
-                created_albums.append(album)
-                logging.info('Album %s added!', album.get_final_name())
-
-            logging.info("Adding assets to album %s", album.get_final_name())
-            assets_added = self.api_client.add_assets_to_album(album.id, album.get_asset_uuids())
-            if len(assets_added) > 0:
-                asset_uuids_added += assets_added
-                logging.info("%d new assets added to %s", len(assets_added), album.get_final_name())
-
-            # Set assets visibility
-            if album.visibility is not None:
-                self.api_client.set_assets_visibility(assets_added, album.visibility)
-                logging.info("Set visibility for %d assets to %s", len(assets_added), album.visibility.value)
-
-            # Update album properties depending on mode or if newly created
-            if self.config.update_album_props_mode > 0 or (album in created_albums):
-                # Handle thumbnail
-                # Thumbnail setting 'random-all' is handled separately
-                if album.thumbnail_setting and album.thumbnail_setting != Configuration.ALBUM_THUMBNAIL_RANDOM_ALL:
-                    # Fetch assets to be sure to have up-to-date asset list
-                    album_assets = self.api_client.fetch_assets_with_options(MetadataSearchDto(album_ids=[album.id]))
-                    thumbnail_asset = self.choose_thumbnail(album.thumbnail_setting, album_assets)
-                    if thumbnail_asset:
-                        logging.info("Using asset %s as thumbnail for album %s", thumbnail_asset.original_path, album.get_final_name())
-                        album.thumbnail_asset_uuid = str(thumbnail_asset.id)
-                    else:
-                        logging.warning("Unable to determine thumbnail for setting '%s' in album %s", album.thumbnail_setting, album.get_final_name())
-                # Update album properties
-                try:
-                    self.api_client.update_album_properties(album)
-                except HTTPError as e:
-                    logging.error('Error updating properties for album %s: %s', album.get_final_name(), e)
-
-            # Update album sharing if needed or newly created
-            if self.config.update_album_props_mode == 2 or (album in created_albums):
-                # Handle album sharing
-                self.api_client.update_album_shared_state(album, True, users)
-
-        logging.info("%d albums created", len(created_albums))
-
-        # Perform album cover randomization
-        if self.config.set_album_thumbnail == Configuration.ALBUM_THUMBNAIL_RANDOM_ALL:
-            logging.info("Picking a new random thumbnail for all albums")
-            albums = self.api_client.fetch_albums()
-            for a in albums:
-                # Create album model for thumbnail randomization
-                album_model = AlbumModel(a.album_name)
-                album_model.id = a.id
-                album_model.assets = self.api_client.fetch_assets_with_options(MetadataSearchDto(album_ids=[a.id]))
-                # Set thumbnail setting to 'random' in model
-                album_model.thumbnail_setting = 'random'
-                thumbnail_asset = self.choose_thumbnail(album_model.thumbnail_setting, album_model.assets)
-                if thumbnail_asset:
-                    logging.info("Using asset %s as thumbnail for album %s", thumbnail_asset.original_path, album_model.get_final_name())
-                    album_model.thumbnail_asset_uuid = str(thumbnail_asset.id)
-                else:
-                    logging.warning("Unable to determine thumbnail for setting '%s' in album %s", album_model.thumbnail_setting, album_model.get_final_name())
-                # Update album properties (which will only pick a random thumbnail and set it, no other properties are changed)
-                self.api_client.update_album_properties(album_model)
-
-        # Perform sync mode action: Trigger offline asset removal
-        if self.config.sync_mode == 2:
-            logging.info("Trigger offline asset removal")
-            self.api_client.trigger_offline_asset_removal()
-
-        # Perform sync mode action: Delete empty albums
-        #
-        # For Immich versions prior to v1.116.0:
-        # Attention: Since Offline Asset Removal is an asynchronous job,
-        # albums affected by it are most likely not empty yet! So this
-        # might only be effective in the next script run.
-        if self.config.sync_mode >= 1:
-            logging.info("Deleting all empty albums")
-            albums = self.api_client.fetch_albums()
-            # pylint: disable=C0103
-            empty_album_count = 0
-            # pylint: disable=C0103
-            cleaned_album_count = 0
-            for a in albums:
-                if a.asset_count == 0:
-                    empty_album_count += 1
-                    logging.info("Deleting empty album %s", a.album_name)
-                    if self.api_client.delete_album(a.id):
-                        cleaned_album_count += 1
-            if empty_album_count > 0:
-                logging.info("Successfully deleted %d/%d empty albums!", cleaned_album_count, empty_album_count)
+            logging.info("Requesting all assets")
+            # only request images that are not in any album if we are running in CREATE mode,
+            # otherwise we need all images, even if they are part of an album
+            if self.config.mode == Configuration.SCRIPT_MODE_CREATE:
+                assets = self.api_client.fetch_assets(not self.config.find_assets_in_albums, [AssetVisibility.ARCHIVE] if self.config.find_archived_assets else [])
             else:
-                logging.info("No empty albums found!")
+                assets = self.api_client.fetch_assets(False, [AssetVisibility.ARCHIVE])
 
-        logging.info("Done!")
+            # Remove live photo video components
+            assets = self.check_for_and_remove_live_photo_video_components(assets, not self.config.find_assets_in_albums, self.config.find_archived_assets)
+            logging.info("%d photos found", len(assets))
+            logging.info("Sorting assets to corresponding albums using folder name")
+            albums_to_create = self.build_album_list(assets, self.config.root_paths, albumprops_cache)
+            albums_to_create = dict(sorted(albums_to_create.items(), key=lambda item: item[0]))
+
+            logging.info("%d albums identified", len(albums_to_create))
+            logging.info("Album list: %s", list(albums_to_create.keys()))
+
+            if not self.config.unattended and self.config.mode == Configuration.SCRIPT_MODE_CREATE:
+                if self._is_docker:
+                    print("Check that this is the list of albums you want to create. Run the container with environment variable UNATTENDED set to 1 to actually create these albums.")
+                    return
+                try:
+                    input("Press enter to create these albums, Ctrl+C to abort")
+                except KeyboardInterrupt:
+                    print("Aborting...")
+                    return
+
+            logging.info("Listing existing albums on immich")
+
+            albums = self.api_client.fetch_albums()
+            logging.info("%d existing albums identified", len(albums))
+
+            album: AlbumModel
+            for album in albums_to_create.values():
+                # fetch the id if same album name exist
+                album.id = FolderAlbumCreator.get_album_id_by_name(albums, album.get_final_name())
+
+            # mode CLEANUP
+            if self.config.mode == Configuration.SCRIPT_MODE_CLEANUP:
+                # Filter list of albums to create for existing albums only
+                albums_to_cleanup: dict[UUID, AlbumModel] = {}
+                for album in albums_to_create.values():
+                    # Only cleanup existing albums (has id set) and no duplicates (due to override_name)
+                    if album.id and album.id not in albums_to_cleanup:
+                        albums_to_cleanup[album.id] = album
+                # pylint: disable=C0103
+                number_of_deleted_albums = self.api_client.cleanup_albums(list(albums_to_cleanup.values()), self.config.visibility, self.config.delete_confirm)
+                logging.info("Deleted %d/%d albums", number_of_deleted_albums, len(albums_to_cleanup))
+                return
+
+            # Get all users in preparation for album sharing
+            users = self.api_client.fetch_users()
+            logging.debug("Found users: %s", users)
+
+            # mode CREATE
+            logging.info("Create / Append to Albums")
+            created_albums: list[AlbumModel] = []
+            # List for gathering all asset UUIDs for later archiving
+            asset_uuids_added: list[UUID] = []
+            for album in albums_to_create.values():
+                # Special case: Add assets to Locked folder
+                # Locked assets cannot be part of an album, so don't create albums in the first place
+                if album.visibility == AssetVisibility.LOCKED:
+                    self.api_client.set_assets_visibility(album.get_asset_uuids(), album.visibility)
+                    logging.info("Added %d assets to locked folder", len(album.get_asset_uuids()))
+                    continue
+
+                # Create album if inexistent:
+                if not album.id:
+                    album.id = self.api_client.create_album(album.get_final_name())
+                    created_albums.append(album)
+                    logging.info('Album %s added!', album.get_final_name())
+
+                logging.info("Adding assets to album %s", album.get_final_name())
+                assets_added = self.api_client.add_assets_to_album(album.id, album.get_asset_uuids())
+                if len(assets_added) > 0:
+                    asset_uuids_added += assets_added
+                    logging.info("%d new assets added to %s", len(assets_added), album.get_final_name())
+
+                # Set assets visibility
+                if album.visibility is not None:
+                    self.api_client.set_assets_visibility(assets_added, album.visibility)
+                    logging.info("Set visibility for %d assets to %s", len(assets_added), album.visibility.value)
+
+                # Update album properties depending on mode or if newly created
+                if self.config.update_album_props_mode > 0 or (album in created_albums):
+                    # Handle thumbnail
+                    # Thumbnail setting 'random-all' is handled separately
+                    if album.thumbnail_setting and album.thumbnail_setting != Configuration.ALBUM_THUMBNAIL_RANDOM_ALL:
+                        # Fetch assets to be sure to have up-to-date asset list
+                        album_assets = self.api_client.fetch_assets_with_options(MetadataSearchDto(album_ids=[album.id]))
+                        thumbnail_asset = self.choose_thumbnail(album.thumbnail_setting, album_assets)
+                        if thumbnail_asset:
+                            logging.info("Using asset %s as thumbnail for album %s", thumbnail_asset.original_path, album.get_final_name())
+                            album.thumbnail_asset_uuid = str(thumbnail_asset.id)
+                        else:
+                            logging.warning("Unable to determine thumbnail for setting '%s' in album %s", album.thumbnail_setting, album.get_final_name())
+                    # Update album properties
+                    try:
+                        self.api_client.update_album_properties(album)
+                    except HTTPError as e:
+                        logging.error('Error updating properties for album %s: %s', album.get_final_name(), e)
+
+                # Update album sharing if needed or newly created
+                if self.config.update_album_props_mode == 2 or (album in created_albums):
+                    # Handle album sharing
+                    self.api_client.update_album_shared_state(album, True, users)
+
+            logging.info("%d albums created", len(created_albums))
+
+            # Perform album cover randomization
+            if self.config.set_album_thumbnail == Configuration.ALBUM_THUMBNAIL_RANDOM_ALL:
+                logging.info("Picking a new random thumbnail for all albums")
+                albums = self.api_client.fetch_albums()
+                for a in albums:
+                    # Create album model for thumbnail randomization
+                    album_model = AlbumModel(a.album_name)
+                    album_model.id = a.id
+                    album_model.assets = self.api_client.fetch_assets_with_options(MetadataSearchDto(album_ids=[a.id]))
+                    # Set thumbnail setting to 'random' in model
+                    album_model.thumbnail_setting = 'random'
+                    thumbnail_asset = self.choose_thumbnail(album_model.thumbnail_setting, album_model.assets)
+                    if thumbnail_asset:
+                        logging.info("Using asset %s as thumbnail for album %s", thumbnail_asset.original_path, album_model.get_final_name())
+                        album_model.thumbnail_asset_uuid = str(thumbnail_asset.id)
+                    else:
+                        logging.warning("Unable to determine thumbnail for setting '%s' in album %s", album_model.thumbnail_setting, album_model.get_final_name())
+                    # Update album properties (which will only pick a random thumbnail and set it, no other properties are changed)
+                    self.api_client.update_album_properties(album_model)
+
+            # Perform sync mode action: Trigger offline asset removal
+            if self.config.sync_mode == 2:
+                logging.info("Trigger offline asset removal")
+                self.api_client.trigger_offline_asset_removal()
+
+            # Perform sync mode action: Delete empty albums
+            #
+            # For Immich versions prior to v1.116.0:
+            # Attention: Since Offline Asset Removal is an asynchronous job,
+            # albums affected by it are most likely not empty yet! So this
+            # might only be effective in the next script run.
+            if self.config.sync_mode >= 1:
+                logging.info("Deleting all empty albums")
+                albums = self.api_client.fetch_albums()
+                # pylint: disable=C0103
+                empty_album_count = 0
+                # pylint: disable=C0103
+                cleaned_album_count = 0
+                for a in albums:
+                    if a.asset_count == 0:
+                        empty_album_count += 1
+                        logging.info("Deleting empty album %s", a.album_name)
+                        if self.api_client.delete_album(a.id):
+                            cleaned_album_count += 1
+                if empty_album_count > 0:
+                    logging.info("Successfully deleted %d/%d empty albums!", cleaned_album_count, empty_album_count)
+                else:
+                    logging.info("No empty albums found!")
+
+            logging.info("Done!")
 
 class Utils:
     """A collection of helper methods"""
@@ -2367,34 +2441,38 @@ logging.getLogger().setLevel(Configuration.log_level)
 if 'DEBUG' == Configuration.log_level:
     formatter.init_formatter(True)
 
-
-is_docker = os.environ.get(ENV_IS_DOCKER, False)
-
-try:
-    configs = Configuration.get_configurations()
-    logging.info("Created %d configurations", len(configs))
-except(HTTPError) as e:
-    logging.fatal(e.msg)
-    sys.exit(1)
-except(ValueError, AssertionError) as e:
-    logging.fatal(str(e))
-    sys.exit(1)
-
-Configuration.log_debug_global()
-
-for config in configs:
+async def main() -> None:
+    """
+    Script's main function parsing the configuration and running
+    the main logic for each configuration set.
+    """
     try:
-        folder_album_creator = FolderAlbumCreator(config)
+        configs = Configuration.get_configurations()
+        logging.info("Created %d configurations", len(configs))
+    except(HTTPError) as e:
+        logging.fatal(e.msg)
+        sys.exit(1)
+    except(ValueError, AssertionError) as e:
+        logging.fatal(str(e))
+        sys.exit(1)
 
-        processing_api_key = folder_album_creator.api_client.api_key[:5] + '*' * (len(folder_album_creator.api_client.api_key)-5)
-        # Log the full API key when DEBUG logging is enabled
-        if 'DEBUG' == config.log_level:
-            processing_api_key = folder_album_creator.api_client.api_key
+    Configuration.log_debug_global()
 
-        logging.info("Processing API Key %s", processing_api_key)
-        # Log config to DEBUG level
-        config.log_debug()
-        folder_album_creator.run()
-    except (AlbumMergeError, AlbumModelValidationError, HTTPError, ValueError, AssertionError) as e:
-        logging.fatal("Fatal error while processing configuration!")
-        logging.fatal(e)
+    for config in configs:
+        try:
+            folder_album_creator = FolderAlbumCreator(config)
+
+            processing_api_key = folder_album_creator.api_client.api_key[:5] + '*' * (len(folder_album_creator.api_client.api_key)-5)
+            # Log the full API key when DEBUG logging is enabled
+            if 'DEBUG' == config.log_level:
+                processing_api_key = folder_album_creator.api_client.api_key
+
+            logging.info("Processing API Key %s", processing_api_key)
+            # Log config to DEBUG level
+            config.log_debug()
+            await folder_album_creator.run()
+        except (AlbumMergeError, AlbumModelValidationError, HTTPError, ValueError, AssertionError) as e:
+            logging.fatal("Fatal error while processing configuration!")
+            logging.fatal(e)
+
+asyncio.run(main())
