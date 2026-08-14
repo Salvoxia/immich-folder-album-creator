@@ -21,6 +21,7 @@ import random
 from urllib.error import HTTPError
 import traceback
 from uuid import UUID
+import unicodedata
 import regex
 import yaml
 from aiohttp import TCPConnector, ClientSession, ClientTimeout
@@ -1938,8 +1939,9 @@ class FolderAlbumCreator():
         :returns: The ID of the requested album or None if not found
         :rtype: str
         """
+        normalized_album_name = unicodedata.normalize("NFC", album_name)
         for _ in albums_list:
-            if _.album_name == album_name:
+            if unicodedata.normalize("NFC", _.album_name) == normalized_album_name:
                 return _.id
         return None
 
