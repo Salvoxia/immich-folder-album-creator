@@ -1676,7 +1676,7 @@ class FolderAlbumCreator():
             # Merge inherited and current share_with using the special merge logic
             temp_model = AlbumModel(None)
             temp_model.share_with = inherited_share_with
-            inherited_model.share_with = inherited_model.merge_inherited_share_with(inherited_model.share_with)
+            inherited_model.share_with = inherited_model.merge_inherited_share_with(temp_model.share_with)
 
         return inherited_model
 
