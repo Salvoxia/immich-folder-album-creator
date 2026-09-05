@@ -329,7 +329,8 @@ services:
   immich-server:
     container_name: immich_server
     volumes:
-     - /path/to/my/photos:/external_libs/photos
+      # This is the path your external library is mounted to the Immich container itself
+      - /path/to/my/photos:/external_libs/photos
   ...
   immich-folder-album-creator:
     container_name: immich_folder_album_creator
@@ -339,12 +340,15 @@ services:
     # and external libraries
     user: 1001:1001
     volumes:
-     - /path/to/secret/file:/immich_api_key.secret:ro
-     # mount needed for .albumprops to work
-     - /path/to/my/photos:/external_libs/photos
+      - /path/to/secret/file:/immich_api_key.secret:ro
+      # This is the path your external library is mounted to the immich-folder-album-creator container
+      # It MUST match the volume mount used in the immich-server container!
+      # Only necessary if you want to use .albumprops files!
+      - /path/to/my/photos:/external_libs/photos:ro
     environment:
       API_URL: http://immich_server:2283/api
       API_KEY_FILE: /immich_api_key.secret
+      # This is the path to your external library as seen from the immich-server container (see above!)
       ROOT_PATH: /external_libs/photos
       CRON_EXPRESSION: "0 * * * *"
       TZ: Europe/Berlin
@@ -583,6 +587,7 @@ services:
     environment:
       API_URL: http://immich_server:2283/api
       API_KEY: <key>
+      # This is the path to your external library as seen from the immich-server container
       ROOT_PATH: /external_libs/photos
       ALBUM_LEVELS: 2
       ALBUM_SEPARATOR: ""
@@ -1132,7 +1137,8 @@ services:
   immich-server:
     container_name: immich_server
     volumes:
-     - /path/to/my/photos:/external_libs/photos
+      # This is the path your external library is mounted to the Immich container itself
+      - /path/to/my/photos:/external_libs/photos
   ...
   immich-folder-album-creator:
     container_name: immich_folder_album_creator
@@ -1141,6 +1147,7 @@ services:
     environment:
       API_URL: http://immich_server:2283/api
       API_KEY: "This_Is_My_API_Key_Generated_In_Immich"
+      # This is the path to your external library as seen from the immich-server container (see above!)
       ROOT_PATH: /external_libs/photos
       # Run every full hour
       CRON_EXPRESSION: "0 * * * *"
@@ -1165,7 +1172,8 @@ services:
   immich-server:
     container_name: immich_server
     volumes:
-     - /path/to/my/photos:/external_libs/photos
+      # This is the path your external library is mounted to the Immich container itself
+      - /path/to/my/photos:/external_libs/photos
   ...
   immich-folder-album-creator:
     container_name: immich_folder_album_creator
@@ -1178,6 +1186,7 @@ services:
     environment:
       API_URL: http://immich_server:2283/api
       API_KEY_FILE: "/immich_api_key.secret"
+      # This is the path to your external library as seen from the immich-server container (see above!)
       ROOT_PATH: /external_libs/photos
       # Run every full hour
       CRON_EXPRESSION: "0 * * * *"
