@@ -329,7 +329,7 @@ services:
   immich-server:
     container_name: immich_server
     volumes:
-      # This is the path your external library is mounted to the Immich container itself
+      # This is the path your external library is mounted to in the Immich container itself
       - /path/to/my/photos:/external_libs/photos
   ...
   immich-folder-album-creator:
@@ -341,7 +341,7 @@ services:
     user: 1001:1001
     volumes:
       - /path/to/secret/file:/immich_api_key.secret:ro
-      # This is the path your external library is mounted to the immich-folder-album-creator container
+      # This is the path your external library is mounted to in the immich-folder-album-creator container
       # It MUST match the volume mount used in the immich-server container!
       # Only necessary if you want to use .albumprops files!
       - /path/to/my/photos:/external_libs/photos:ro
@@ -1137,7 +1137,7 @@ services:
   immich-server:
     container_name: immich_server
     volumes:
-      # This is the path your external library is mounted to the Immich container itself
+      # This is the path your external library is mounted to in the Immich container itself
       - /path/to/my/photos:/external_libs/photos
   ...
   immich-folder-album-creator:
@@ -1172,7 +1172,7 @@ services:
   immich-server:
     container_name: immich_server
     volumes:
-      # This is the path your external library is mounted to the Immich container itself
+      # This is the path your external library is mounted to in the Immich container itself
       - /path/to/my/photos:/external_libs/photos
   ...
   immich-folder-album-creator:
