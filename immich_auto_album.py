@@ -2,6 +2,8 @@
 
 # pylint: disable=too-many-lines
 from __future__ import annotations
+import contextlib
+from asyncio import CancelledError
 from concurrent.futures import ThreadPoolExecutor, Future
 from functools import partial
 from time import perf_counter
@@ -23,6 +25,7 @@ import traceback
 from uuid import UUID
 import unicodedata
 import regex
+import signal
 import yaml
 from aiohttp import TCPConnector, ClientSession, ClientTimeout
 
@@ -125,11 +128,16 @@ class ApiClient:
         self.config: ApiClientConfig = api_client_config
 
         self.__validate_config()
+
         # Define internal variables for long-lived loop keeping our ClientSession alive
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._thread: Optional[threading.Thread] = None
         self._session: Any = None  # aiohttp.ClientSession
         self._session_fut: Optional[Future[None]] = None
+        self._closing = threading.Event()
+        self._closed = threading.Event()
+        self._active_futures: set[Future[Any]] = set()
+        self._active_futures_lock = threading.Lock()
 
         self.server_version: ServerVersionResponseDto | None = None
 
@@ -161,57 +169,112 @@ class ApiClient:
         if not Utils.is_integer(self.config.threads) or self.config.threads < 1 or self.config.threads > ApiClient.THREADS_MAX:
             raise ValueError(f'api_timeout must be an integer between 1 and {ApiClient.THREADS_MAX}!')
 
-    async def __aenter__(self) -> ApiClient:
+    async def __aenter__(self) -> "ApiClient":
         self._loop = asyncio.new_event_loop()
 
         def run_loop() -> None:
             asyncio.set_event_loop(self._loop)
-            assert self._loop is not None
-            self._loop.run_forever()
 
-        self._thread = threading.Thread(target=run_loop, daemon=True)
+            try:
+                self._loop.run_forever()
+            finally:
+                # Cancel anything still pending on the API loop.
+                pending = asyncio.all_tasks(self._loop)
+
+                for task in pending:
+                    task.cancel()
+
+                if pending:
+                    self._loop.run_until_complete(
+                        asyncio.gather(*pending, return_exceptions=True)
+                    )
+
+                self._loop.run_until_complete(self._loop.shutdown_asyncgens())
+                self._loop.close()
+
+        self._thread = threading.Thread(
+            target=run_loop,
+            name="immich-api-client-loop",
+            daemon=False,
+        )
         self._thread.start()
 
         async def create_session() -> None:
-
             connector = TCPConnector(
                 ssl=not self.config.insecure,
                 use_dns_cache=True,
                 ttl_dns_cache=900,
             )
-            session = ClientSession(
+
+            self._session = ClientSession(
                 timeout=ClientTimeout(total=self.config.api_timeout),
                 connector=connector,
             )
-            # store on instance
-            self._session = session
 
-        async def go() -> None:
-            await create_session()
-
-        # Create session on the loop thread, await it from async context
-        self._session_fut = asyncio.run_coroutine_threadsafe(go(), self._loop)
+        self._session_fut = self._submit(create_session())
         await asyncio.wrap_future(self._session_fut)
 
-        # Verify server communication
-        self.server_version: ServerVersionResponseDto | None = self.__fetch_server_version_safe()
+        self.server_version = self.fetch_server_version()
+
         if self.server_version is None:
-            raise AssertionError("Communication with Immich Server API failed! Make sure the API URL is correct and verify the API Key!")
+            raise AssertionError(
+                "Communication with Immich Server API failed! "
+                "Make sure the API URL is correct and verify the API Key!"
+            )
 
         return self
 
-    async def __aexit__(self, exc_type, exc, tb) -> None:
+    async def __aexit__(self, exc_type: type[BaseException] | None, exc: BaseException | None, tb: Any) -> None:
+        if self._closed.is_set():
+            return
+
+        self._closing.set()
+
+        loop = self._loop
+        thread = self._thread
+
+        if loop is None or thread is None:
+            self._closed.set()
+            return
+
         async def close_session() -> None:
-            if self._session is not None:
+            if self._session is not None and not self._session.closed:
                 await self._session.close()
 
-        assert self._loop is not None
-        fut = asyncio.run_coroutine_threadsafe(close_session(), self._loop)
-        await asyncio.wrap_future(fut)
+        try:
+            # Cancel API calls waiting in Future.result().
+            with self._active_futures_lock:
+                futures = list(self._active_futures)
 
-        self._loop.call_soon_threadsafe(self._loop.stop)
-        assert self._thread is not None
-        self._thread.join(timeout=5)
+            for future in futures:
+                future.cancel()
+
+            # Close aiohttp on the event-loop thread.
+            close_future = asyncio.run_coroutine_threadsafe(
+                close_session(),
+                loop,
+            )
+
+            try:
+                await asyncio.wrap_future(close_future)
+            except asyncio.CancelledError:
+                close_future.cancel()
+                with contextlib.suppress(Exception):
+                    await asyncio.wrap_future(close_future)
+                raise
+
+        finally:
+            # Stop the loop only after session cleanup has completed.
+            loop.call_soon_threadsafe(loop.stop)
+
+            # __aexit__ runs on the main thread, so joining here is safe.
+            thread.join(timeout=10)
+
+            if thread.is_alive():
+                logging.error("API event-loop thread did not stop cleanly")
+
+            self._closed.set()
+
 
     def __run_in_loop(self, coro: Coroutine[object, object, T]) -> T:
         """
@@ -221,9 +284,39 @@ class ApiClient:
         :returns: The routine's result
         :rtype: T
         """
-        assert self._loop is not None
-        fut = asyncio.run_coroutine_threadsafe(coro, self._loop)
-        return fut.result()
+        future = self._submit(coro)
+
+        try:
+            return future.result()
+        except KeyboardInterrupt:
+            # Ctrl+C happened while waiting for an API operation.
+            future.cancel()
+            raise
+        except CancelledError:
+            raise
+
+    def _submit(self, coro: Coroutine[Any, Any, T]) -> Future[T]:
+        if self._closing.is_set():
+            # Avoid leaking an unawaited coroutine if shutdown already started.
+            coro.close()
+            raise RuntimeError("ApiClient is shutting down")
+
+        if self._loop is None or self._loop.is_closed():
+            coro.close()
+            raise RuntimeError("ApiClient event loop is not running")
+
+        future = asyncio.run_coroutine_threadsafe(coro, self._loop)
+
+        with self._active_futures_lock:
+            self._active_futures.add(future)
+
+        def remove_future(done: Future[Any]) -> None:
+            with self._active_futures_lock:
+                self._active_futures.discard(done)
+
+        future.add_done_callback(remove_future)
+        return future
+
 
     def _is_retryable(self, e: BaseException) -> bool:
         """
@@ -2455,6 +2548,22 @@ async def main() -> None:
     Script's main function parsing the configuration and running
     the main logic for each configuration set.
     """
+    _shutdown_requested = threading.Event()
+
+    def handle_shutdown(signum: int, frame: Any) -> None:
+        # This function runs in the main thread.
+        _shutdown_requested.set()
+
+        # Raising KeyboardInterrupt causes normal context-manager cleanup:
+        #     async with ApiClient(...) as client:
+        #         ...
+        raise KeyboardInterrupt
+
+    signal.signal(signal.SIGINT, handle_shutdown)
+
+    if hasattr(signal, "SIGTERM"):
+        signal.signal(signal.SIGTERM, handle_shutdown)
+
     try:
         configs = Configuration.get_configurations()
         logging.info("Created %d configurations", len(configs))
