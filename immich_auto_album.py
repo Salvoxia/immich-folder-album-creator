@@ -3,7 +3,6 @@
 # pylint: disable=too-many-lines
 from __future__ import annotations
 import contextlib
-from asyncio import CancelledError
 from concurrent.futures import ThreadPoolExecutor, Future
 from functools import partial
 from time import perf_counter
@@ -24,8 +23,8 @@ from urllib.error import HTTPError
 import traceback
 from uuid import UUID
 import unicodedata
-import regex
 import signal
+import regex
 import yaml
 from aiohttp import TCPConnector, ClientSession, ClientTimeout
 
@@ -216,11 +215,10 @@ class ApiClient:
 
         self.server_version = self.fetch_server_version()
 
+        # Verify server communication
+        self.server_version: ServerVersionResponseDto | None = self.__fetch_server_version_safe()
         if self.server_version is None:
-            raise AssertionError(
-                "Communication with Immich Server API failed! "
-                "Make sure the API URL is correct and verify the API Key!"
-            )
+            raise AssertionError("Communication with Immich Server API failed! Make sure the API URL is correct and verify the API Key!")
 
         return self
 
@@ -291,8 +289,6 @@ class ApiClient:
         except KeyboardInterrupt:
             # Ctrl+C happened while waiting for an API operation.
             future.cancel()
-            raise
-        except CancelledError:
             raise
 
     def _submit(self, coro: Coroutine[Any, Any, T]) -> Future[T]:
@@ -2550,6 +2546,7 @@ async def main() -> None:
     """
     _shutdown_requested = threading.Event()
 
+    # pylint: disable=unused-argument
     def handle_shutdown(signum: int, frame: Any) -> None:
         # This function runs in the main thread.
         _shutdown_requested.set()
