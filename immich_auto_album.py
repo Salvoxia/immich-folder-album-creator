@@ -864,7 +864,8 @@ class ApiClient:
         album_share_info: dict[str, AlbumUserRole] = {}
         for share_user_actual in album_to_share_info.album_users:
             album_share_info[str(share_user_actual.user.id)] = share_user_actual.role
-
+        print(album_share_info)
+        print(share_users_to_roles_expected)
         # Group share users by share role
         share_roles_to_users_expected: dict[AlbumUserRole, list[str]] = defaultdict(list)
         # Now compare expectation with reality and update
@@ -874,8 +875,8 @@ class ApiClient:
                 # Gather all users to share the album with for this role
                 share_roles_to_users_expected[share_role_expected].append(user_to_share_with)
 
-            # Case: Album is shared, but with wrong role
-            elif album_share_info[user_to_share_with] != share_role_expected:
+            # Case: Album is shared, but with wrong role except if the user to share with is already the owner
+            elif album_share_info[user_to_share_with] != share_role_expected and album_share_info[user_to_share_with] != AlbumUserRole.OWNER:
                 try:
                     self.update_album_share_user_role(album_to_share.id, user_to_share_with, share_role_expected)
                     print(share_role_expected)
