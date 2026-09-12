@@ -378,14 +378,14 @@ The following matrix gives an overview over the container behavior depending on 
 
 | Environment variable                                     | Value                         | Behavior           |
 | :------------------------------------------------------- | :---------------------------- | :----------------- |
-| `CRON_EXPRESSION`<br/>`RUN_IMMEDIATELY`<br/>`UNATTENDED` |not set<br/>not set<br/>not set| Dry run, then exit |
-| `CRON_EXPRESSION`<br/>`RUN_IMMEDIATELY`<br/>`UNATTENDED` |not set<br/>`1`<br/>not set or `0`    | Dry run, then exit |
+| `CRON_EXPRESSION`<br/>`RUN_IMMEDIATELY`<br/>`UNATTENDED` |not set<br/>not set/`0`<br/>not set/`0`| Dry run, then exit |
+| `CRON_EXPRESSION`<br/>`RUN_IMMEDIATELY`<br/>`UNATTENDED` |not set<br/>`1`<br/>not set/`0`    | Dry run, then exit |
 | `CRON_EXPRESSION`<br/>`RUN_IMMEDIATELY`<br/>`UNATTENDED` |not set<br/>`1`<br/>`1`        | Hot run, then exit |
-| `CRON_EXPRESSION`<br/>`RUN_IMMEDIATELY`<br/>`UNATTENDED` |not set<br/>not set or `0`<br/>`1`    | Hot run, then exit |
-| `CRON_EXPRESSION`<br/>`RUN_IMMEDIATELY`<br/>`UNATTENDED` |set<br/>not set or `0`<br/>not set or `0`    | Setup cron and perform scheduled hot runs |
-| `CRON_EXPRESSION`<br/>`RUN_IMMEDIATELY`<br/>`UNATTENDED` |set<br/>`1`<br/>not set or `0`        | Dry run, then setup cron and perform scheduled hot runs |
+| `CRON_EXPRESSION`<br/>`RUN_IMMEDIATELY`<br/>`UNATTENDED` |not set<br/>not set/`0`<br/>`1`    | Hot run, then exit |
+| `CRON_EXPRESSION`<br/>`RUN_IMMEDIATELY`<br/>`UNATTENDED` |set<br/>not set/`0`<br/>not set/`0`    | Setup cron and perform scheduled hot runs |
+| `CRON_EXPRESSION`<br/>`RUN_IMMEDIATELY`<br/>`UNATTENDED` |set<br/>`1`<br/>not set/`0`       | Dry run, then setup cron and perform scheduled hot runs |
 | `CRON_EXPRESSION`<br/>`RUN_IMMEDIATELY`<br/>`UNATTENDED` |set<br/>`1`<br/>`1`            | Hot run, then setup cron and perform scheduled hot runs |
-| `CRON_EXPRESSION`<br/>`RUN_IMMEDIATELY`<br/>`UNATTENDED` |set<br/>not set or `0`<br/>`1`        | Setup cron and perform scheduled hot runs |
+| `CRON_EXPRESSION`<br/>`RUN_IMMEDIATELY`<br/>`UNATTENDED` |set<br/>not set/`0`<br/>`1`        | Setup cron and perform scheduled hot runs |
 
 
 ### Choosing the correct `root_path`
