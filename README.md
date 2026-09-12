@@ -35,6 +35,7 @@ This script is originally based on the following original script: [REDVM/immich_
       - [Environment Variables](#environment-variables)
       - [Run the container with Docker](#run-the-container-with-docker)
       - [Run the container with Docker-Compose](#run-the-container-with-docker-compose)
+      - [Container Start Behavior](#container-start-behavior)
     - [Choosing the correct `root_path`](#choosing-the-correct-root_path)
   - [How it works](#how-it-works)
   - [Album Level Ranges](#album-level-ranges)
