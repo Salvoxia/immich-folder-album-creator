@@ -1487,8 +1487,7 @@ class Configuration():
         parser.add_argument("--visibility", choices=['archive', 'locked', 'timeline'],
                             help="""Set this option to automatically set the visibility of all assets that are discovered by the script and assigned to albums.
                                     Exception for value 'locked': Assets will not be added to any albums, but to the 'locked' folder only.
-                                    Also applies if -m/--mode is set to CLEAN_UP or DELETE_ALL; then it affects all assets in the deleted albums.
-                                    Always overrides -v/--archive.""")
+                                    Also applies if -m/--mode is set to CLEAN_UP or DELETE_ALL; then it affects all assets in the deleted albums.""")
         parser.add_argument("--find-archived-assets", action="store_true",
                             help="""By default, the script only finds assets with visibility set to 'timeline' (which is the default).
                                     Set this option to make the script discover assets with visibility 'archive' as well.
