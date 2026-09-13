@@ -18,7 +18,7 @@ fi
 
 # Perform immediate run
 if is_true "$RUN_IMMEDIATELY"; then
-    "$SCRIPT" > /proc/1/fd/1 2>/proc/1/fd/2 || true
+    "$SCRIPT" > /proc/1/fd/1 2>/proc/1/fd/2
 fi
 
 # Set up SuperCronic schedule
