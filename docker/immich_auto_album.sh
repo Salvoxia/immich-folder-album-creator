@@ -128,7 +128,7 @@ done
 IFS=$oldIFS
 
 unattended=""
-if is_true "$UNATTENDED"; then
+if is_env_var_true "UNATTENDED"; then
     unattended="--unattended"
 fi
 
@@ -164,7 +164,7 @@ if [ ! -z "$LOG_LEVEL" ]; then
     args="--log-level $LOG_LEVEL $args"
 fi
 
-if is_true "$INSECURE"; then
+if is_env_var_true "INSECURE"; then
     args="--insecure $args"
 fi
 
@@ -184,7 +184,7 @@ if [ ! -z "$MODE" ]; then
     args="--mode \"$MODE\" $args"
 fi
 
-if is_true "$DELETE_CONFIRM"; then
+if is_env_var_true "DELETE_CONFIRM"; then
     args="--delete-confirm $args"
 fi
 
@@ -204,11 +204,11 @@ if [ ! -z "$ALBUM_ORDER" ]; then
     args="--album-order $ALBUM_ORDER $args"
 fi
 
-if is_true "$FIND_ASSETS_IN_ALBUMS"; then
+if is_env_var_true "FIND_ASSETS_IN_ALBUMS"; then
     args="--find-assets-in-albums $args"
 fi
 
-if is_true "$FIND_ARCHIVED_ASSETS"; then
+if is_env_var_true "FIND_ARCHIVED_ASSETS"; then
     args="--find-archived-assets $args"
 fi
 
@@ -228,7 +228,7 @@ if [ ! -z "$VISIBILITY" ]; then
     args="--visibility=\"$VISIBILITY\" $args"
 fi
 
-if is_true "$READ_ALBUM_PROPERTIES"; then
+if is_env_var_true "READ_ALBUM_PROPERTIES"; then
     args="--read-album-properties $args"
 fi
 
@@ -237,7 +237,7 @@ if [ ! -z "$API_TIMEOUT" ]; then
 fi
 
 if [ ! -z "$COMMENTS_AND_LIKES" ]; then
-    if is_true "$COMMENTS_AND_LIKES"; then
+    if is_env_var_true "COMMENTS_AND_LIKES"; then
         args="--comments-and-likes-enabled $args"
     else
         args="--comments-and-likes-disabled $args"
