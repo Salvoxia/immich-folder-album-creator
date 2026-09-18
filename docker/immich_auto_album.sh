@@ -1,5 +1,8 @@
 #!/usr/bin/env sh
 
+# source util library
+. util.sh
+
 # parse comma separated root paths and wrap in quotes
 oldIFS=$IFS
 IFS=','
@@ -124,8 +127,8 @@ done
 # reset IFS
 IFS=$oldIFS
 
-unattended=
-if [ ! -z "$UNATTENDED" ]; then
+unattended=""
+if is_env_var_true "UNATTENDED"; then
     unattended="--unattended"
 fi
 
@@ -161,7 +164,7 @@ if [ ! -z "$LOG_LEVEL" ]; then
     args="--log-level $LOG_LEVEL $args"
 fi
 
-if [ "$INSECURE" = "true" ]; then
+if is_env_var_true "INSECURE"; then
     args="--insecure $args"
 fi
 
@@ -181,7 +184,7 @@ if [ ! -z "$MODE" ]; then
     args="--mode \"$MODE\" $args"
 fi
 
-if [ ! -z "$DELETE_CONFIRM" ]; then
+if is_env_var_true "DELETE_CONFIRM"; then
     args="--delete-confirm $args"
 fi
 
@@ -201,11 +204,11 @@ if [ ! -z "$ALBUM_ORDER" ]; then
     args="--album-order $ALBUM_ORDER $args"
 fi
 
-if [ ! -z "$FIND_ASSETS_IN_ALBUMS" ]; then
+if is_env_var_true "FIND_ASSETS_IN_ALBUMS"; then
     args="--find-assets-in-albums $args"
 fi
 
-if [ ! -z "$FIND_ARCHIVED_ASSETS" ]; then
+if is_env_var_true "FIND_ARCHIVED_ASSETS"; then
     args="--find-archived-assets $args"
 fi
 
@@ -221,16 +224,11 @@ if [ ! -z "$SET_ALBUM_THUMBNAIL" ]; then
     args="--set-album-thumbnail \"$SET_ALBUM_THUMBNAIL\" $args"
 fi
 
-# Deprecated, will be removed in future release
-if [ ! -z "$ARCHIVE" ]; then
-    args="--archive $args"
-fi
-
 if [ ! -z "$VISIBILITY" ]; then
     args="--visibility=\"$VISIBILITY\" $args"
 fi
 
-if [ ! -z "$READ_ALBUM_PROPERTIES" ]; then
+if is_env_var_true "READ_ALBUM_PROPERTIES"; then
     args="--read-album-properties $args"
 fi
 
@@ -238,10 +236,12 @@ if [ ! -z "$API_TIMEOUT" ]; then
     args="--api-timeout \"$API_TIMEOUT\" $args"
 fi
 
-if [ "$COMMENTS_AND_LIKES" == "1" ]; then
-    args="--comments-and-likes-enabled $args"
-elif [ "$COMMENTS_AND_LIKES" == "0" ]; then
-    args="--comments-and-likes-disabled $args"
+if [ ! -z "$COMMENTS_AND_LIKES" ]; then
+    if is_env_var_true "COMMENTS_AND_LIKES"; then
+        args="--comments-and-likes-enabled $args"
+    else
+        args="--comments-and-likes-disabled $args"
+    fi
 fi
 
 if [ ! -z "$UPDATE_ALBUM_PROPS_MODE" ]; then

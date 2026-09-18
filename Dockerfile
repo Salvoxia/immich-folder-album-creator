@@ -8,7 +8,7 @@ ENV SUPERCRONIC_URL_BASE=https://github.com/aptible/supercronic/releases/downloa
     CRONTAB_DIR=/script/cron \
     IS_DOCKER=1
 
-COPY immich_auto_album.py requirements.txt docker/immich_auto_album.sh docker/setup_cron.sh /script/
+COPY immich_auto_album.py requirements.txt docker/immich_auto_album.sh docker/setup_cron.sh docker/util.sh /script/
 
 # gcc and musl-dev are required for building requirements for regex python module
 RUN <<EOT
