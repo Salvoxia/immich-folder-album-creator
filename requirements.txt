@@ -1,6 +1,6 @@
 urllib3
 pyyaml
-regex>=2024.11.6
+regex>=2026.9.29
 tenacity>=9.2.1,<10.0.0
 # check https://github.com/timonrieger/immichpy/blob/main/COMPATIBILITY.csv
 # for the exact version to use that supports the server version you are using
