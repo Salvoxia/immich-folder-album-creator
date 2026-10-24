@@ -1,5 +1,5 @@
-urllib3
-pyyaml
+urllib3>=2.8.0
+pyyaml>=6.0.3
 regex>=2024.11.6
 tenacity>=9.2.1,<10.0.0
 # check https://github.com/timonrieger/immichpy/blob/main/COMPATIBILITY.csv
