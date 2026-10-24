@@ -3,7 +3,7 @@ LABEL maintainer="Salvoxia <salvoxia@blindfish.info>"
 ARG TARGETPLATFORM
 
 # Latest releases available at https://github.com/aptible/supercronic/releases
-ENV SUPERCRONIC_URL_BASE=https://github.com/aptible/supercronic/releases/download/v0.2.43/ \
+ENV SUPERCRONIC_URL_BASE=https://github.com/aptible/supercronic/releases/download/v0.2.51/ \
     SUPERCRONIC_BASE=supercronic \
     CRONTAB_DIR=/script/cron \
     IS_DOCKER=1
@@ -14,9 +14,9 @@ COPY immich_auto_album.py requirements.txt docker/immich_auto_album.sh docker/se
 RUN <<EOT
 set -e
 case "${TARGETPLATFORM}" in
-     "linux/amd64")  SUPERCRONIC=$SUPERCRONIC_BASE-linux-amd64 SUPERCRONIC_SHA1SUM=f97b92132b61a8f827c3faf67106dc0e4467ccf2 ;;
-     "linux/arm64")  SUPERCRONIC=$SUPERCRONIC_BASE-linux-arm64 SUPERCRONIC_SHA1SUM=5c6266786c2813d6f8a99965d84452faae42b483 ;;
-     "linux/arm/v7")  SUPERCRONIC=$SUPERCRONIC_BASE-linux-arm SUPERCRONIC_SHA1SUM=9d222afc7875bff33bb3623dd88b390f51d9d81e ;;
+     "linux/amd64")  SUPERCRONIC=$SUPERCRONIC_BASE-linux-amd64 SUPERCRONIC_SHA1SUM=1692066e350a88ff4d7d6474fe3c7a6c41ec5e89 ;;
+     "linux/arm64")  SUPERCRONIC=$SUPERCRONIC_BASE-linux-arm64 SUPERCRONIC_SHA1SUM=9d4c2000493215a1898502b2fc2dada3e8ea8c7a ;;
+     "linux/arm/v7")  SUPERCRONIC=$SUPERCRONIC_BASE-linux-arm SUPERCRONIC_SHA1SUM=9224966499cd319ed85759e9b6442f885d920c4f ;;
      *) exit 1 ;;
 esac
 [ "$TARGETPLATFORM" = "linux/arm/v7" ] && apk add gcc musl-dev
