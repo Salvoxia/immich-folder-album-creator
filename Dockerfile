@@ -19,8 +19,8 @@ case "${TARGETPLATFORM}" in
      "linux/arm/v7")  SUPERCRONIC=$SUPERCRONIC_BASE-linux-arm SUPERCRONIC_SHA1SUM=9224966499cd319ed85759e9b6442f885d920c4f ;;
      *) exit 1 ;;
 esac
-[ "$TARGETPLATFORM" = "linux/arm/v7" ] && apk add gcc musl-dev
-apk add tini curl
+[ "$TARGETPLATFORM" = "linux/arm/v7" ] && apk add gcc=15.2.0-r5 musl-dev=1.2.6-r3
+apk add --no-cache tini=0.19.0-r3 curl
 pip install --no-cache-dir -r /script/requirements.txt
 chmod +x /script/setup_cron.sh /script/immich_auto_album.sh
 rm -rf /tmp/* /var/tmp/* /var/cache/apk/* /var/cache/distfiles/*
