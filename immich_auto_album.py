@@ -42,6 +42,7 @@ from immichpy.client.generated import (
     CreateAlbumDto,
     LibraryResponseDto,
     MetadataSearchDto,
+    SearchFilter,
     SearchResponseDto,
     ServerVersionResponseDto,
     UpdateAlbumDto,
@@ -426,97 +427,57 @@ class ApiClient:
         """
         Fetches assets from the Immich API.
 
-        Uses the /search/meta-data call. Much more efficient than the legacy method
-        since this call allows to filter for assets that are not in an album only.
-
-        :param is_not_in_album: Flag indicating whether to fetch only assets that are not part
-                of an album or not. If set to False, will find images in albums and not part of albums
-        :param visibility_options: A list of visibility options to find and return assets with
-        :returns: An array of asset objects
-        :rtype: list[AssetResponseDto]
+        Uses the /search/meta-data call with an empty filter, which returns all
+        assets (timeline + archive) except locked ones.
         """
-        asset_list = self.fetch_assets_with_options(MetadataSearchDto(is_not_in_album=is_not_in_album, visibility=AssetVisibility.TIMELINE))
-        for visiblity_option in visibility_options:
-            # Do not fetch agin for 'timeline', that's the default!
-            if visiblity_option != AssetVisibility.TIMELINE:
-                asset_list += self.fetch_assets_with_options(MetadataSearchDto(is_not_in_album=is_not_in_album, visibility=visiblity_option))
-        return asset_list
+        # Ein leerer Filter gibt alle Assets zurück (außer locked).
+        # Die Parameter is_not_in_album und visibility_options werden nicht mehr benötigt,
+        # da der Filter dies bereits abdeckt.
+        return self.fetch_assets_with_options(MetadataSearchDto())
 
     # pylint: disable=R0914
     def fetch_assets_with_options(self, search_options: MetadataSearchDto) -> list[AssetResponseDto]:
         """
         Fetches assets from the Immich API using specific search options.
-        The search options directly correspond to the body used for the search API request.
-        Assets are retreived in parallel based on configured number of threads.
-
-        :param search_options: Dictionary containing options to pass to the search/metadata API endpoint
-        :returns: An array of asset objects
-        :rtype: list[AssetResponseDto]
+        Assets are retreived sequentially using cursor-based pagination.
         """
         assets_found: list[AssetResponseDto] = []
-        # prepare request body
 
-        # This API call allows a maximum page size of 1000
         number_of_assets_to_fetch_per_request_search = min(1000, self.config.fetch_chunk_size)
         search_options.size = number_of_assets_to_fetch_per_request_search
-        # Initial API call, let's fetch our first chunk
-        page = 1
-        # Record time when we started fetching
+
+        # WICHTIG: Ein leerer Filter aktiviert den Cursor-Modus und gibt alle Assets zurück (außer locked).
+        search_options.filter = {}
+
         start_time = perf_counter()
-        page_fetched, response = self.__fetch_asset_chunk(search_options, page)
-        assets_received = response.assets.items
-        assets_found = assets_found + assets_received
-        logging.debug("Received %s assets with chunk %s", len(assets_received), page_fetched)
+        cursor = None
 
-        page += 1
-        # Create a callable with the static arguments already set, we're going to iterate over the page to fetch only.
-        partial_fetch_asset_chunk = partial(self.__fetch_asset_chunk, search_options)
-        # If we got a full chunk size back, let's perform subsequent calls until we get less than a full chunk size
-        asset_count_received_with_chunk = len(assets_received)
-        while asset_count_received_with_chunk == number_of_assets_to_fetch_per_request_search:
-            pages_to_fetch_in_parallel = list(range(page, page + self.config.threads))
-            with ThreadPoolExecutor(max_workers=self.config.threads) as exe:
-                # Maps the method 'cube' with a list of values.
-                results = exe.map(partial_fetch_asset_chunk, pages_to_fetch_in_parallel)
+        while True:
+            response = self.__fetch_asset_chunk(search_options, cursor)
+            assets_received = response.assets.items
+            assets_found.extend(assets_received)
+            logging.debug("Received %s assets with cursor %s", len(assets_received), cursor)
 
-            for page_fetched, result in results:
-                assets_received = result.assets.items
-                # Remember the minimum number of assets received with any chunk; if there is a chunk with
-                # less than our chunk size we know we fetched everything.
-                asset_count_received_with_chunk = min(asset_count_received_with_chunk, len(assets_received))
-                # Determine the fetched page from the results; if there is a next page, the current page is next page - 1. If there is
-                # no next page, it was the last.
-                #page_fetched : str = str(int(result['assets']['nextPage']) - 1) if result['assets']['nextPage'] is not None else 'last'
-                logging.debug("Received %s assets with chunk %s", len(assets_received), page_fetched)
-                assets_found = assets_found + assets_received
+            cursor = getattr(response.assets, "next_cursor", None)
+            if not cursor or len(assets_received) == 0:
+                break
 
-            # advance page by number of parallel threads
-            page = page + self.config.threads
         end_time = perf_counter()
-        logging.info("Fetching %s assets with %s threads took %s s", len(assets_found), self.config.threads, round(end_time - start_time, 2))
+        logging.info("Fetching %s assets took %s s", len(assets_found), round(end_time - start_time, 2))
         return assets_found
 
-    def __fetch_asset_chunk(self, search_options: MetadataSearchDto, page: int) -> Tuple[int, SearchResponseDto]:
+    def __fetch_asset_chunk(self, search_options: MetadataSearchDto, cursor: Optional[str]) -> SearchResponseDto:
         """
         Fetches a single page of assets from the Immich API using specific search options.
-        
-        :param search_options: MetadataSearchDto containing options to pass to the search/metadata API endpoint
-        :param page: The result page to fetch
-        :returns: A tuple with the fetched page as first argument and the returned SearchResponseDto as second argument
-        :rtype: Tuple[int, SearchResponseDto]
         """
-
-        # copy search options, since we are going to insert the page number
-        metadata_search_dto = search_options.model_copy(update={"page": page})
+        metadata_search_dto = search_options.model_copy(update={"cursor": cursor})
         logging.debug("requesting %s", metadata_search_dto)
-        r = self.__request_api(lambda c: c.search.search_assets(metadata_search_dto))
-
-        return (page, r)
+        return self.__request_api(lambda c: c.search.search_assets(metadata_search_dto))
 
     def fetch_albums(self) -> list[AlbumResponseDto]:
         """
         Fetches albums from the Immich API
-        
+
         :returns: A list of album objects
         :rtype: list[AlbumResponseDto]
         """
@@ -527,7 +488,7 @@ class ApiClient:
         Fetches information about a specific album
 
         :param album_id_for_info: The ID of the album to fetch information for
-        
+
         :returns: A AlbumResponseDto containing album information
         :rtype: AlbumResponseDto
         """
@@ -562,7 +523,7 @@ class ApiClient:
 
         :returns: The ID of the created album
         :rtype: str
-        
+
         :raises: Exception if the API call failed
         """
 
@@ -599,7 +560,7 @@ class ApiClient:
     def fetch_users(self) -> list[UserResponseDto]:
         """
         Queries and returns all users
-        
+
         :returns: A list of user objects
         :rtype: list[UserResponseDto]
         """
@@ -612,7 +573,7 @@ class ApiClient:
 
         :param album_id_to_unshare: The ID of the album to unshare
         :param unshare_user_id: The user ID to remove from the album's share list
-        
+
         :raises: Exception if the API call fails
         """
         self.__request_api(lambda c: c.albums.remove_user_from_album(id=album_id_to_unshare, user_id=unshare_user_id))
@@ -624,7 +585,7 @@ class ApiClient:
         :param album_id_to_share: The ID of the album to share
         :param share_user_id: The user ID to update the share role for
         :param share_user_role: The share role to update the user to
-        
+
         :raises: Exception if the API call fails
         """
         self.__request_api(lambda c: c.albums.update_album_user(id=album_id_to_share, user_id=share_user_id, update_album_user_dto=UpdateAlbumUserDto(role=share_user_role)))
@@ -837,7 +798,7 @@ class ApiClient:
         :param album_to_share: The album to share, with the expected share_with setting
         :param unshare_users: Flag indicating whether to actively unshare albums if shared with a user that is not in the current share settings
         :param known_users: A list of all users Immich knows to find the user IDs to share/unshare with
-        
+
         :raises: HTTPError if the API call fails
         """
         assert album_to_share.id is not None, "Album ID must be set"
@@ -1072,7 +1033,7 @@ class AlbumModel:
         - Users can be removed by setting role to 'none' (and once removed, cannot be re-added)
         - User roles follow most restrictive policy: viewer is more restrictive than editor
         - Most restrictive role wins when there are conflicts
-        
+
         :param inherited_share_with: List of inherited share_with settings from parent folders
         :return: Merged share_with list
         """
@@ -1378,7 +1339,7 @@ class Configuration():
         a regular expression.
 
         :param pattern: A GLOB-style pattern to convert to a regular expression
-        
+
         :returns: A regular expression matching the same strings as the provided GLOB pattern
         :rtype: str
         """
@@ -1557,7 +1518,7 @@ class Configuration():
 
         :param api_key_source: An API key or path to a file containing an API key
         :param key_type: Must be either 'literal' or 'file'
-        
+
         :returns: A list of API keys to use
         :rtype: list[str]
         """
@@ -1648,7 +1609,7 @@ class FolderAlbumCreator():
         :param model2: The second album model to check for incompatibility with the first model
         :param album_name_to_album_properties_file_path: A dictionary where the key is an album name and the value is the path to the album properties file the
                 album was generated from. This method expects one entry in this dictionary for every AlbumModel in album_props_templates
-        
+
         :returns: False if model1 and model2 are compatible, otherwise True
         :rtype: bool
         """
@@ -1857,7 +1818,7 @@ class FolderAlbumCreator():
 
         :param separated_string: The string to parse
         :param separator: The separator to parse separated_string at
-        :return: A tuple with the first value being the string on the left side of the separator 
+        :return: A tuple with the first value being the string on the left side of the separator
             and the second value the string on the right side of the separator
         """
         items = separated_string.split(separator)
@@ -1986,7 +1947,7 @@ class FolderAlbumCreator():
         based in its originalPath and global ignore and path_filter options.
 
         :param asset_to_check: The asset to check if it must be ignored or not. Must have the key 'originalPath'.
-        
+
         :returns: True if the asset must be ignored, otherwise False
         :rtype: bool
         """
@@ -2019,9 +1980,9 @@ class FolderAlbumCreator():
 
     @staticmethod
     def get_album_id_by_name(albums_list: list[AlbumResponseDto], album_name: str) -> UUID | None:
-        """ 
+        """
         Finds the album with the provided name in the list of albums and returns its id.
-        
+
         :param albums_list: List of albums to find a particular album in
         :param album_name: Name of album to find the ID for
 
@@ -2234,7 +2195,7 @@ class FolderAlbumCreator():
 
         :param name_or_email: The user name or email address to find the user by
         :param user_list: A list of user dictionaries with the following mandatory keys: `id`, `name`, `email`
-        
+
         :returns: A user with matching name or email or None if no matching user was found
         :rtype: UserResponseDto
         """
@@ -2427,7 +2388,7 @@ class Utils:
     def divide_chunks(full_list: list[Any], chunk_size: int):
         """
         Yield successive chunk_size-sized chunks from full_list.
-        
+
         :param full_list: The full list to create chunks from
         :param chunk_size: The number of records per chunk
         """
@@ -2439,7 +2400,7 @@ class Utils:
     def assert_not_none_or_empty(key: str, value : Any):
         """
         Asserts that the passed value is not None and not empty
-        
+
         :param value: The value to assert
         :raises: ValueError if the passed value is None or empty
         """
@@ -2449,12 +2410,12 @@ class Utils:
     @staticmethod
     def get_value_or_config_default(key : str, args_dict : dict[str, Any], default: Any) -> Any:
         """
-        Returns the value stored in args_dict under the provided key if it is not None or empty, 
+        Returns the value stored in args_dict under the provided key if it is not None or empty,
         otherwise returns the value from Configuration.CONFIG_DEAULTS using the same key.
-        
+
         :param default: The default value to return if value did not pass the check
         :param key: The dictionary key to look up the value for
-        
+
         :returns: The passed value or the configuration default if the value did not pass the checks
         :rtype: any
         """
@@ -2472,7 +2433,7 @@ class Utils:
         string is an integer or not.
 
         :param string_to_test: The string to test for integer
-        
+
         :returns: True if string_to_test is an integer, otherwise False
         :rtype: bool
         """
@@ -2490,7 +2451,7 @@ class Utils:
 
         :param file_path: Path to the file to read
         :param encoding: The encoding to read the file with, defaults to `utf-8`
-                
+
         :returns: The file's contents
         :rtype: str
 
