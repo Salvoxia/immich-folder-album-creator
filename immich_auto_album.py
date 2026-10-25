@@ -109,6 +109,7 @@ class ApiClient:
     # Number of times to retry an API call if it times out
     MAX_RETRY_COUNT_ON_TIMEOUT_DEFAULT = 3
     # Number of threads to fetch assets with in parallel
+    # Deprecated
     THREADS_DEFAULT = 4
     # Maximum number of threads to fetch assets with in parallel
     THREADS_MAX = 20
@@ -1307,6 +1308,7 @@ class Configuration():
         "comments_and_likes_disabled": False,
         "update_album_props_mode": 0,
         "max_retry_count": ApiClient.MAX_RETRY_COUNT_ON_TIMEOUT_DEFAULT,
+        # Deprecated
         "threads": ApiClient.THREADS_DEFAULT
     }
 
@@ -1344,7 +1346,10 @@ class Configuration():
         self.api_key = args["api_key"]
         self.chunk_size = Utils.get_value_or_config_default("chunk_size", args, Configuration.CONFIG_DEFAULTS["chunk_size"])
         self.fetch_chunk_size = Utils.get_value_or_config_default("fetch_chunk_size", args, Configuration.CONFIG_DEFAULTS["fetch_chunk_size"])
+        #D Deprecated
         self.threads = Utils.get_value_or_config_default("threads", args, Configuration.CONFIG_DEFAULTS["threads"])
+        if args["threads"] is not None:
+            logging.warning("Using the threads argument is deprecated. It will be removed in a future version!")
         self.unattended = Utils.get_value_or_config_default("unattended", args, Configuration.CONFIG_DEFAULTS["unattended"])
         self.album_levels = Utils.get_value_or_config_default("album_levels", args, Configuration.CONFIG_DEFAULTS["album_levels"])
         # Album Levels Range handling
@@ -1595,7 +1600,7 @@ class Configuration():
         parser.add_argument("--max-retry-count", type=int, default=Configuration.CONFIG_DEFAULTS['max_retry_count'],
                             help="Number of times to retry an Immich API call if it timed out before failing.")
         parser.add_argument("--threads", type=int, default=Configuration.CONFIG_DEFAULTS['threads'], choices=range(1, ApiClient.THREADS_MAX+1),
-                            help="Number of threads to fetch assets with in parallel.")
+                            help="DEPRECATED! Number of threads to fetch assets with in parallel.")
         return parser
 
     @staticmethod
