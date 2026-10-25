@@ -2,7 +2,6 @@
 
 # pylint: disable=too-many-lines
 from __future__ import annotations
-from warnings import deprecated
 import contextlib
 from concurrent.futures import ThreadPoolExecutor, Future
 from functools import partial
@@ -490,9 +489,10 @@ class ApiClient:
         return assets_found
 
     # pylint: disable=R0914
-    @deprecated("Use fetch_assets_with_filter()")
     def fetch_assets_with_options(self, search_options: MetadataSearchDto) -> list[AssetResponseDto]:
         """
+        Deprecated: Use fetch_assets_with_filter() instead!
+
         Fetches assets from the Immich API using specific search options.
         The search options directly correspond to the body used for the search API request.
         Assets are retreived in parallel based on configured number of threads.
@@ -543,9 +543,10 @@ class ApiClient:
         logging.info("Fetching %s assets with %s threads took %s s", len(assets_found), self.config.threads, round(end_time - start_time, 2))
         return assets_found
 
-    @deprecated("use __fetch_asset_chunk()")
     def __fetch_asset_chunk_with_options(self, search_options: MetadataSearchDto, page: int) -> Tuple[int, SearchResponseDto]:
         """
+        Deprecated: Use __fetch_asset_chunk() instead!
+
         Fetches a single page of assets from the Immich API using specific search options.
         
         :param search_options: MetadataSearchDto containing options to pass to the search/metadata API endpoint
