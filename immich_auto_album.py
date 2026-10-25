@@ -51,6 +51,7 @@ from immichpy.client.generated import (
     UpdateAlbumUserDto,
     UserResponseDto,
 )
+from immichpy.client.generated.models import EnumFilterAssetVisibility, IdsFilter
 from immichpy import AsyncClient
 from immichpy.client.generated.exceptions import ApiException, UnauthorizedException, BadRequestException
 from tenacity import (
@@ -60,7 +61,6 @@ from tenacity import (
     wait_exponential,
     AsyncRetrying,
 )
-from immichpy.client.generated.models import EnumFilterAssetVisibility, IdsFilter
 
 # Script Constants
 # Environment variable to check if the script is running inside Docker
@@ -449,13 +449,13 @@ class ApiClient:
                     asset_list += self.fetch_assets_with_options(MetadataSearchDto(is_not_in_album=is_not_in_album, visibility=visiblity_option))
         except BadRequestException:
             # { "filter": {"hasAlbums": { "eq": false}, "visibility": { "in" : ["timeline", "archive", "hidden"]} }}
-            filter: SearchFilter = SearchFilter(visibility = EnumFilterAssetVisibility(var_in = list(set(visibility_options + [AssetVisibility.TIMELINE]))))
+            search_filter: SearchFilter = SearchFilter(visibility = EnumFilterAssetVisibility(var_in = list(set(visibility_options + [AssetVisibility.TIMELINE]))))
             # Only add the hasAlbums filter if we only want assets that are not assigned to any album
             # Otherwise omit the filter completely to get assets in albums as well as assets without albums
-            if(is_not_in_album):
-                filter.hasAlbums = BoolFilter(eq = not is_not_in_album),
-            asset_list = self.fetch_assets_with_filter(filter)
-            
+            if is_not_in_album:
+                search_filter.hasAlbums = BoolFilter(eq = not is_not_in_album)
+            asset_list = self.fetch_assets_with_filter(search_filter)
+
         return asset_list
 
 
@@ -477,14 +477,13 @@ class ApiClient:
         query_count : int = 0
         cursor : str = None
 
-        while query_count == 0 or cursor != None:
+        while query_count == 0 or cursor is not None:
             query_count += 1
             response = self.__fetch_asset_chunk(search_filter, cursor)
             assets_found = assets_found + response.assets.items
             logging.debug("Received %s assets with chunk %s (cursor %s)", len(response.assets.items), query_count, cursor)
             cursor = response.assets.next_cursor
             logging.debug("Next cursor = %s", response.assets.next_cursor)
-            
 
         end_time = perf_counter()
         logging.info("Fetching %s assets with %s thread took %s s", len(assets_found), 1, round(end_time - start_time, 2))
@@ -744,8 +743,9 @@ class ApiClient:
                     logging.warning('Admin-level API key required to check for offline assets in locked folder, skipping...')
         except BadRequestException:
             # Single search: { "filter": {"isOffline": { "eq": true}, "visibility": { "in" : ["timeline", "archive", "hidden"]}} }
-            filter: SearchFilter = SearchFilter(isOffline = BoolFilter(eq = True), visibility = EnumFilterAssetVisibility(var_in = [AssetVisibility.TIMELINE, AssetVisibility.ARCHIVE, AssetVisibility.HIDDEN]))
-            offline_assets = self.fetch_assets_with_filter(filter)
+            search_filter: SearchFilter = SearchFilter(isOffline = BoolFilter(eq = True),
+                visibility = EnumFilterAssetVisibility(var_in = [AssetVisibility.TIMELINE, AssetVisibility.ARCHIVE, AssetVisibility.HIDDEN]))
+            offline_assets = self.fetch_assets_with_filter(search_filter)
 
         if len(offline_assets) > 0:
             logging.info("Deleting %s offline assets", len(offline_assets))
@@ -853,8 +853,8 @@ class ApiClient:
                     assets_in_deleted_album = self.fetch_assets_with_options(MetadataSearchDto(album_ids=[album_to_delete.id]))
                 except BadRequestException:
                     # { "filter": {"albumIds": { "all": ["9eab1ebe-c998-4bdc-a2cc-1722c719e292"]}}}
-                    filter: SearchFilter = SearchFilter(album_ids = IdsFilter(all = [album_to_delete.id]))
-                    assets_in_deleted_album = self.fetch_assets_with_filter(filter)
+                    search_filter: SearchFilter = SearchFilter(album_ids = IdsFilter(all = [album_to_delete.id]))
+                    assets_in_deleted_album = self.fetch_assets_with_filter(search_filter)
             if self.delete_album(album_to_delete.id):
                 logging.info("Deleted album %s", album_to_delete.album_name)
                 deleted_album_count += 1
@@ -904,8 +904,8 @@ class ApiClient:
                     assets_in_album = self.fetch_assets_with_options(MetadataSearchDto(album_ids=[album_to_delete.id]))
                 except BadRequestException:
                     # filter: { "filter": {"albumIds": { "all": ["9eab1ebe-c998-4bdc-a2cc-1722c719e292"]}}}
-                    filter: SearchFilter = SearchFilter(album_ids = IdsFilter(all = [album_to_delete.id]))
-                    assets_in_album = self.fetch_assets_with_filter(filter)
+                    search_filter: SearchFilter = SearchFilter(album_ids = IdsFilter(all = [album_to_delete.id]))
+                    assets_in_album = self.fetch_assets_with_filter(search_filter)
             if self.delete_album(album_to_delete.id):
                 logging.info("Deleted album %s", album_to_delete.get_final_name())
                 cpt += 1
@@ -2451,8 +2451,8 @@ class FolderAlbumCreator():
                             album_assets = self.api_client.fetch_assets_with_options(MetadataSearchDto(album_ids=[album.id]))
                         except BadRequestException:
                             # filter: { "filter": {"albumIds": { "all": ["9eab1ebe-c998-4bdc-a2cc-1722c719e292"]}}}
-                            filter: SearchFilter = SearchFilter(album_ids = IdsFilter(all = [album.id]))
-                            album_assets = self.api_client.fetch_assets_with_filter(filter)
+                            search_filter: SearchFilter = SearchFilter(album_ids = IdsFilter(all = [album.id]))
+                            album_assets = self.api_client.fetch_assets_with_filter(search_filter)
                         thumbnail_asset = self.choose_thumbnail(album.thumbnail_setting, album_assets)
                         if thumbnail_asset:
                             logging.info("Using asset %s as thumbnail for album %s", thumbnail_asset.original_path, album.get_final_name())
@@ -2485,9 +2485,9 @@ class FolderAlbumCreator():
                         album_model.assets = self.api_client.fetch_assets_with_options(MetadataSearchDto(album_ids=[a.id]))
                     except BadRequestException:
                         # filter: { "filter": {"albumIds": { "all": ["9eab1ebe-c998-4bdc-a2cc-1722c719e292"]}}}
-                        filter: SearchFilter = SearchFilter(album_ids = IdsFilter(all = [a.id]))
-                        album_assets = self.api_client.fetch_assets_with_filter(filter)
-                        
+                        search_filter: SearchFilter = SearchFilter(album_ids = IdsFilter(all = [a.id]))
+                        album_assets = self.api_client.fetch_assets_with_filter(search_filter)
+
                     # Set thumbnail setting to 'random' in model
                     album_model.thumbnail_setting = 'random'
                     thumbnail_asset = self.choose_thumbnail(album_model.thumbnail_setting, album_model.assets)
