@@ -2441,7 +2441,6 @@ class FolderAlbumCreator():
                 if album.visibility is not None and len(assets_added) > 0 and self.config.update_album_props_mode == 0:
                     self.api_client.set_assets_visibility(assets_added, album.visibility)
                     logging.info("Set visibility for %d assets to %s", len(assets_added), album.visibility.value)
-                    
 
                 # Update album properties depending on mode or if newly created
                 if self.config.update_album_props_mode > 0 or (album in created_albums):
