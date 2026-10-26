@@ -1578,6 +1578,7 @@ class Configuration():
                                     If set to """+Configuration.ALBUM_THUMBNAIL_RANDOM_ALL+""", the thumbnails for ALL albums will be shuffled on every run.""")
         parser.add_argument("--visibility", choices=['archive', 'locked', 'timeline'],
                             help="""Set this option to automatically set the visibility of all assets that are discovered by the script and assigned to albums.
+                                    If --update-album-props-mode is set as well, visibility will be set for all assets in the discovered albums.
                                     Exception for value 'locked': Assets will not be added to any albums, but to the 'locked' folder only.
                                     Also applies if -m/--mode is set to CLEAN_UP or DELETE_ALL; then it affects all assets in the deleted albums.""")
         parser.add_argument("--find-archived-assets", action="store_true",
@@ -2436,10 +2437,11 @@ class FolderAlbumCreator():
                     asset_uuids_added += assets_added
                     logging.info("%d new assets added to %s", len(assets_added), album.get_final_name())
 
-                # Set assets visibility
-                if album.visibility is not None:
+                # Set assets visibility (if assets were actually added and visibility is not set anyway when updating album properties)
+                if album.visibility is not None and len(assets_added) > 0 and self.config.update_album_props_mode == 0:
                     self.api_client.set_assets_visibility(assets_added, album.visibility)
                     logging.info("Set visibility for %d assets to %s", len(assets_added), album.visibility.value)
+                    
 
                 # Update album properties depending on mode or if newly created
                 if self.config.update_album_props_mode > 0 or (album in created_albums):
@@ -2455,6 +2457,12 @@ class FolderAlbumCreator():
                             search_filter: SearchFilter = SearchFilter(album_ids = IdsFilter(all = [album.id]))
                             album_assets = self.api_client.fetch_assets_with_filter(search_filter)
                         thumbnail_asset = self.choose_thumbnail(album.thumbnail_setting, album_assets)
+                        album_asset_uuids: list[str] = [asset.id for asset in album_assets]
+                        # Set asset visibility for all assets in album
+                        if album.visibility is not None and len(album_assets) > 0:
+                            self.api_client.set_assets_visibility(album_asset_uuids, album.visibility)
+                            logging.info("Set visibility for %d assets to %s", len(album_asset_uuids), album.visibility.value)
+                        # Set album thumbnail
                         if thumbnail_asset:
                             logging.info("Using asset %s as thumbnail for album %s", thumbnail_asset.original_path, album.get_final_name())
                             album.thumbnail_asset_uuid = str(thumbnail_asset.id)
