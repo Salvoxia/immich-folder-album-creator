@@ -38,18 +38,21 @@ from immichpy.client.generated import (
     AssetOrder,
     AssetResponseDto,
     AssetVisibility,
+    BoolFilter,
     BulkIdsDto,
     CreateAlbumDto,
     LibraryResponseDto,
     MetadataSearchDto,
+    SearchFilter,
     SearchResponseDto,
     ServerVersionResponseDto,
     UpdateAlbumDto,
     UpdateAlbumUserDto,
     UserResponseDto,
 )
+from immichpy.client.generated.models import EnumFilterAssetVisibility, IdsFilter
 from immichpy import AsyncClient
-from immichpy.client.generated.exceptions import ApiException, UnauthorizedException
+from immichpy.client.generated.exceptions import ApiException, UnauthorizedException, BadRequestException
 from tenacity import (
     retry_if_exception,
     retry_if_exception_type,
@@ -105,6 +108,7 @@ class ApiClient:
     # Number of times to retry an API call if it times out
     MAX_RETRY_COUNT_ON_TIMEOUT_DEFAULT = 3
     # Number of threads to fetch assets with in parallel
+    # Deprecated
     THREADS_DEFAULT = 4
     # Maximum number of threads to fetch assets with in parallel
     THREADS_MAX = 20
@@ -212,8 +216,6 @@ class ApiClient:
 
         self._session_fut = self._submit(create_session())
         await asyncio.wrap_future(self._session_fut)
-
-        self.server_version = self.fetch_server_version()
 
         # Verify server communication
         self.server_version: ServerVersionResponseDto | None = self.__fetch_server_version_safe()
@@ -435,16 +437,62 @@ class ApiClient:
         :returns: An array of asset objects
         :rtype: list[AssetResponseDto]
         """
-        asset_list = self.fetch_assets_with_options(MetadataSearchDto(is_not_in_album=is_not_in_album, visibility=AssetVisibility.TIMELINE))
-        for visiblity_option in visibility_options:
-            # Do not fetch agin for 'timeline', that's the default!
-            if visiblity_option != AssetVisibility.TIMELINE:
-                asset_list += self.fetch_assets_with_options(MetadataSearchDto(is_not_in_album=is_not_in_album, visibility=visiblity_option))
+        asset_list: list[AssetResponseDto] = []
+
+        try:
+            asset_list = self.fetch_assets_with_options(MetadataSearchDto(is_not_in_album=is_not_in_album, visibility=AssetVisibility.TIMELINE))
+            # Future: Remove legacy calls when Immich removed the deprecated fields from /search/metadata
+            for visiblity_option in visibility_options:
+                # Do not fetch agin for 'timeline', that's the default!
+                if visiblity_option != AssetVisibility.TIMELINE:
+                    asset_list += self.fetch_assets_with_options(MetadataSearchDto(is_not_in_album=is_not_in_album, visibility=visiblity_option))
+        except BadRequestException:
+            # { "filter": {"hasAlbums": { "eq": false}, "visibility": { "in" : ["timeline", "archive", "hidden"]} }}
+            search_filter: SearchFilter = SearchFilter(visibility = EnumFilterAssetVisibility(var_in = list(set(visibility_options + [AssetVisibility.TIMELINE]))))
+            # Only add the hasAlbums filter if we only want assets that are not assigned to any album
+            # Otherwise omit the filter completely to get assets in albums as well as assets without albums
+            if is_not_in_album:
+                search_filter.hasAlbums = BoolFilter(eq = not is_not_in_album)
+            asset_list = self.fetch_assets_with_filter(search_filter)
+
         return asset_list
+
+
+    # pylint: disable=R0914
+    def fetch_assets_with_filter(self, search_filter: SearchFilter) -> list[AssetResponseDto]:
+        """
+        Fetches assets from the Immich API the specififed search filter.
+        Assets are retreived in parallel based on configured number of threads.
+
+        :param search_filter: SearchFilter object containing all filter options to use
+        :returns: An array of asset objects
+        :rtype: list[AssetResponseDto]
+        """
+        assets_found: list[AssetResponseDto] = []
+        # prepare request body
+
+        # Record time when we started fetching
+        start_time = perf_counter()
+        query_count : int = 0
+        cursor : str = None
+
+        while query_count == 0 or cursor is not None:
+            query_count += 1
+            response = self.__fetch_asset_chunk(search_filter, cursor)
+            assets_found = assets_found + response.assets.items
+            logging.debug("Received %s assets with chunk %s (cursor %s)", len(response.assets.items), query_count, cursor)
+            cursor = response.assets.next_cursor
+            logging.debug("Next cursor = %s", response.assets.next_cursor)
+
+        end_time = perf_counter()
+        logging.info("Fetching %s assets with %s thread took %s s", len(assets_found), 1, round(end_time - start_time, 2))
+        return assets_found
 
     # pylint: disable=R0914
     def fetch_assets_with_options(self, search_options: MetadataSearchDto) -> list[AssetResponseDto]:
         """
+        Deprecated: Use fetch_assets_with_filter() instead!
+
         Fetches assets from the Immich API using specific search options.
         The search options directly correspond to the body used for the search API request.
         Assets are retreived in parallel based on configured number of threads.
@@ -455,7 +503,6 @@ class ApiClient:
         """
         assets_found: list[AssetResponseDto] = []
         # prepare request body
-
         # This API call allows a maximum page size of 1000
         number_of_assets_to_fetch_per_request_search = min(1000, self.config.fetch_chunk_size)
         search_options.size = number_of_assets_to_fetch_per_request_search
@@ -463,14 +510,14 @@ class ApiClient:
         page = 1
         # Record time when we started fetching
         start_time = perf_counter()
-        page_fetched, response = self.__fetch_asset_chunk(search_options, page)
+        page_fetched, response = self.__fetch_asset_chunk_with_options(search_options, page)
         assets_received = response.assets.items
         assets_found = assets_found + assets_received
         logging.debug("Received %s assets with chunk %s", len(assets_received), page_fetched)
 
         page += 1
         # Create a callable with the static arguments already set, we're going to iterate over the page to fetch only.
-        partial_fetch_asset_chunk = partial(self.__fetch_asset_chunk, search_options)
+        partial_fetch_asset_chunk = partial(self.__fetch_asset_chunk_with_options, search_options)
         # If we got a full chunk size back, let's perform subsequent calls until we get less than a full chunk size
         asset_count_received_with_chunk = len(assets_received)
         while asset_count_received_with_chunk == number_of_assets_to_fetch_per_request_search:
@@ -496,8 +543,10 @@ class ApiClient:
         logging.info("Fetching %s assets with %s threads took %s s", len(assets_found), self.config.threads, round(end_time - start_time, 2))
         return assets_found
 
-    def __fetch_asset_chunk(self, search_options: MetadataSearchDto, page: int) -> Tuple[int, SearchResponseDto]:
+    def __fetch_asset_chunk_with_options(self, search_options: MetadataSearchDto, page: int) -> Tuple[int, SearchResponseDto]:
         """
+        Deprecated: Use __fetch_asset_chunk() instead!
+
         Fetches a single page of assets from the Immich API using specific search options.
         
         :param search_options: MetadataSearchDto containing options to pass to the search/metadata API endpoint
@@ -512,6 +561,27 @@ class ApiClient:
         r = self.__request_api(lambda c: c.search.search_assets(metadata_search_dto))
 
         return (page, r)
+
+    def __fetch_asset_chunk(self, search_filter: SearchFilter, cursor: None | str) -> SearchResponseDto:
+        """
+        Fetches a single page of assets from the Immich API using specific search options and cursor.
+        If cursor is None, it is not passed to the API, starting a new search
+        
+        :param search_filter: SearchFilter containing options to pass to the search/metadata API endpoint
+        :param cursor: The cursor for the result page to fetch
+        :returns: The SearchResponseDto returned by the API
+        :rtype: SearchResponseDto
+        """
+        # This API call allows a maximum page size of 1000
+        number_of_assets_to_fetch_per_request_search = min(1000, self.config.fetch_chunk_size)
+
+        # copy search options, since we are going to insert the cursor and size
+        metadata_search_dto: MetadataSearchDto = MetadataSearchDto(filter=search_filter.model_copy(deep=True))
+        metadata_search_dto.size = number_of_assets_to_fetch_per_request_search
+        metadata_search_dto.cursor = cursor
+
+        logging.debug("requesting %s", metadata_search_dto)
+        return self.__request_api(lambda c: c.search.search_assets(metadata_search_dto))
 
     def fetch_albums(self) -> list[AlbumResponseDto]:
         """
@@ -662,14 +732,21 @@ class ApiClient:
         """
         offline_assets: list[AssetResponseDto] = []
         # To find all offline assets we need to check for each possible visibility
-        for visibility_setting in AssetVisibility:
-            # exclude locked folder
-            if visibility_setting == AssetVisibility.LOCKED:
-                continue
-            try:
-                offline_assets += self.fetch_assets_with_options(MetadataSearchDto(is_offline=True, visibility=visibility_setting))
-            except UnauthorizedException:
-                logging.warning('Admin-level API key required to check for offline assets in locked folder, skipping...')
+        # Future: Remove legacy calls when Immich removed the deprecated fields from /search/metadata
+        try:
+            for visibility_setting in AssetVisibility:
+                # exclude locked folder
+                if visibility_setting == AssetVisibility.LOCKED:
+                    continue
+                try:
+                    offline_assets += self.fetch_assets_with_options(MetadataSearchDto(is_offline=True, visibility=visibility_setting))
+                except UnauthorizedException:
+                    logging.warning('Admin-level API key required to check for offline assets in locked folder, skipping...')
+        except BadRequestException:
+            # Single search: { "filter": {"isOffline": { "eq": true}, "visibility": { "in" : ["timeline", "archive", "hidden"]}} }
+            search_filter: SearchFilter = SearchFilter(isOffline = BoolFilter(eq = True),
+                visibility = EnumFilterAssetVisibility(var_in = [AssetVisibility.TIMELINE, AssetVisibility.ARCHIVE, AssetVisibility.HIDDEN]))
+            offline_assets = self.fetch_assets_with_filter(search_filter)
 
         if len(offline_assets) > 0:
             logging.info("Deleting %s offline assets", len(offline_assets))
@@ -771,7 +848,14 @@ class ApiClient:
             # Fetch assets before delete so we can set visibility after; once deleted, album is gone
             assets_in_deleted_album: list[AssetResponseDto] = []
             if assets_visibility is not None:
-                assets_in_deleted_album = self.fetch_assets_with_options(MetadataSearchDto(album_ids=[album_to_delete.id]))
+                # { "filter": {"albumIds": { "all": ["9eab1ebe-c998-4bdc-a2cc-1722c719e292"]}}}
+                # Future: Remove legacy calls when Immich removed the deprecated fields from /search/metadata
+                try:
+                    assets_in_deleted_album = self.fetch_assets_with_options(MetadataSearchDto(album_ids=[album_to_delete.id]))
+                except BadRequestException:
+                    # { "filter": {"albumIds": { "all": ["9eab1ebe-c998-4bdc-a2cc-1722c719e292"]}}}
+                    search_filter: SearchFilter = SearchFilter(album_ids = IdsFilter(all = [album_to_delete.id]))
+                    assets_in_deleted_album = self.fetch_assets_with_filter(search_filter)
             if self.delete_album(album_to_delete.id):
                 logging.info("Deleted album %s", album_to_delete.album_name)
                 deleted_album_count += 1
@@ -816,7 +900,13 @@ class ApiClient:
             # For cleanup, we only respect the global visibility flag to be able to either do not change
             # visibility at all, or to override whatever might be set in .ablumprops and revert to something else
             if asset_visibility is not None:
-                assets_in_album = self.fetch_assets_with_options(MetadataSearchDto(album_ids=[album_to_delete.id]))
+                # Future: Remove legacy calls when Immich removed the deprecated fields from /search/metadata
+                try:
+                    assets_in_album = self.fetch_assets_with_options(MetadataSearchDto(album_ids=[album_to_delete.id]))
+                except BadRequestException:
+                    # filter: { "filter": {"albumIds": { "all": ["9eab1ebe-c998-4bdc-a2cc-1722c719e292"]}}}
+                    search_filter: SearchFilter = SearchFilter(album_ids = IdsFilter(all = [album_to_delete.id]))
+                    assets_in_album = self.fetch_assets_with_filter(search_filter)
             if self.delete_album(album_to_delete.id):
                 logging.info("Deleted album %s", album_to_delete.get_final_name())
                 cpt += 1
@@ -864,8 +954,6 @@ class ApiClient:
         album_share_info: dict[str, AlbumUserRole] = {}
         for share_user_actual in album_to_share_info.album_users:
             album_share_info[str(share_user_actual.user.id)] = share_user_actual.role
-        print(album_share_info)
-        print(share_users_to_roles_expected)
         # Group share users by share role
         share_roles_to_users_expected: dict[AlbumUserRole, list[str]] = defaultdict(list)
         # Now compare expectation with reality and update
@@ -1221,6 +1309,7 @@ class Configuration():
         "comments_and_likes_disabled": False,
         "update_album_props_mode": 0,
         "max_retry_count": ApiClient.MAX_RETRY_COUNT_ON_TIMEOUT_DEFAULT,
+        # Deprecated
         "threads": ApiClient.THREADS_DEFAULT
     }
 
@@ -1258,7 +1347,10 @@ class Configuration():
         self.api_key = args["api_key"]
         self.chunk_size = Utils.get_value_or_config_default("chunk_size", args, Configuration.CONFIG_DEFAULTS["chunk_size"])
         self.fetch_chunk_size = Utils.get_value_or_config_default("fetch_chunk_size", args, Configuration.CONFIG_DEFAULTS["fetch_chunk_size"])
+        #D Deprecated
         self.threads = Utils.get_value_or_config_default("threads", args, Configuration.CONFIG_DEFAULTS["threads"])
+        if args["threads"] is not None:
+            logging.warning("Using the threads argument is deprecated. It will be removed in a future version!")
         self.unattended = Utils.get_value_or_config_default("unattended", args, Configuration.CONFIG_DEFAULTS["unattended"])
         self.album_levels = Utils.get_value_or_config_default("album_levels", args, Configuration.CONFIG_DEFAULTS["album_levels"])
         # Album Levels Range handling
@@ -1509,7 +1601,7 @@ class Configuration():
         parser.add_argument("--max-retry-count", type=int, default=Configuration.CONFIG_DEFAULTS['max_retry_count'],
                             help="Number of times to retry an Immich API call if it timed out before failing.")
         parser.add_argument("--threads", type=int, default=Configuration.CONFIG_DEFAULTS['threads'], choices=range(1, ApiClient.THREADS_MAX+1),
-                            help="Number of threads to fetch assets with in parallel.")
+                            help="DEPRECATED! Number of threads to fetch assets with in parallel.")
         return parser
 
     @staticmethod
@@ -2062,8 +2154,13 @@ class FolderAlbumCreator():
         # If either is not True, we need to fetch all assets
         if is_not_in_album or not find_archived:
             logging.debug("Fetching all assets for live photo video component check")
-            full_asset_list = self.api_client.fetch_assets_with_options(MetadataSearchDto(isNotInAlbum=False))
-            full_asset_list += self.api_client.fetch_assets_with_options(MetadataSearchDto(isNotInAlbum=False, visibility=AssetVisibility.ARCHIVE))
+            # Future: Remove legacy calls when Immich removed the deprecated fields from /search/metadata
+            try:
+                full_asset_list = self.api_client.fetch_assets_with_options(MetadataSearchDto(isNotInAlbum=False))
+                full_asset_list += self.api_client.fetch_assets_with_options(MetadataSearchDto(isNotInAlbum=False, visibility=AssetVisibility.ARCHIVE))
+            except BadRequestException:
+                # Use an empty filter to fetch all assets
+                full_asset_list = self.api_client.fetch_assets_with_filter(SearchFilter())
         else:
             full_asset_list = asset_list
 
@@ -2350,7 +2447,13 @@ class FolderAlbumCreator():
                     # Thumbnail setting 'random-all' is handled separately
                     if album.thumbnail_setting and album.thumbnail_setting != Configuration.ALBUM_THUMBNAIL_RANDOM_ALL:
                         # Fetch assets to be sure to have up-to-date asset list
-                        album_assets = self.api_client.fetch_assets_with_options(MetadataSearchDto(album_ids=[album.id]))
+                        # Future: Remove legacy calls when Immich removed the deprecated fields from /search/metadata
+                        try:
+                            album_assets = self.api_client.fetch_assets_with_options(MetadataSearchDto(album_ids=[album.id]))
+                        except BadRequestException:
+                            # filter: { "filter": {"albumIds": { "all": ["9eab1ebe-c998-4bdc-a2cc-1722c719e292"]}}}
+                            search_filter: SearchFilter = SearchFilter(album_ids = IdsFilter(all = [album.id]))
+                            album_assets = self.api_client.fetch_assets_with_filter(search_filter)
                         thumbnail_asset = self.choose_thumbnail(album.thumbnail_setting, album_assets)
                         if thumbnail_asset:
                             logging.info("Using asset %s as thumbnail for album %s", thumbnail_asset.original_path, album.get_final_name())
@@ -2378,7 +2481,14 @@ class FolderAlbumCreator():
                     # Create album model for thumbnail randomization
                     album_model = AlbumModel(a.album_name)
                     album_model.id = a.id
-                    album_model.assets = self.api_client.fetch_assets_with_options(MetadataSearchDto(album_ids=[a.id]))
+                    # Future: Remove legacy calls when Immich removed the deprecated fields from /search/metadata
+                    try:
+                        album_model.assets = self.api_client.fetch_assets_with_options(MetadataSearchDto(album_ids=[a.id]))
+                    except BadRequestException:
+                        # filter: { "filter": {"albumIds": { "all": ["9eab1ebe-c998-4bdc-a2cc-1722c719e292"]}}}
+                        search_filter: SearchFilter = SearchFilter(album_ids = IdsFilter(all = [a.id]))
+                        album_assets = self.api_client.fetch_assets_with_filter(search_filter)
+
                     # Set thumbnail setting to 'random' in model
                     album_model.thumbnail_setting = 'random'
                     thumbnail_asset = self.choose_thumbnail(album_model.thumbnail_setting, album_model.assets)
