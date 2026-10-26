@@ -1045,7 +1045,7 @@ class AlbumModel:
         self.share_with: list[AlbumModel.ShareWith] = []
         # Either a fully qualified asset path or one of 'first', 'last', 'random'
         self.thumbnail_setting: Optional[str] = None
-        self.thumbnail_asset_uuid: Optional[str] = None
+        self.thumbnail_asset_uuid: Optional[UUID] = None
         # Sorting order for this album, 'asc' or 'desc'
         self.sort_order: Optional[AssetOrder] = None
         # String indicating asset visibility, allowed values: archive, locked, timeline
@@ -2437,36 +2437,38 @@ class FolderAlbumCreator():
                     asset_uuids_added += assets_added
                     logging.info("%d new assets added to %s", len(assets_added), album.get_final_name())
 
-                # Set assets visibility (if assets were actually added and visibility is not set anyway when updating album properties)
+                # Fetch assets to be sure to have up-to-date asset list
+                # Future: Remove legacy calls when Immich removed the deprecated fields from /search/metadata
+                try:
+                    album_assets = self.api_client.fetch_assets_with_options(MetadataSearchDto(album_ids=[album.id]))
+                except BadRequestException:
+                    # filter: { "filter": {"albumIds": { "all": ["9eab1ebe-c998-4bdc-a2cc-1722c719e292"]}}}
+                    search_filter: SearchFilter = SearchFilter(album_ids = IdsFilter(all = [album.id]))
+                    album_assets = self.api_client.fetch_assets_with_filter(search_filter)
+
+                # Set asset visibility (if assets were actually added and visibility is not set anyway when updating album properties)
                 if album.visibility is not None and len(assets_added) > 0 and self.config.update_album_props_mode == 0:
                     self.api_client.set_assets_visibility(assets_added, album.visibility)
                     logging.info("Set visibility for %d assets to %s", len(assets_added), album.visibility.value)
 
+                # Update album thumbnail if assets have been added or update_album_props_mode is set
+                # Thumbnail setting 'random-all' is handled separately
+                if (len(assets_added) > 0 or self.config.update_album_props_mode > 0) and album.thumbnail_setting and album.thumbnail_setting != Configuration.ALBUM_THUMBNAIL_RANDOM_ALL:
+                    thumbnail_asset = self.choose_thumbnail(album.thumbnail_setting, album_assets)
+                    # Set album thumbnail
+                    if thumbnail_asset:
+                        logging.info("Using asset %s as thumbnail for album %s", thumbnail_asset.original_path, album.get_final_name())
+                        album.thumbnail_asset_uuid = thumbnail_asset.id
+                    else:
+                        logging.warning("Unable to determine thumbnail for setting '%s' in album %s", album.thumbnail_setting, album.get_final_name())
+
                 # Update album properties depending on mode or if newly created
                 if self.config.update_album_props_mode > 0 or (album in created_albums):
-                    # Handle thumbnail
-                    # Thumbnail setting 'random-all' is handled separately
-                    if album.thumbnail_setting and album.thumbnail_setting != Configuration.ALBUM_THUMBNAIL_RANDOM_ALL:
-                        # Fetch assets to be sure to have up-to-date asset list
-                        # Future: Remove legacy calls when Immich removed the deprecated fields from /search/metadata
-                        try:
-                            album_assets = self.api_client.fetch_assets_with_options(MetadataSearchDto(album_ids=[album.id]))
-                        except BadRequestException:
-                            # filter: { "filter": {"albumIds": { "all": ["9eab1ebe-c998-4bdc-a2cc-1722c719e292"]}}}
-                            search_filter: SearchFilter = SearchFilter(album_ids = IdsFilter(all = [album.id]))
-                            album_assets = self.api_client.fetch_assets_with_filter(search_filter)
-                        thumbnail_asset = self.choose_thumbnail(album.thumbnail_setting, album_assets)
+                    # Set asset visibility for all assets in album
+                    if album.visibility is not None and len(album_assets) > 0:
                         album_asset_uuids: list[str] = [asset.id for asset in album_assets]
-                        # Set asset visibility for all assets in album
-                        if album.visibility is not None and len(album_assets) > 0:
-                            self.api_client.set_assets_visibility(album_asset_uuids, album.visibility)
-                            logging.info("Set visibility for %d assets to %s", len(album_asset_uuids), album.visibility.value)
-                        # Set album thumbnail
-                        if thumbnail_asset:
-                            logging.info("Using asset %s as thumbnail for album %s", thumbnail_asset.original_path, album.get_final_name())
-                            album.thumbnail_asset_uuid = str(thumbnail_asset.id)
-                        else:
-                            logging.warning("Unable to determine thumbnail for setting '%s' in album %s", album.thumbnail_setting, album.get_final_name())
+                        self.api_client.set_assets_visibility(album_asset_uuids, album.visibility)
+                        logging.info("Set visibility for %d assets to %s", len(album_asset_uuids), album.visibility.value)
                     # Update album properties
                     try:
                         self.api_client.update_album_properties(album)
@@ -2501,7 +2503,7 @@ class FolderAlbumCreator():
                     thumbnail_asset = self.choose_thumbnail(album_model.thumbnail_setting, album_model.assets)
                     if thumbnail_asset:
                         logging.info("Using asset %s as thumbnail for album %s", thumbnail_asset.original_path, album_model.get_final_name())
-                        album_model.thumbnail_asset_uuid = str(thumbnail_asset.id)
+                        album_model.thumbnail_asset_uuid = thumbnail_asset.id
                     else:
                         logging.warning("Unable to determine thumbnail for setting '%s' in album %s", album_model.thumbnail_setting, album_model.get_final_name())
                     # Update album properties (which will only pick a random thumbnail and set it, no other properties are changed)
