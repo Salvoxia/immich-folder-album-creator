@@ -164,8 +164,10 @@ The list contains API key permissions valid for **Immich v3.0.0**.
                             Set first/last/random image as thumbnail for newly created albums or albums assets have been added to. If set to random-filtered, thumbnails are shuffled for all albums whose assets would not be filtered out or ignored by the ignore or path-filter options, even if no assets were
                             added during the run. If set to random-all, the thumbnails for ALL albums will be shuffled on every run. (default: None)
       --visibility {archive,locked,timeline}
-                            Set this option to automatically set the visibility of all assets that are discovered by the script and assigned to albums. Exception for value 'locked': Assets will not be added to any albums, but to the 'locked' folder only. Also applies if -m/--mode is set to CLEAN_UP or
-                            DELETE_ALL; then it affects all assets in the deleted albums. (default: None)
+                            Set this option to automatically set the visibility of all assets that are discovered by the script and assigned to albums.  
+                            If --update-album-props-mode is set as well, visibility will be set for all assets in the discovered albums.  
+                            Exception for value 'locked': Assets will not be added to any albums, but to the 'locked' folder only.  
+                            Also applies if -m/--mode is set to CLEAN_UP or DELETE_ALL; then it affects all assets in the deleted albums. (default: None)
       --find-archived-assets
                             By default, the script only finds assets with visibility set to 'timeline' (which is the default). Set this option to make the script discover assets with visibility 'archive' as well. If -A/--find-assets-in-albums is set as well, both options apply. (default: False)
       --read-album-properties
@@ -255,7 +257,7 @@ The environment variables are analogous to the script's command line arguments.
 | `PATH_FILTER`                | no         | `-`              | A colon `:` separated list of literals or glob-style patterns to filter assets before album name creation. (default: ``)<br>Refer to [Filtering](#filtering). |
 | `PATH_FILTER_REGEX1..50`     | no         | `-`              | Up to 50 numbered environment variables `PATH_FILTER_REGEX1` to `PATH_FILTER_REGEX50` for filtering for assets by regular expressions.<br>Refer to [Filtering](#filtering). |
 | `SET_ALBUM_THUMBNAIL`        | no         | `-`              | Set first/last/random image as thumbnail (based on image creation timestamp) for newly created albums or albums assets have been added to.<br> Allowed values: `first`,`last`,`random`,`random-filtered`,`random-all`<br>If set to `random-filtered`, thumbnails are shuffled for all albums whose assets would not be filtered out or ignored by the `IGNORE` or `PATH_FILTER` options, even if no assets were added during the run. If set to random-all, the thumbnails for ALL albums will be shuffled on every run.<br>Refer to [Setting Album Thumbnails](#setting-album-thumbnails). |
-| `VISIBILITY`                 | no         | `-`              | Set this option to automatically set the visibility of all assets that are discovered by the script and assigned to albums.<br>Exception for value 'locked': Assets will not be added to any albums, but to the 'locked' folder only.<br>Also applies if `MODE` is set to CLEAN_UP or DELETE_ALL; then it affects all assets in the deleted albums.<br>Always overrides `ARCHIVE`.<br>Refer to [Asset Visibility & Locked Folder](#asset-visibility-locked-folder). |
+| `VISIBILITY`                 | no         | `-`              | Set this option to automatically set the visibility of all assets that are discovered by the script and assigned to albums.<br>If `UPDATE_ALBUM_PROPS_MODE` is set as well, visibility will be set for all assets in the discovered albums.<br>Exception for value 'locked': Assets will not be added to any albums, but to the 'locked' folder only.<br>Also applies if `MODE` is set to CLEAN_UP or DELETE_ALL; then it affects all assets in the deleted albums.<br>Always overrides `ARCHIVE`.<br>Refer to [Asset Visibility & Locked Folder](#asset-visibility-locked-folder). |
 | `FIND_ARCHIVED_ASSETS`       | no         | `false`          |  By default, the script only finds assets with visibility set to 'timeline' (which is the default). Set this option to make the script discover assets with visibility 'archive' as well. If -A/--find-assets-in-albums is set as well, both options apply.<br>Refer to [Asset Visibility & Locked Folder](#asset-visibility--locked-folder). |
 | `READ_ALBUM_PROPERTIES`      | no         | `false`          | Set to `True` to enable discovery of `.albumprops` files in root paths, allowing to set different album properties for different albums. (default: `False`)<br>Refer to [Setting Album-Fine Properties](#setting-album-fine-properties).<br>Note that the user the container is running with must to your mounted external libraries for this function to work. |
 | `API_TIMEOUT`                | no         | `20`             | Timeout when requesting Immich API in seconds |
@@ -1038,7 +1040,7 @@ visibility: 'locked'
 
 ## Mass Updating Album Properties
 
-The script supports updating album properties after the fact, i.e. after they already have been created. Useful examples for this are mass sharing albums or enabling/disabling the "Comments and Likes" functionality. All album properties supported by `.albumprops` files (Refer to [Setting Album-Fine Properties](#setting-album-fine-properties)) are supported. They can be provided either by placing an `.albumprops` file in each folder, or by passing the appropriate argument to the script.
+The script supports updating album properties after the fact, i.e. after they already have been created. Useful examples for this are mass sharing albums, enabling/disabling the "Comments and Likes" functionality or setting asset visibility for all assets in an album. All album properties supported by `.albumprops` files (Refer to [Setting Album-Fine Properties](#setting-album-fine-properties)) are supported. They can be provided either by placing an `.albumprops` file in each folder, or by passing the appropriate argument to the script.
 Updating already existing albums is done by setting the `--find-assets-in-albums` argument (or appropriate [environment variable](#environment-variables)) to discover assets that are already assigned to albums, and also setting the `--update-album-props-mode` argument ((or appropriate [environment variable](#environment-variables))).  
 When setting `--update-album-props-mode` to `1`, all album properties __except__ the shared status are updated. When setting it to `2`, the shared status is updated as well.
 By applying `--path-filter` and/or `--ignore` options, it is possible to get a more fine granular control over the albums to update.
@@ -1078,6 +1080,18 @@ By applying `--path-filter` and/or `--ignore` options, it is possible to get a m
       --update-album-props-mode 1 \
       --disable-comments-an-likes \
       --ignore "Birthdays/**" \
+      /path/to/external/lib \
+      https://immich.mydomain.com/api \
+      thisIsMyApiKeyCopiedFromImmichWebGui
+    ```
+
+3. Archive (= hide from timeline) all assets in albums created from a `Birthdays` folder:
+    ```bash
+    python3 ./immich_auto_album.py \
+      --find-assets-in-albums \
+      --update-album-props-mode 1 \
+      --visibility archive \
+      --path-filter "Birthdays/**" \
       /path/to/external/lib \
       https://immich.mydomain.com/api \
       thisIsMyApiKeyCopiedFromImmichWebGui
