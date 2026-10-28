@@ -1,4 +1,4 @@
-FROM python:3.15.1-alpine3.24@sha256:d44b1254cb92329418d164b22b20d86bbd3869d48e80e09e476531a409a728bb
+FROM python:3.15.2-alpine3.24@sha256:1656b7eaf309cadf99069ea9de335c7f67a8355789cfc6f1835a05818996f081
 LABEL maintainer="Salvoxia <salvoxia@blindfish.info>"
 ARG TARGETPLATFORM
 
