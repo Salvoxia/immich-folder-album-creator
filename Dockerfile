@@ -12,28 +12,32 @@ COPY immich_auto_album.py requirements.txt docker/immich_auto_album.sh docker/se
 
 # gcc and musl-dev are required for building requirements for regex python module
 RUN <<EOT
-set -e
-case "${TARGETPLATFORM}" in
-     "linux/amd64")  SUPERCRONIC=$SUPERCRONIC_BASE-linux-amd64 SUPERCRONIC_SHA1SUM=1692066e350a88ff4d7d6474fe3c7a6c41ec5e89 ;;
-     "linux/arm64")  SUPERCRONIC=$SUPERCRONIC_BASE-linux-arm64 SUPERCRONIC_SHA1SUM=9d4c2000493215a1898502b2fc2dada3e8ea8c7a ;;
-     "linux/arm/v7")  SUPERCRONIC=$SUPERCRONIC_BASE-linux-arm SUPERCRONIC_SHA1SUM=9224966499cd319ed85759e9b6442f885d920c4f ;;
-     *) exit 1 ;;
-esac
-[ "$TARGETPLATFORM" = "linux/arm/v7" ] && apk add gcc=15.2.0-r5 musl-dev=1.2.6-r3
-apk add --no-cache tini=0.19.0-r3 curl
-pip install --no-cache-dir -r /script/requirements.txt
-chmod +x /script/setup_cron.sh /script/immich_auto_album.sh
-rm -rf /tmp/* /var/tmp/* /var/cache/apk/* /var/cache/distfiles/*
-[ "$TARGETPLATFORM" = "linux/arm/v7" ] && apk del gcc musl-dev
-curl -fsSLO "${SUPERCRONIC_URL_BASE}${SUPERCRONIC}"
-echo "${SUPERCRONIC_SHA1SUM}  ${SUPERCRONIC}" | sha1sum -c -
-chmod +x "$SUPERCRONIC"
-mv "$SUPERCRONIC" "/usr/local/bin/${SUPERCRONIC}"
-ln -s "/usr/local/bin/${SUPERCRONIC}" /usr/local/bin/supercronic
-apk del curl
-# Prepare crontab
-mkdir $CRONTAB_DIR
-chmod 0777 $CRONTAB_DIR
+    set -e
+    case "${TARGETPLATFORM}" in
+        "linux/amd64")  SUPERCRONIC=$SUPERCRONIC_BASE-linux-amd64 SUPERCRONIC_SHA1SUM=1692066e350a88ff4d7d6474fe3c7a6c41ec5e89 ;;
+        "linux/arm64")  SUPERCRONIC=$SUPERCRONIC_BASE-linux-arm64 SUPERCRONIC_SHA1SUM=9d4c2000493215a1898502b2fc2dada3e8ea8c7a ;;
+        "linux/arm/v7")  SUPERCRONIC=$SUPERCRONIC_BASE-linux-arm SUPERCRONIC_SHA1SUM=9224966499cd319ed85759e9b6442f885d920c4f ;;
+        *) exit 1 ;;
+    esac
+    if [ "$TARGETPLATFORM" = "linux/arm/v7" ]; then
+      apk add --no-cache gcc=15.2.0-r5
+      apk add --no-cache musl-dev=1.2.6-r3
+    fi
+    apk add --no-cache tini=0.19.0-r3
+    apk add --no-cache curl=8.23.0-r0
+    pip install --no-cache-dir -r /script/requirements.txt
+    chmod +x /script/setup_cron.sh /script/immich_auto_album.sh
+    rm -rf /tmp/* /var/tmp/* /var/cache/apk/* /var/cache/distfiles/*
+    [ "$TARGETPLATFORM" = "linux/arm/v7" ] && apk del gcc musl-dev
+    curl -fsSLO "${SUPERCRONIC_URL_BASE}${SUPERCRONIC}"
+    echo "${SUPERCRONIC_SHA1SUM}  ${SUPERCRONIC}" | sha1sum -c -
+    chmod +x "$SUPERCRONIC"
+    mv "$SUPERCRONIC" "/usr/local/bin/${SUPERCRONIC}"
+    ln -s "/usr/local/bin/${SUPERCRONIC}" /usr/local/bin/supercronic
+    apk del curl
+    # Prepare crontab
+    mkdir $CRONTAB_DIR
+    chmod 0777 $CRONTAB_DIR
 EOT
 
 WORKDIR /script
