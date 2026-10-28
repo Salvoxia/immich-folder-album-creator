@@ -83,7 +83,7 @@ do
         TEST=$(echo "${entry}" | grep -E "$pattern")
         if [ ! -z "${TEST}" ]; then
             value="${entry#*=}" # select everything after the first `=`
-            album_name_post_regex_list="$album_name_post_regex_list --album-name-post-regex $value"
+            album_name_post_regex_list="$album_name_post_regex_list --album-name-post-regex \"$value\""
         fi
     done
 done
@@ -101,7 +101,7 @@ do
         TEST=$(echo "${entry}" | grep -E "$pattern")
         if [ ! -z "${TEST}" ]; then
             value="${entry#*=}" # select everything after the first `=`
-            path_filter_regex_list="$path_filter_regex_list --path-filter-regex $value"
+            path_filter_regex_list="$path_filter_regex_list --path-filter-regex \"$value\""
         fi
     done
 done
@@ -119,7 +119,7 @@ do
         TEST=$(echo "${entry}" | grep -E "$pattern")
         if [ ! -z "${TEST}" ]; then
             value="${entry#*=}" # select everything after the first `=`
-            ignore_regex_list="$ignore_regex_list --ignore-regex $value"
+            ignore_regex_list="$ignore_regex_list --ignore-regex \"$value\""
         fi
     done
 done
@@ -257,4 +257,7 @@ if [ ! -z "$THREADS" ]; then
 fi
 
 BASEDIR=$(dirname "$0")
+if [ "${LOG_LEVEL:-}" = "DEBUG" ]; then
+  echo "Arguments: $args"
+fi
 echo $args | xargs python3 -u $BASEDIR/immich_auto_album.py
