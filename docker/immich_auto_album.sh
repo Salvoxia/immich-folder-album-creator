@@ -83,7 +83,7 @@ do
         TEST=$(echo "${entry}" | grep -E "$pattern")
         if [ ! -z "${TEST}" ]; then
             value="${entry#*=}" # select everything after the first `=`
-            album_name_post_regex_list="$album_name_post_regex_list --album-name-post-regex \"$value\""
+            album_name_post_regex_list="$album_name_post_regex_list --album-name-post-regex $value"
         fi
     done
 done
