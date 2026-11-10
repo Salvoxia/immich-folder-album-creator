@@ -2459,8 +2459,14 @@ class FolderAlbumCreator():
                     if thumbnail_asset:
                         logging.info("Using asset %s as thumbnail for album %s", thumbnail_asset.original_path, album.get_final_name())
                         album.thumbnail_asset_uuid = thumbnail_asset.id
-                    else:
-                        logging.warning("Unable to determine thumbnail for setting '%s' in album %s", album.thumbnail_setting, album.get_final_name())
+                        # Update thumbnail now if it's not going to happen later anyway
+                        if self.config.update_album_props_mode == 0:
+                            try:
+                                self.api_client.update_album_properties(album)
+                            except HTTPError as e:
+                                logging.error('Error updating properties for album %s: %s', album.get_final_name(), e)
+                            else:
+                                logging.warning("Unable to determine thumbnail for setting '%s' in album %s", album.thumbnail_setting, album.get_final_name())
 
                 # Update album properties depending on mode or if newly created
                 if self.config.update_album_props_mode > 0 or (album in created_albums):
