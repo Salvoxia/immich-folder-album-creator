@@ -967,7 +967,6 @@ class ApiClient:
             elif album_share_info[user_to_share_with] != share_role_expected and album_share_info[user_to_share_with] != AlbumUserRole.OWNER:
                 try:
                     self.update_album_share_user_role(album_to_share.id, user_to_share_with, share_role_expected)
-                    print(share_role_expected)
                     logging.debug("Sharing: Updated share role for user %s in album %s to %s", user_to_share_with, album_to_share.get_final_name(), share_role_expected.value)
                 except HTTPError as ex:
                     logging.warning("Sharing: Error updating share role for user %s in album %s to %s", user_to_share_with, album_to_share.get_final_name(), share_role_expected.value)
@@ -2659,7 +2658,6 @@ logging.basicConfig(level=Configuration.CONFIG_DEFAULTS["log_level"], handlers=[
 # Initialize global config
 Configuration.init_global_config()
 # Update log level with the level this configuration dictates
-print(Configuration.log_level)
 logging.getLogger().setLevel(Configuration.log_level)
 if 'DEBUG' == Configuration.log_level:
     formatter.init_formatter(True)
