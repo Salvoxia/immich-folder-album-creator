@@ -2056,13 +2056,14 @@ class FolderAlbumCreator():
 
         # Case: Anything but fully qualified path
         # Apply filtering to assets
-        thumbnail_assets = thumbnail_asset_list
+        # Work on a copy, the caller's asset list must not be modified
+        thumbnail_assets = list(thumbnail_asset_list)
         if thumbnail_setting == Configuration.ALBUM_THUMBNAIL_RANDOM_FILTERED:
-            thumbnail_assets[:] = [asset for asset in thumbnail_assets if not self.is_path_ignored(asset.original_path)]
+            thumbnail_assets = [asset for asset in thumbnail_assets if not self.is_path_ignored(asset.original_path)]
 
         if len(thumbnail_assets) > 0:
             # Sort assets by creation date
-            thumbnail_assets.sort(key=lambda x: x.file_created_at)
+            thumbnail_assets = sorted(thumbnail_assets, key=lambda x: x.file_created_at)
             if thumbnail_setting not in Configuration.ALBUM_THUMBNAIL_STATIC_INDICES:
                 idx = random.randint(0, len(thumbnail_assets)-1)
             else:
