@@ -2501,7 +2501,7 @@ class FolderAlbumCreator():
                     except BadRequestException:
                         # filter: { "filter": {"albumIds": { "all": ["9eab1ebe-c998-4bdc-a2cc-1722c719e292"]}}}
                         search_filter: SearchFilter = SearchFilter(album_ids = IdsFilter(all = [a.id]))
-                        album_assets = self.api_client.fetch_assets_with_filter(search_filter)
+                        album_model.assets = self.api_client.fetch_assets_with_filter(search_filter)
 
                     # Set thumbnail setting to 'random' in model
                     album_model.thumbnail_setting = 'random'
