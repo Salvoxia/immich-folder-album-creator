@@ -37,6 +37,7 @@ from immichpy.client.generated import (
     AssetBulkUpdateDto,
     AssetOrder,
     AssetResponseDto,
+    AssetTypeEnum,
     AssetVisibility,
     BoolFilter,
     BulkIdsDto,
@@ -2145,8 +2146,8 @@ class FolderAlbumCreator():
         :rtype: list[AssetResponseDto]
         """
         logging.info("Checking for live photo video components")
-        # Filter for all quicktime assets
-        asset_list_mov = [asset for asset in asset_list if asset.original_mime_type == 'video']
+        # Filter for all video assets
+        asset_list_mov = [asset for asset in asset_list if asset.type == AssetTypeEnum.VIDEO]
 
         if len(asset_list_mov) == 0:
             logging.debug("No live photo video components found")
