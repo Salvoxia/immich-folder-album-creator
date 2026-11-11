@@ -383,7 +383,7 @@ class ApiClient:
         Fetches the API version from the immich server.
 
         If the API endpoint for getting the server version cannot be reached,
-        raises HTTPError
+        raises ApiException
 
         :returns: ServerVersionResponseDto
         :rtype: ServerVersionResponseDto
@@ -709,7 +709,7 @@ class ApiClient:
         :param user_ids_to_share_with: IDs of users to share the album with
         :param user_share_role: The share role to use when sharing the album, valid values are `viewer` or `editor`
         :raises: AssertionError if user_share_role contains an invalid value
-        :raises: HTTPError if the API call fails
+        :raises: ApiException if the API call fails
         """
         self.__request_api(
             lambda c: c.albums.add_users_to_album(
@@ -826,7 +826,7 @@ class ApiClient:
         :param assets_visibility: The visibility to set for assets for which an album was deleted. Can be used to. e.g. revert archival
         :param force_delete: Flag indicating whether to actually delete albums (True) or only to perform a dry-run (False)
 
-        :raises: HTTPError if the API call fails
+        :raises: ApiException if the API call fails
         """
 
         all_albums = self.fetch_albums()
@@ -879,7 +879,7 @@ class ApiClient:
         :returns: Number of successfully deleted albums
         :rtype: int
 
-        :raises: HTTPError if the API call fails
+        :raises: ApiException if the API call fails
         """
         # Delete Confirm check
         if not force_delete:
@@ -929,7 +929,7 @@ class ApiClient:
         :param unshare_users: Flag indicating whether to actively unshare albums if shared with a user that is not in the current share settings
         :param known_users: A list of all users Immich knows to find the user IDs to share/unshare with
         
-        :raises: HTTPError if the API call fails
+        :raises: ApiException if the API call fails
         """
         assert album_to_share.id is not None, "Album ID must be set"
         # Parse and prepare expected share roles
@@ -969,7 +969,7 @@ class ApiClient:
                 try:
                     self.update_album_share_user_role(album_to_share.id, user_to_share_with, share_role_expected)
                     logging.debug("Sharing: Updated share role for user %s in album %s to %s", user_to_share_with, album_to_share.get_final_name(), share_role_expected.value)
-                except HTTPError as ex:
+                except ApiException as ex:
                     logging.warning("Sharing: Error updating share role for user %s in album %s to %s", user_to_share_with, album_to_share.get_final_name(), share_role_expected.value)
                     logging.debug("Error: %s", ex)
 
@@ -983,7 +983,7 @@ class ApiClient:
                     try:
                         self.unshare_album_with_user(album_to_share.id, shared_user)
                         logging.debug("Sharing: User %s removed from album %s", shared_user, album_to_share.get_final_name())
-                    except HTTPError as ex:
+                    except ApiException as ex:
                         logging.warning("Sharing: Error removing user %s from album %s", shared_user, album_to_share.get_final_name())
                         logging.debug("Error: %s", ex)
 
@@ -995,7 +995,7 @@ class ApiClient:
                 try:
                     self.share_album_with_user_and_role(album_to_share.id, share_users, share_role_group)
                     logging.debug("Album %s shared with users IDs %s in role: %s", album_to_share.get_final_name(), share_users, share_role_group.value)
-                except (AssertionError, HTTPError) as ex:
+                except (AssertionError, ApiException) as ex:
                     logging.warning("Error sharing album %s for users %s in role %s", album_to_share.get_final_name(), share_users, share_role_group.value)
                     logging.debug("Album share error: %s", ex)
 
@@ -2464,7 +2464,7 @@ class FolderAlbumCreator():
                         if self.config.update_album_props_mode == 0:
                             try:
                                 self.api_client.update_album_properties(album)
-                            except HTTPError as e:
+                            except ApiException as e:
                                 logging.error('Error updating properties for album %s: %s', album.get_final_name(), e)
                     else:
                         logging.warning("Unable to determine thumbnail for setting '%s' in album %s", album.thumbnail_setting, album.get_final_name())
@@ -2479,7 +2479,7 @@ class FolderAlbumCreator():
                     # Update album properties
                     try:
                         self.api_client.update_album_properties(album)
-                    except HTTPError as e:
+                    except ApiException as e:
                         logging.error('Error updating properties for album %s: %s', album.get_final_name(), e)
 
                 # Update album sharing if needed or newly created
