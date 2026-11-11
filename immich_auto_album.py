@@ -49,7 +49,8 @@ from immichpy.client.generated import (
     ServerVersionResponseDto,
     UpdateAlbumDto,
     UpdateAlbumUserDto,
-    UserResponseDto,
+    UserAdminResponseDto,
+    UserResponseDto
 )
 from immichpy.client.generated.models import EnumFilterAssetVisibility, IdsFilter
 from immichpy import AsyncClient
@@ -677,6 +678,16 @@ class ApiClient:
 
         return self.__request_api(lambda c: c.users.search_users())
 
+    def fetch_current_user(self) -> UserAdminResponseDto:
+        """
+        Fetches the current user owning the API key the script is running with
+        
+        :returns: The user object owning the API key
+        :rtype: UserAdminResponseDto
+        """
+
+        return self.__request_api(lambda c: c.users.get_my_user())
+
     def unshare_album_with_user(self, album_id_to_unshare: UUID, unshare_user_id: str) -> None:
         """
         Unshares the provided album with the provided user
@@ -749,10 +760,14 @@ class ApiClient:
                 visibility = EnumFilterAssetVisibility(var_in = [AssetVisibility.TIMELINE, AssetVisibility.ARCHIVE, AssetVisibility.HIDDEN]))
             offline_assets = self.fetch_assets_with_filter(search_filter)
 
-        if len(offline_assets) > 0:
-            logging.info("Deleting %s offline assets", len(offline_assets))
-            logging.debug("Deleting the following offline assets (count: %d): %s", len(offline_assets), [asset.original_file_name for asset in offline_assets])
-            self.delete_assets(offline_assets, True)
+        # filter for assets having the current user as owner (we cannot remove our partner's offline assets)
+        me: UserAdminResponseDto = self.fetch_current_user()
+        my_offline_assets: list[AssetResponseDto] = [ offline_asset for offline_asset in offline_assets if offline_asset.owner_id == me.id ]
+
+        if len(my_offline_assets) > 0:
+            logging.info("Deleting %s offline assets", len(my_offline_assets))
+            logging.debug("Deleting the following offline assets (count: %d): %s", len(my_offline_assets), [asset.original_file_name for asset in my_offline_assets])
+            self.delete_assets(my_offline_assets, True)
         else:
             logging.info("No offline assets found!")
 
