@@ -16,6 +16,7 @@ import logging
 import sys
 import fnmatch
 import os
+import posixpath
 import datetime
 from collections import OrderedDict, defaultdict
 import random
@@ -1071,6 +1072,10 @@ class AlbumModel:
         self.inherit: Optional[bool] = None
         # List of property names that should be inherited
         self.inherit_properties: Optional[list[str]] = None
+        # List of paths or glob patterns of assets outside this folder to add to this album as well.
+        # Relative to the folder of the .albumprops file, or to the root path if starting with '/'.
+        # Not inherited, only read from the .albumprops file itself.
+        self.include_assets: Optional[list[str]] = None
 
     def get_album_properties_dict(self) -> dict[str, Any]:
         """
@@ -1234,6 +1239,26 @@ class AlbumModel:
         return self.name
 
     @staticmethod
+    def parse_include_assets(album_properties: dict, album_properties_file_path: str) -> Optional[list[str]]:
+        """
+        Parses the include_assets property of an album properties file.
+
+        :param album_properties: The parsed album properties file
+        :param album_properties_file_path: The path of the album properties file, for logging
+        :returns: A list of paths or glob patterns, or None if the property is missing or invalid
+        :rtype: list[str] | None
+        """
+        include_assets = album_properties.get('include_assets')
+        if include_assets is None:
+            return None
+        if isinstance(include_assets, str):
+            include_assets = [include_assets]
+        if isinstance(include_assets, list) and all(isinstance(entry, str) for entry in include_assets):
+            return include_assets
+        logging.error("Ignoring include_assets in %s: it must be a list of paths or glob patterns", album_properties_file_path)
+        return None
+
+    @staticmethod
     def parse_album_properties_file(album_properties_file_path: str):
         """
         Parses the provided album properties file into an AlbumModel
@@ -1275,6 +1300,9 @@ class AlbumModel:
             for inheritance_prop_name in AlbumModel.ALBUM_INHERITANCE_VARIABLES:
                 if inheritance_prop_name in album_properties:
                     album_props_template_vars[inheritance_prop_name] = album_properties[inheritance_prop_name]
+
+            # Parse assets to include from outside the album's folder
+            album_props_template.include_assets = AlbumModel.parse_include_assets(album_properties, album_properties_file_path)
 
             return album_props_template
 
@@ -1490,6 +1518,26 @@ class Configuration():
         :rtype: str
         """
         return Configuration.__escaped_glob_replacement.sub(lambda match: Configuration.__escaped_glob_tokens_to_re[match.group(0)], regex.escape(pattern))
+
+    @staticmethod
+    def path_glob_to_re(base_path: str, pattern: str) -> str:
+        """
+        Converts a GLOB pattern relative to base_path to a regular expression matching full paths.
+        base_path is taken literally (it may contain characters like '[' or '*'), only the pattern
+        is interpreted as GLOB. Leading '..' components of the pattern move up from base_path.
+
+        :param base_path: The directory the pattern is relative to, taken literally
+        :param pattern: A GLOB-style pattern (`*`, `?`, `**`) relative to base_path
+        :returns: A regular expression matching the paths the pattern refers to
+        :rtype: str
+        """
+        parts = [part for part in posixpath.normpath(pattern).split('/') if part not in ('', '.')]
+        base = base_path.rstrip('/')
+        while parts and parts[0] == '..':
+            base = posixpath.dirname(base)
+            parts.pop(0)
+        # The leading '/' stays part of the pattern so that a leading '**/' is recognized as recursive
+        return regex.escape(base.rstrip('/')) + Configuration.__glob_to_re('/' + '/'.join(parts))
 
     @staticmethod
     def __expand_to_glob(expr: str) -> str:
@@ -2338,7 +2386,75 @@ class FolderAlbumCreator():
                 album_models[new_album_model.get_final_name()] = new_album_model
             else:
                 logging.warning("Got empty album name for asset path %s, check your album_level settings!", asset_path)
+
+        if albumprops_cache_param:
+            self.add_included_assets(asset_list, root_path_list, albumprops_cache_param, album_models)
         return album_models
+
+    def add_included_assets(self, asset_list : list[AssetResponseDto], root_path_list : list[str],
+                            albumprops_cache_param: dict[str, AlbumModel], album_models: dict[str, AlbumModel]) -> None:
+        """
+        Adds assets listed in the include_assets property of .albumprops files to the album
+        of the folder containing that .albumprops file, in addition to the album of their own folder.
+        Patterns are resolved relative to the folder of the .albumprops file, or relative to the
+        root path if they start with '/'. Glob wildcards *, ? and ** are supported; the folder and root
+        paths themselves are matched literally.
+
+        :param asset_list: List of assets fetched from Immich API
+        :param root_path_list: List of root paths
+        :param albumprops_cache_param: Dictionary mapping .albumprops file paths to AlbumModel objects
+        :param album_models: The album models built so far, modified in place
+        """
+        including = {path: model for path, model in albumprops_cache_param.items() if model.include_assets}
+        if not including:
+            return
+        if not self.config.find_assets_in_albums:
+            logging.warning("include_assets is used in %d %s files, but only assets not yet in any album are considered. "
+                            "Set --find-assets-in-albums / FIND_ASSETS_IN_ALBUMS to include assets that are already in an album.",
+                            len(including), FolderAlbumCreator.ALBUMPROPS_FILE_NAME)
+        for albumprops_path, albumprops_model in including.items():
+            album_dir_path = os.path.dirname(albumprops_path)
+            root_path = FolderAlbumCreator.__identify_root_path(album_dir_path + '/', root_path_list)
+            if not root_path:
+                logging.warning("%s is not below any root path, ignoring include_assets", albumprops_path)
+                continue
+            path_chunks = [chunk for chunk in album_dir_path.replace(root_path, '', 1).split('/') if chunk]
+            album_name = self.create_album_name(path_chunks, self.config.album_level_separator, self.config.album_name_post_regex) if path_chunks else None
+            inherited_album_model = FolderAlbumCreator.get_album_properties_with_inheritance(album_name or '', album_dir_path, root_path, albumprops_cache_param)
+            final_album_name = inherited_album_model.override_name if inherited_album_model and inherited_album_model.override_name else album_name
+            if not final_album_name:
+                logging.warning("Could not determine an album name for %s, ignoring include_assets", albumprops_path)
+                continue
+
+            patterns = []
+            for entry in albumprops_model.include_assets:
+                base_path = root_path if entry.startswith('/') else album_dir_path
+                patterns.append((entry, regex.compile(Configuration.path_glob_to_re(base_path, entry.lstrip('/')))))
+
+            album_model = album_models.get(final_album_name)
+            if album_model is None:
+                album_model = AlbumModel(album_name or final_album_name)
+                self.set_album_properties_in_model(album_model)
+                if inherited_album_model:
+                    album_model.merge_from(inherited_album_model, AlbumModel.ALBUM_MERGE_MODE_OVERRIDE)
+                album_models[album_model.get_final_name()] = album_model
+            asset_ids_in_album = {asset.id for asset in album_model.assets}
+            matched_patterns = set()
+            added = 0
+            for asset in asset_list:
+                for entry, pattern in patterns:
+                    if pattern.fullmatch(asset.original_path):
+                        matched_patterns.add(entry)
+                        if asset.id not in asset_ids_in_album:
+                            album_model.assets.append(asset)
+                            asset_ids_in_album.add(asset.id)
+                            added += 1
+                        break
+            for entry, _ in patterns:
+                # Without find_assets_in_albums, assets included by an earlier run are not fetched again
+                if entry not in matched_patterns and self.config.find_assets_in_albums:
+                    logging.warning("include_assets entry '%s' in %s matches no asset", entry, albumprops_path)
+            logging.info("Added %d assets from include_assets of %s to album '%s'", added, albumprops_path, final_album_name)
 
     # pylint: disable=R1705
     @staticmethod
