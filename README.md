@@ -803,9 +803,43 @@ inherit_properties:
   - "description"
   - "share_with"
   - "visibility"
+# Assets from other folders to add to this album as well (see "Including Assets from Other Folders")
+include_assets:
+  - "../2023-06-24/IMG_0042.jpg"
+  - "/2023/2023-07/**/*.jpg"
+# Same, but with regular expressions matched against the asset path after the root path
+include_assets_regex:
+  - '2023/2023-08/.*/IMG_\d+\.jpg'
 ```
 All properties are optional.  
 The scripts expects the file to be in UTF-8 encoding.
+
+#### Including Assets from Other Folders
+
+`include_assets` and `include_assets_regex` add assets that live in other folders to the album of the folder containing the `.albumprops` file, in addition to the album of their own folder. This is useful for albums that collect photos from all over the library, for example a photo book, without keeping copies of the files in the album's folder. The folder may even contain no assets of its own.
+
+- In `include_assets`, each entry is a file path or a glob-style pattern (`*`, `?`, `**`), matched against the assets' paths. To include all assets of a folder, use `<folder>/**`. `[` and `]` in an entry start a character class; to match them literally, use `[[]` and `[]]` or `?`.
+- Entries starting with `/` are relative to the root path the `.albumprops` file is in, all other entries are relative to the folder containing the `.albumprops` file. `..` moves up a folder, e.g. to reach another root path.
+- `include_assets_regex` takes regular expressions instead, in the same way as `--path-filter-regex`: an asset is included if its path after the root path the `.albumprops` file is in fully matches the expression (no leading `/`). Unlike `include_assets`, it only matches assets below the root path the `.albumprops` file is in.
+- Both properties can be used together. A single string is accepted as well as a list. Empty or invalid entries are logged as errors and skipped.
+- An entry that matches no asset is logged as a warning.
+- `include_assets` and `include_assets_regex` are not inherited.
+- `--ignore` and `--path-filter` do not apply to included assets: listing an asset explicitly includes it. They do apply to the `.albumprops` file itself, so its folder must not be ignored or filtered out.
+- Like all other assets, included assets are never removed from an album again: removing an entry from `include_assets` does not remove its assets from the album.
+
+> [!IMPORTANT]  
+> Included assets are usually already part of the album of their own folder. Set `--find-assets-in-albums` (`FIND_ASSETS_IN_ALBUMS` for Docker), otherwise the script does not see these assets after their first run. The script logs a warning if `include_assets` or `include_assets_regex` is used without it.
+
+Example: `/photos/Photo Books/2019 Grandma/.albumprops`
+```yaml
+override_name: "Photo Book: Grandma 2019"
+include_assets:
+  - "/2018/2018-12-24/IMG_1002.jpg"
+  - "/2019/2019-06-*/**/*.jpg"
+  - "cover.jpg"
+include_assets_regex:
+  - '2020/2020-0[1-3]/.*/(IMG|DSC)_\d{4}\.jpg'
+```
 
 #### Property Inheritance
 

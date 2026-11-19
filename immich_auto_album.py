@@ -16,6 +16,7 @@ import logging
 import sys
 import fnmatch
 import os
+import posixpath
 import datetime
 from collections import OrderedDict, defaultdict
 import random
@@ -1071,6 +1072,13 @@ class AlbumModel:
         self.inherit: Optional[bool] = None
         # List of property names that should be inherited
         self.inherit_properties: Optional[list[str]] = None
+        # List of paths or glob patterns of assets outside this folder to add to this album as well.
+        # Relative to the folder of the .albumprops file, or to the root path if starting with '/'.
+        # Not inherited, only read from the .albumprops file itself.
+        self.include_assets: Optional[list[str]] = None
+        # List of regular expressions matched against the asset paths after the root path of the .albumprops file.
+        # Matching assets are added to this album as well. Not inherited, only read from the .albumprops file itself.
+        self.include_assets_regex: Optional[list[str]] = None
 
     def get_album_properties_dict(self) -> dict[str, Any]:
         """
@@ -1234,6 +1242,40 @@ class AlbumModel:
         return self.name
 
     @staticmethod
+    def parse_include_assets(album_properties: dict, album_properties_file_path: str, property_name: str = 'include_assets') -> Optional[list[str]]:
+        """
+        Parses the include_assets or include_assets_regex property of an album properties file.
+        Empty entries and entries that are not valid glob patterns (include_assets) or regular expressions
+        (include_assets_regex) are logged as errors and skipped.
+
+        :param album_properties: The parsed album properties file
+        :param album_properties_file_path: The path of the album properties file, for logging
+        :param property_name: The property to parse, `include_assets` or `include_assets_regex`
+        :returns: A list of paths, glob patterns or regular expressions, or None if the property is missing or invalid
+        :rtype: list[str] | None
+        """
+        include_assets = album_properties.get(property_name)
+        if include_assets is None:
+            return None
+        if isinstance(include_assets, str):
+            include_assets = [include_assets]
+        if not isinstance(include_assets, list) or not all(isinstance(entry, str) for entry in include_assets):
+            logging.error("Ignoring %s in %s: it must be a string or a list of strings", property_name, album_properties_file_path)
+            return None
+        valid_entries = []
+        for entry in include_assets:
+            if entry.strip('/') == '':
+                logging.error("Ignoring empty entry in %s of %s", property_name, album_properties_file_path)
+                continue
+            try:
+                # The base path of a glob is escaped when matching, so only the entry itself can be invalid
+                regex.compile(entry if property_name == 'include_assets_regex' else Utils.glob_to_re('/' + entry.lstrip('/')))
+                valid_entries.append(entry)
+            except regex.error as e:
+                logging.error("Ignoring invalid entry '%s' in %s of %s: %s", entry, property_name, album_properties_file_path, e)
+        return valid_entries if valid_entries else None
+
+    @staticmethod
     def parse_album_properties_file(album_properties_file_path: str):
         """
         Parses the provided album properties file into an AlbumModel
@@ -1275,6 +1317,10 @@ class AlbumModel:
             for inheritance_prop_name in AlbumModel.ALBUM_INHERITANCE_VARIABLES:
                 if inheritance_prop_name in album_properties:
                     album_props_template_vars[inheritance_prop_name] = album_properties[inheritance_prop_name]
+
+            # Parse assets to include from outside the album's folder
+            album_props_template.include_assets = AlbumModel.parse_include_assets(album_properties, album_properties_file_path)
+            album_props_template.include_assets_regex = AlbumModel.parse_include_assets(album_properties, album_properties_file_path, 'include_assets_regex')
 
             return album_props_template
 
@@ -1331,26 +1377,6 @@ class Configuration():
     # Static (Global) configuration options
     log_level: str = str(CONFIG_DEFAULTS['log_level'])
 
-    # Translation of GLOB-style patterns to Regex
-    # Source: https://stackoverflow.com/a/63212852
-    # FIXME_EVENTUALLY: Replace with glob.translate() introduced with Python 3.13
-    __escaped_glob_tokens_to_re = OrderedDict((
-        # Order of ``**/`` and ``/**`` in RE tokenization pattern doesn't matter because ``**/`` will be caught first no matter what, making ``/**`` the only option later on.
-        # W/o leading or trailing ``/`` two consecutive asterisks will be treated as literals.
-        ('/\\*\\*', '(?:/.+?)*'), # Edge-case #1. Catches recursive globs in the middle of path. Requires edge case #2 handled after this case.
-        ('\\*\\*/', '(?:^.+?/)*'), # Edge-case #2. Catches recursive globs at the start of path. Requires edge case #1 handled before this case. ``^`` is used to ensure proper location for ``**/``.
-        ('\\*', '[^/]*'), # ``[^/]*`` is used to ensure that ``*`` won't match subdirs, as with naive ``.*?`` solution.
-        ('\\?', '.'),
-        ('\\[\\*\\]', '\\*'), # Escaped special glob character.
-        ('\\[\\?\\]', '\\?'), # Escaped special glob character.
-        ('\\[!', '[^'), # Requires ordered dict, so that ``\\[!`` preceded ``\\[`` in RE pattern.
-                        # Needed mostly to differentiate between ``!`` used within character class ``[]`` and outside of it, to avoid faulty conversion.
-        ('\\[', '['),
-        ('\\]', ']'),
-    ))
-
-    __escaped_glob_replacement = regex.compile('(%s)' % '|'.join(__escaped_glob_tokens_to_re).replace('\\', '\\\\\\'))
-
     def __init__(self,  args: dict[str, Any]):
         """
         Instantiates the configuration object using the provided arguments.
@@ -1401,13 +1427,13 @@ class Configuration():
         self.ignore_albums_regex : list[str] = args["ignore_regex"] if args["ignore_regex"] is not None else []
         if self.ignore_albums:
             for ignore_albums_entry in self.ignore_albums:
-                self.ignore_albums_regex.append(Configuration.__glob_to_re(Configuration.__expand_to_glob(ignore_albums_entry)))
+                self.ignore_albums_regex.append(Utils.glob_to_re(Utils.expand_to_glob(ignore_albums_entry)))
 
         # Create path filter regular expressions
         self.path_filter_regex : list[str] = args["path_filter_regex"] if args["path_filter_regex"] is not None else []
         if self.path_filter:
             for path_filter_entry in self.path_filter:
-                self.path_filter_regex.append(Configuration.__glob_to_re(Configuration.__expand_to_glob(path_filter_entry)))
+                self.path_filter_regex.append(Utils.glob_to_re(Utils.expand_to_glob(path_filter_entry)))
 
         # append trailing slash to all root paths
         # pylint: disable=C0200
@@ -1477,37 +1503,6 @@ class Configuration():
                 if self.album_levels_range_arr[0] > 0:
                     self.album_levels_range_arr[0] -= 1
                     self.album_levels_range_arr[1] -= 1
-
-    @staticmethod
-    def __glob_to_re(pattern: str) -> str:
-        """
-        Converts the provided GLOB pattern to
-        a regular expression.
-
-        :param pattern: A GLOB-style pattern to convert to a regular expression
-        
-        :returns: A regular expression matching the same strings as the provided GLOB pattern
-        :rtype: str
-        """
-        return Configuration.__escaped_glob_replacement.sub(lambda match: Configuration.__escaped_glob_tokens_to_re[match.group(0)], regex.escape(pattern))
-
-    @staticmethod
-    def __expand_to_glob(expr: str) -> str:
-        """
-        Expands the passed expression to a glob-style
-        expression if it doesn't contain neither a slash nor an asterisk.
-        The resulting glob-style expression matches any path that contains the
-        original expression anywhere.
-
-        :param expr: Expression to expand to a GLOB-style expression if not already one
-        :returns: The original expression if it contained a slash or an asterisk, otherwise `**/*<expr>*/**`
-        :rtype: str
-        """
-        if '/' not in expr and '*' not in expr:
-            glob_expr = f'**/*{expr}*/**'
-            logging.debug("expanding %s to %s", expr, glob_expr)
-            return glob_expr
-        return expr
 
     @staticmethod
     def get_arg_parser() -> argparse.ArgumentParser:
@@ -2338,7 +2333,86 @@ class FolderAlbumCreator():
                 album_models[new_album_model.get_final_name()] = new_album_model
             else:
                 logging.warning("Got empty album name for asset path %s, check your album_level settings!", asset_path)
+
+        if albumprops_cache_param:
+            self.add_included_assets(asset_list, root_path_list, albumprops_cache_param, album_models)
         return album_models
+
+    def add_included_assets(self, asset_list : list[AssetResponseDto], root_path_list : list[str],
+                            albumprops_cache_param: dict[str, AlbumModel], album_models: dict[str, AlbumModel]) -> None:
+        """
+        Adds assets listed in the include_assets or include_assets_regex property of .albumprops files to the album
+        of the folder containing that .albumprops file, in addition to the album of their own folder.
+        include_assets patterns are resolved relative to the folder of the .albumprops file, or relative to the
+        root path if they start with '/'. Glob wildcards *, ? and ** are supported; the folder and root
+        paths themselves are matched literally.
+        include_assets_regex entries are regular expressions matched against the asset path after the root path,
+        like --path-filter-regex.
+
+        :param asset_list: List of assets fetched from Immich API
+        :param root_path_list: List of root paths
+        :param albumprops_cache_param: Dictionary mapping .albumprops file paths to AlbumModel objects
+        :param album_models: The album models built so far, modified in place
+        """
+        including = {path: model for path, model in albumprops_cache_param.items() if model.include_assets or model.include_assets_regex}
+        if not including:
+            return
+        if not self.config.find_assets_in_albums:
+            logging.warning("include_assets or include_assets_regex is used in %d %s files, but only assets not yet in any album are considered. "
+                            "Set --find-assets-in-albums / FIND_ASSETS_IN_ALBUMS to include assets that are already in an album.",
+                            len(including), FolderAlbumCreator.ALBUMPROPS_FILE_NAME)
+        for albumprops_path, albumprops_model in including.items():
+            album_dir_path = os.path.dirname(albumprops_path)
+            root_path = FolderAlbumCreator.__identify_root_path(album_dir_path + '/', root_path_list)
+            if not root_path:
+                logging.warning("%s is not below any root path, ignoring include_assets and include_assets_regex", albumprops_path)
+                continue
+            path_chunks = [chunk for chunk in album_dir_path.replace(root_path, '', 1).split('/') if chunk]
+            album_name = self.create_album_name(path_chunks, self.config.album_level_separator, self.config.album_name_post_regex) if path_chunks else None
+            inherited_album_model = FolderAlbumCreator.get_album_properties_with_inheritance(album_name or '', album_dir_path, root_path, albumprops_cache_param)
+            final_album_name = inherited_album_model.override_name if inherited_album_model and inherited_album_model.override_name else album_name
+            if not final_album_name:
+                logging.warning("Could not determine an album name for %s, ignoring include_assets and include_assets_regex", albumprops_path)
+                continue
+
+            # (property name, entry, compiled pattern, prefix stripped from the asset path before matching)
+            # include_assets patterns match the full asset path, include_assets_regex the path after the root path
+            patterns = []
+            for entry in albumprops_model.include_assets or []:
+                base_path = root_path if entry.startswith('/') else album_dir_path
+                patterns.append(('include_assets', entry, regex.compile(Utils.path_glob_to_re(base_path, entry.lstrip('/'))), ''))
+            for entry in albumprops_model.include_assets_regex or []:
+                if entry.startswith('/'):
+                    logging.warning("include_assets_regex entry '%s' in %s starts with '/', but is matched against the path after the root path",
+                                    entry, albumprops_path)
+                patterns.append(('include_assets_regex', entry, regex.compile(entry), root_path))
+
+            album_model = album_models.get(final_album_name)
+            if album_model is None:
+                album_model = AlbumModel(album_name or final_album_name)
+                self.set_album_properties_in_model(album_model)
+                if inherited_album_model:
+                    album_model.merge_from(inherited_album_model, AlbumModel.ALBUM_MERGE_MODE_OVERRIDE)
+                album_models[album_model.get_final_name()] = album_model
+            asset_ids_in_album = {asset.id for asset in album_model.assets}
+            matched_patterns = set()
+            added = 0
+            for asset in asset_list:
+                # Check all patterns, so that every pattern matching an asset counts as used
+                matching = [(property_name, entry) for property_name, entry, pattern, prefix in patterns
+                            if asset.original_path.startswith(prefix) and pattern.fullmatch(asset.original_path[len(prefix):])]
+                if matching:
+                    matched_patterns.update(matching)
+                    if asset.id not in asset_ids_in_album:
+                        album_model.assets.append(asset)
+                        asset_ids_in_album.add(asset.id)
+                        added += 1
+            for property_name, entry, _, _ in patterns:
+                # Without find_assets_in_albums, assets included by an earlier run are not fetched again
+                if (property_name, entry) not in matched_patterns and self.config.find_assets_in_albums:
+                    logging.warning("%s entry '%s' in %s matches no asset", property_name, entry, albumprops_path)
+            logging.log(logging.INFO if added else logging.DEBUG, "Added %d assets from include_assets/include_assets_regex of %s to album '%s'",
+                        added, albumprops_path, final_album_name)
 
     # pylint: disable=R1705
     @staticmethod
@@ -2564,6 +2638,77 @@ class FolderAlbumCreator():
 
 class Utils:
     """A collection of helper methods"""
+    # Translation of GLOB-style patterns to Regex
+    # Source: https://stackoverflow.com/a/63212852
+    # FIXME_EVENTUALLY: Replace with glob.translate() introduced with Python 3.13
+    __escaped_glob_tokens_to_re = OrderedDict((
+        # Order of ``**/`` and ``/**`` in RE tokenization pattern doesn't matter because ``**/`` will be caught first no matter what, making ``/**`` the only option later on.
+        # W/o leading or trailing ``/`` two consecutive asterisks will be treated as literals.
+        ('/\\*\\*', '(?:/.+?)*'), # Edge-case #1. Catches recursive globs in the middle of path. Requires edge case #2 handled after this case.
+        ('\\*\\*/', '(?:^.+?/)*'), # Edge-case #2. Catches recursive globs at the start of path. Requires edge case #1 handled before this case. ``^`` is used to ensure proper location for ``**/``.
+        ('\\*', '[^/]*'), # ``[^/]*`` is used to ensure that ``*`` won't match subdirs, as with naive ``.*?`` solution.
+        ('\\?', '.'),
+        ('\\[\\*\\]', '\\*'), # Escaped special glob character.
+        ('\\[\\?\\]', '\\?'), # Escaped special glob character.
+        ('\\[!', '[^'), # Requires ordered dict, so that ``\\[!`` preceded ``\\[`` in RE pattern.
+                        # Needed mostly to differentiate between ``!`` used within character class ``[]`` and outside of it, to avoid faulty conversion.
+        ('\\[', '['),
+        ('\\]', ']'),
+    ))
+
+    __escaped_glob_replacement = regex.compile('(%s)' % '|'.join(__escaped_glob_tokens_to_re).replace('\\', '\\\\\\'))
+
+    @staticmethod
+    def glob_to_re(pattern: str) -> str:
+        """
+        Converts the provided GLOB pattern to
+        a regular expression.
+
+        :param pattern: A GLOB-style pattern to convert to a regular expression
+        
+        :returns: A regular expression matching the same strings as the provided GLOB pattern
+        :rtype: str
+        """
+        return Utils.__escaped_glob_replacement.sub(lambda match: Utils.__escaped_glob_tokens_to_re[match.group(0)], regex.escape(pattern))
+
+    @staticmethod
+    def path_glob_to_re(base_path: str, pattern: str) -> str:
+        """
+        Converts a GLOB pattern relative to base_path to a regular expression matching full paths.
+        base_path is taken literally (it may contain characters like '[' or '*'), only the pattern
+        is interpreted as GLOB. Leading '..' components of the pattern move up from base_path.
+
+        :param base_path: The directory the pattern is relative to, taken literally
+        :param pattern: A GLOB-style pattern (`*`, `?`, `**`) relative to base_path
+        :returns: A regular expression matching the paths the pattern refers to
+        :rtype: str
+        """
+        parts = [part for part in posixpath.normpath(pattern).split('/') if part not in ('', '.')]
+        base = base_path.rstrip('/')
+        while parts and parts[0] == '..':
+            base = posixpath.dirname(base)
+            parts.pop(0)
+        # The leading '/' stays part of the pattern so that a leading '**/' is recognized as recursive
+        return regex.escape(base.rstrip('/')) + Utils.glob_to_re('/' + '/'.join(parts))
+
+    @staticmethod
+    def expand_to_glob(expr: str) -> str:
+        """
+        Expands the passed expression to a glob-style
+        expression if it doesn't contain neither a slash nor an asterisk.
+        The resulting glob-style expression matches any path that contains the
+        original expression anywhere.
+
+        :param expr: Expression to expand to a GLOB-style expression if not already one
+        :returns: The original expression if it contained a slash or an asterisk, otherwise `**/*<expr>*/**`
+        :rtype: str
+        """
+        if '/' not in expr and '*' not in expr:
+            glob_expr = f'**/*{expr}*/**'
+            logging.debug("expanding %s to %s", expr, glob_expr)
+            return glob_expr
+        return expr
+
     @staticmethod
     def divide_chunks(full_list: list[Any], chunk_size: int):
         """
