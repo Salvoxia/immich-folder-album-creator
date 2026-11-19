@@ -482,7 +482,7 @@ class ApiClient:
         while query_count == 0 or cursor is not None:
             query_count += 1
             response = self.__fetch_asset_chunk(search_filter, cursor)
-            assets_found = assets_found + response.assets.items
+            assets_found.extend(response.assets.items)
             logging.debug("Received %s assets with chunk %s (cursor %s)", len(response.assets.items), query_count, cursor)
             cursor = response.assets.next_cursor
             logging.debug("Next cursor = %s", response.assets.next_cursor)
@@ -515,7 +515,7 @@ class ApiClient:
         start_time = perf_counter()
         page_fetched, response = self.__fetch_asset_chunk_with_options(search_options, page)
         assets_received = response.assets.items
-        assets_found = assets_found + assets_received
+        assets_found.extend(assets_received)
         logging.debug("Received %s assets with chunk %s", len(assets_received), page_fetched)
 
         page += 1
@@ -538,7 +538,7 @@ class ApiClient:
                 # no next page, it was the last.
                 #page_fetched : str = str(int(result['assets']['nextPage']) - 1) if result['assets']['nextPage'] is not None else 'last'
                 logging.debug("Received %s assets with chunk %s", len(assets_received), page_fetched)
-                assets_found = assets_found + assets_received
+                assets_found.extend(assets_received)
 
             # advance page by number of parallel threads
             page = page + self.config.threads
@@ -2146,51 +2146,58 @@ class FolderAlbumCreator():
         so we need to filter out all video components belonging to a live photo. The static component has a property livePhotoVideoId set
         with the asset ID of the video component.
 
-        :param is_not_in_album: Flag indicating whether to fetch only assets that are not part
-                of an album or not. If this and find_archived are True, we can assume asset_list is complete
-                and should contain any static components.
-        :param find_archived: Flag indicating whether to only fetch assets that are archived. If this and is_not_in_album are
-                True, we can assume asset_list is complete and should contain any static components.
+        The static component may be missing from asset_list (because it is in an album or archived). Only the assets asset_list
+        cannot contain are fetched, and only their livePhotoVideoId is kept, so that no second full asset list is held in memory.
+
+        :param is_not_in_album: Flag indicating whether asset_list only contains assets that are not part of an album.
+                If True, all timeline and archived assets are fetched to find static components.
+        :param find_archived: Flag indicating whether asset_list contains archived assets. If False, archived assets are fetched
+                to find static components.
 
         :returns: An asset list without live photo video components
         :rtype: list[AssetResponseDto]
         """
         logging.info("Checking for live photo video components")
-        # Filter for all video assets
-        asset_list_mov = [asset for asset in asset_list if asset.type == AssetTypeEnum.VIDEO]
+        # IDs of all video assets; asset IDs are UUIDs, while livePhotoVideoId is a string, so compare as strings
+        video_asset_ids = {str(asset.id) for asset in asset_list if asset.type == AssetTypeEnum.VIDEO}
 
-        if len(asset_list_mov) == 0:
+        if len(video_asset_ids) == 0:
             logging.debug("No live photo video components found")
             return asset_list
 
-        # If either is not True, we need to fetch all assets
+        # Video component IDs referenced by static components
+        live_photo_video_ids = {asset.live_photo_video_id for asset in asset_list if asset.live_photo_video_id is not None}
+        # Fetch the assets asset_list cannot contain: all timeline assets if asset_list only contains assets not in an album,
+        # all archived assets if asset_list does not contain archived ones or only those not in an album
+        search_options_to_fetch = []
+        if is_not_in_album:
+            search_options_to_fetch.append(MetadataSearchDto(isNotInAlbum=False))
         if is_not_in_album or not find_archived:
-            logging.debug("Fetching all assets for live photo video component check")
+            search_options_to_fetch.append(MetadataSearchDto(isNotInAlbum=False, visibility=AssetVisibility.ARCHIVE))
+        if search_options_to_fetch:
+            logging.debug("Fetching additional assets for live photo video component check")
             # Future: Remove legacy calls when Immich removed the deprecated fields from /search/metadata
             try:
-                full_asset_list = self.api_client.fetch_assets_with_options(MetadataSearchDto(isNotInAlbum=False))
-                full_asset_list += self.api_client.fetch_assets_with_options(MetadataSearchDto(isNotInAlbum=False, visibility=AssetVisibility.ARCHIVE))
+                for search_options in search_options_to_fetch:
+                    live_photo_video_ids.update(asset.live_photo_video_id for asset in self.api_client.fetch_assets_with_options(search_options)
+                                                if asset.live_photo_video_id is not None)
             except BadRequestException:
                 # Use an empty filter to fetch all assets
-                full_asset_list = self.api_client.fetch_assets_with_filter(SearchFilter())
-        else:
-            full_asset_list = asset_list
-
-        # Find all assets with a live ID set
-        asset_list_with_live_id = [asset for asset in full_asset_list if asset.live_photo_video_id is not None]
+                live_photo_video_ids.update(asset.live_photo_video_id for asset in self.api_client.fetch_assets_with_filter(SearchFilter())
+                                            if asset.live_photo_video_id is not None)
 
         # Find all video components
-        asset_list_video_components_ids = []
-        for asset_static_component in asset_list_with_live_id:
-            for asset_mov in asset_list_mov:
-                if asset_mov.id == asset_static_component.live_photo_video_id:
-                    asset_list_video_components_ids.append(asset_mov.id)
-                    logging.debug("File %s is a video component of a live photo, removing from list", asset_mov.original_path)
+        video_component_ids = video_asset_ids & live_photo_video_ids
+        if logging.getLogger().isEnabledFor(logging.DEBUG):
+            for asset in asset_list:
+                if str(asset.id) in video_component_ids:
+                    logging.debug("File %s is a video component of a live photo, removing from list", asset.original_path)
 
-        logging.info("Removing %s live photo video components from asset list", len(asset_list_video_components_ids))
+        logging.info("Removing %s live photo video components from asset list", len(video_component_ids))
         # Remove all video components from the asset list
-        asset_list_without_video_components = [asset for asset in asset_list if asset.id not in asset_list_video_components_ids]
-        return asset_list_without_video_components
+        if not video_component_ids:
+            return asset_list
+        return [asset for asset in asset_list if str(asset.id) not in video_component_ids]
 
     # pylint: disable=R0914
     def set_album_properties_in_model(self, album_model_to_update: AlbumModel) -> None:
@@ -2452,11 +2459,12 @@ class FolderAlbumCreator():
             # otherwise we need all images, even if they are part of an album
             if self.config.mode == Configuration.SCRIPT_MODE_CREATE:
                 assets = self.api_client.fetch_assets(not self.config.find_assets_in_albums, [AssetVisibility.ARCHIVE] if self.config.find_archived_assets else [])
+                # Remove live photo video components
+                assets = self.check_for_and_remove_live_photo_video_components(assets, not self.config.find_assets_in_albums, self.config.find_archived_assets)
             else:
                 assets = self.api_client.fetch_assets(False, [AssetVisibility.ARCHIVE])
-
-            # Remove live photo video components
-            assets = self.check_for_and_remove_live_photo_video_components(assets, not self.config.find_assets_in_albums, self.config.find_archived_assets)
+                # Remove live photo video components; assets already contains all assets in and out of albums, archived ones included
+                assets = self.check_for_and_remove_live_photo_video_components(assets, False, True)
             logging.info("%d photos found", len(assets))
             logging.info("Sorting assets to corresponding albums using folder name")
             albums_to_create = self.build_album_list(assets, self.config.root_paths, albumprops_cache)
