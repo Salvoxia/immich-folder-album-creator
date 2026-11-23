@@ -70,6 +70,42 @@ ENV_IS_DOCKER = "IS_DOCKER"
 
 T = TypeVar("T")
 
+@dataclass(slots=True, frozen=True)
+class AssetRecord:
+    """
+    The asset fields this script uses.
+
+    A parsed AssetResponseDto takes ~4.4 KB of memory, this record ~0.4 KB. Fetched assets
+    are converted page by page so the DTOs can be freed right away instead of being kept
+    for the whole run.
+    """
+    id: UUID
+    original_path: str
+    type: AssetTypeEnum
+    live_photo_video_id: Optional[str]
+    file_created_at: datetime.datetime
+    owner_id: UUID
+    original_file_name: str
+
+    @staticmethod
+    def from_dto(asset: AssetResponseDto) -> AssetRecord:
+        """
+        Creates an AssetRecord from an AssetResponseDto
+
+        :param asset: The asset returned by the API
+        :returns: The record holding the fields of asset this script uses
+        :rtype: AssetRecord
+        """
+        return AssetRecord(
+            id=asset.id,
+            original_path=asset.original_path,
+            type=asset.type,
+            live_photo_video_id=asset.live_photo_video_id,
+            file_created_at=asset.file_created_at,
+            owner_id=asset.owner_id,
+            original_file_name=asset.original_file_name,
+        )
+
 @dataclass
 class ApiClientConfig:
     """
@@ -427,7 +463,7 @@ class ApiClient:
         return None
 
 
-    def fetch_assets(self, is_not_in_album: bool, visibility_options: list[AssetVisibility]) -> list[AssetResponseDto]:
+    def fetch_assets(self, is_not_in_album: bool, visibility_options: list[AssetVisibility]) -> list[AssetRecord]:
         """
         Fetches assets from the Immich API.
 
@@ -438,9 +474,9 @@ class ApiClient:
                 of an album or not. If set to False, will find images in albums and not part of albums
         :param visibility_options: A list of visibility options to find and return assets with
         :returns: An array of asset objects
-        :rtype: list[AssetResponseDto]
+        :rtype: list[AssetRecord]
         """
-        asset_list: list[AssetResponseDto] = []
+        asset_list: list[AssetRecord] = []
 
         try:
             asset_list = self.fetch_assets_with_options(MetadataSearchDto(is_not_in_album=is_not_in_album, visibility=AssetVisibility.TIMELINE))
@@ -462,16 +498,16 @@ class ApiClient:
 
 
     # pylint: disable=R0914
-    def fetch_assets_with_filter(self, search_filter: SearchFilter) -> list[AssetResponseDto]:
+    def fetch_assets_with_filter(self, search_filter: SearchFilter) -> list[AssetRecord]:
         """
         Fetches assets from the Immich API the specififed search filter.
         Assets are retreived in parallel based on configured number of threads.
 
         :param search_filter: SearchFilter object containing all filter options to use
         :returns: An array of asset objects
-        :rtype: list[AssetResponseDto]
+        :rtype: list[AssetRecord]
         """
-        assets_found: list[AssetResponseDto] = []
+        assets_found: list[AssetRecord] = []
         # prepare request body
 
         # Record time when we started fetching
@@ -482,7 +518,7 @@ class ApiClient:
         while query_count == 0 or cursor is not None:
             query_count += 1
             response = self.__fetch_asset_chunk(search_filter, cursor)
-            assets_found = assets_found + response.assets.items
+            assets_found.extend(AssetRecord.from_dto(asset) for asset in response.assets.items)
             logging.debug("Received %s assets with chunk %s (cursor %s)", len(response.assets.items), query_count, cursor)
             cursor = response.assets.next_cursor
             logging.debug("Next cursor = %s", response.assets.next_cursor)
@@ -492,7 +528,7 @@ class ApiClient:
         return assets_found
 
     # pylint: disable=R0914
-    def fetch_assets_with_options(self, search_options: MetadataSearchDto) -> list[AssetResponseDto]:
+    def fetch_assets_with_options(self, search_options: MetadataSearchDto) -> list[AssetRecord]:
         """
         Deprecated: Use fetch_assets_with_filter() instead!
 
@@ -502,9 +538,9 @@ class ApiClient:
 
         :param search_options: Dictionary containing options to pass to the search/metadata API endpoint
         :returns: An array of asset objects
-        :rtype: list[AssetResponseDto]
+        :rtype: list[AssetRecord]
         """
-        assets_found: list[AssetResponseDto] = []
+        assets_found: list[AssetRecord] = []
         # prepare request body
         # This API call allows a maximum page size of 1000
         number_of_assets_to_fetch_per_request_search = min(1000, self.config.fetch_chunk_size)
@@ -515,7 +551,7 @@ class ApiClient:
         start_time = perf_counter()
         page_fetched, response = self.__fetch_asset_chunk_with_options(search_options, page)
         assets_received = response.assets.items
-        assets_found = assets_found + assets_received
+        assets_found.extend(AssetRecord.from_dto(asset) for asset in assets_received)
         logging.debug("Received %s assets with chunk %s", len(assets_received), page_fetched)
 
         page += 1
@@ -538,7 +574,7 @@ class ApiClient:
                 # no next page, it was the last.
                 #page_fetched : str = str(int(result['assets']['nextPage']) - 1) if result['assets']['nextPage'] is not None else 'last'
                 logging.debug("Received %s assets with chunk %s", len(assets_received), page_fetched)
-                assets_found = assets_found + assets_received
+                assets_found.extend(AssetRecord.from_dto(asset) for asset in assets_received)
 
             # advance page by number of parallel threads
             page = page + self.config.threads
@@ -743,7 +779,7 @@ class ApiClient:
 
         :raises: Exception if any API call fails
         """
-        offline_assets: list[AssetResponseDto] = []
+        offline_assets: list[AssetRecord] = []
         # To find all offline assets we need to check for each possible visibility
         # Future: Remove legacy calls when Immich removed the deprecated fields from /search/metadata
         try:
@@ -763,7 +799,7 @@ class ApiClient:
 
         # filter for assets having the current user as owner (we cannot remove our partner's offline assets)
         me: UserAdminResponseDto = self.fetch_current_user()
-        my_offline_assets: list[AssetResponseDto] = [ offline_asset for offline_asset in offline_assets if offline_asset.owner_id == me.id ]
+        my_offline_assets: list[AssetRecord] = [ offline_asset for offline_asset in offline_assets if offline_asset.owner_id == me.id ]
 
         if len(my_offline_assets) > 0:
             logging.info("Deleting %s offline assets", len(my_offline_assets))
@@ -772,7 +808,7 @@ class ApiClient:
         else:
             logging.info("No offline assets found!")
 
-    def delete_assets(self, assets_to_delete: list[AssetResponseDto], force: bool) -> None:
+    def delete_assets(self, assets_to_delete: list[AssetRecord], force: bool) -> None:
         """
         Deletes the provided assets from Immich.
 
@@ -863,7 +899,7 @@ class ApiClient:
         deleted_album_count = 0
         for album_to_delete in all_albums:
             # Fetch assets before delete so we can set visibility after; once deleted, album is gone
-            assets_in_deleted_album: list[AssetResponseDto] = []
+            assets_in_deleted_album: list[AssetRecord] = []
             if assets_visibility is not None:
                 # { "filter": {"albumIds": { "all": ["9eab1ebe-c998-4bdc-a2cc-1722c719e292"]}}}
                 # Future: Remove legacy calls when Immich removed the deprecated fields from /search/metadata
@@ -913,7 +949,7 @@ class ApiClient:
             assert album_to_delete.id is not None, "Album ID must be set"
             # If the archived flag is set it means we need to unarchived all images of deleted albums;
             # In order to do so, we need to fetch all assets of the album we're going to delete
-            assets_in_album : list[AssetResponseDto] = []
+            assets_in_album : list[AssetRecord] = []
             # For cleanup, we only respect the global visibility flag to be able to either do not change
             # visibility at all, or to override whatever might be set in .ablumprops and revert to something else
             if asset_visibility is not None:
@@ -1056,7 +1092,7 @@ class AlbumModel:
         # The description to set for the album
         self.description: Optional[str] = None
         # A list of dicts with Immich assets
-        self.assets: list[AssetResponseDto] = []
+        self.assets: list[AssetRecord] = []
         # a list of dicts with keys user and role, listing all users and their role to share the album with
         self.share_with: list[AlbumModel.ShareWith] = []
         # Either a fully qualified asset path or one of 'first', 'last', 'random'
@@ -2046,7 +2082,7 @@ class FolderAlbumCreator():
 
         return album_name.strip()
 
-    def choose_thumbnail(self, thumbnail_setting: str, thumbnail_asset_list: list[AssetResponseDto]) -> Optional[AssetResponseDto]:
+    def choose_thumbnail(self, thumbnail_setting: str, thumbnail_asset_list: list[AssetRecord]) -> Optional[AssetRecord]:
         """
         Tries to find an asset to use as thumbnail depending on thumbnail_setting.
 
@@ -2054,7 +2090,7 @@ class FolderAlbumCreator():
         :param asset_list: A list of assets to choose a thumbnail from, based on thumbnail_setting
 
         :returns: An Immich asset dict or None if no thumbnail was found based on thumbnail_setting
-        :rtype: Optional[AssetResponseDto]
+        :rtype: Optional[AssetRecord]
         """
         # Case: fully qualified path
         if thumbnail_setting not in Configuration.ALBUM_THUMBNAIL_SETTINGS_GLOBAL:
@@ -2138,7 +2174,7 @@ class FolderAlbumCreator():
                 return _.id
         return None
 
-    def check_for_and_remove_live_photo_video_components(self, asset_list: list[AssetResponseDto], is_not_in_album: bool, find_archived: bool) -> list[AssetResponseDto]:
+    def check_for_and_remove_live_photo_video_components(self, asset_list: list[AssetRecord], is_not_in_album: bool, find_archived: bool) -> list[AssetRecord]:
         """
         Checks asset_list for any asset with file ending .mov. This is indicative of a possible video component
         of an Apple Live Photo. There is display bug in the Immich iOS app that prevents live photos from being
@@ -2153,7 +2189,7 @@ class FolderAlbumCreator():
                 True, we can assume asset_list is complete and should contain any static components.
 
         :returns: An asset list without live photo video components
-        :rtype: list[AssetResponseDto]
+        :rtype: list[AssetRecord]
         """
         logging.info("Checking for live photo video components")
         # Filter for all video assets
@@ -2231,7 +2267,7 @@ class FolderAlbumCreator():
             album_model_to_update.comments_and_likes_enabled = False
 
     # pylint: disable=R0914,R1702,R0915
-    def build_album_list(self, asset_list : list[AssetResponseDto], root_path_list : list[str], albumprops_cache_param: Optional[dict[str, AlbumModel]] = None) -> dict[str, AlbumModel]:
+    def build_album_list(self, asset_list : list[AssetRecord], root_path_list : list[str], albumprops_cache_param: Optional[dict[str, AlbumModel]] = None) -> dict[str, AlbumModel]:
         """
         Builds a list of album models, enriched with assets assigned to each album.
         Returns a dict where the key is the album name and the value is the model.
@@ -2338,7 +2374,7 @@ class FolderAlbumCreator():
             self.add_included_assets(asset_list, root_path_list, albumprops_cache_param, album_models)
         return album_models
 
-    def add_included_assets(self, asset_list : list[AssetResponseDto], root_path_list : list[str],
+    def add_included_assets(self, asset_list : list[AssetRecord], root_path_list : list[str],
                             albumprops_cache_param: dict[str, AlbumModel], album_models: dict[str, AlbumModel]) -> None:
         """
         Adds assets listed in the include_assets or include_assets_regex property of .albumprops files to the album
