@@ -253,13 +253,19 @@ class ApiClient:
                 connector=connector,
             )
 
-        self._session_fut = self._submit(create_session())
-        await asyncio.wrap_future(self._session_fut)
+        # __aexit__ is not called if __aenter__ raises, so we must tear down the
+        # non-daemon loop thread ourselves, otherwise the interpreter hangs on exit.
+        try:
+            self._session_fut = self._submit(create_session())
+            await asyncio.wrap_future(self._session_fut)
 
-        # Verify server communication
-        self.server_version: ServerVersionResponseDto | None = self.__fetch_server_version_safe()
-        if self.server_version is None:
-            raise AssertionError("Communication with Immich Server API failed! Make sure the API URL is correct and verify the API Key!")
+            # Verify server communication
+            self.server_version: ServerVersionResponseDto | None = self.__fetch_server_version_safe()
+            if self.server_version is None:
+                raise AssertionError("Communication with Immich Server API failed! Make sure the API URL is correct and verify the API Key!")
+        except BaseException as e:
+            await self.__aexit__(type(e), e, e.__traceback__)
+            raise
 
         return self
 
