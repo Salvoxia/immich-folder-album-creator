@@ -240,7 +240,7 @@ The environment variables are analogous to the script's command line arguments.
 | `CRON_EXPRESSION`            | yes        | `-`              | A [crontab-style expression](https://crontab.guru/) (e.g. `0 * * * *`) to perform album creation on a schedule (e.g. every hour). |
 | `RUN_IMMEDIATELY`            | no         | `false`          | Set to `true` to run the script right away, after running once the script will automatically run again based on the CRON_EXPRESSION (if set) |
 | `ALBUM_LEVELS`               | no         | `1`              | Number of sub-folders or range of sub-folder levels below the root path used for album name creation. Positive numbers start from top of the folder structure, negative numbers from the bottom. Cannot be `0`. If a range should be set, the start level and end level must be separated by a comma. <br>Refer to [How it works](#how-it-works) for a detailed explanation and examples. |
-| `ALBUM_SEPARATOR`            | no         | ` ` (whitepsace) | Separator string to use for compound album names created from nested folders. Only effective if `-a` is set to a value `> 1` |
+| `ALBUM_SEPARATOR`            | no         | ` ` (whitespace) | Separator string to use for compound album names created from nested folders. Only effective if `-a` is set to a value `> 1` |
 | `CHUNK_SIZE`                 | no         | `2000`           | Maximum number of assets to add to an album with a single API call  |
 | `FETCH_CHUNK_SIZE`           | no         | `1000`           | Maximum number of assets to fetch with a single API call |
 | `LOG_LEVEL`                  | no         | `INFO`           | Log level to use (default: INFO), allowed values: `CRITICAL`,`ERROR`,`WARNING`,`INFO`,`DEBUG` |
@@ -371,7 +371,7 @@ This will periodically re-scan the library as per `CRON_EXPRESSION` settings and
 > [!IMPORTANT]  
 > If you choose to omit `CRON_EXPRESSION`, do **NOT** set `restart: unless-stopped`.  
 > When `CRON_EXPRESSION` is not set the script will perform a single run, then exit.  
-> If `restart: unless-stopped` is set as well, the container will continously perform a single run, exit, and restart in an endless loop, generating load.
+> If `restart: unless-stopped` is set as well, the container will continuously perform a single run, exit, and restart in an endless loop, generating load.
 
 To perform a manually triggered __dry run__ (only list albums that __would__ be created) in an already running container, use the following command:
 
@@ -576,7 +576,7 @@ Consider the following folder structure where you have a YYYY/MMDD, YYYY/DD MMM 
 ```
 
 In a default way, the script would create Album as `2020 02 Feb My Birthday` and `2020 0408_Cycling_Holidays_in_the_Alps`.  
-As we see, the album names get pretty long and as Immich extracts EXIF dates, there is no need for these structed dates in album name. Furthermore, the underscores may be good for file operations but don't look nice in our album names. Cleaning up the album names can be accomplished with two regular expressions in sequence:
+As we see, the album names get pretty long and as Immich extracts EXIF dates, there is no need for these structured dates in album name. Furthermore, the underscores may be good for file operations but don't look nice in our album names. Cleaning up the album names can be accomplished with two regular expressions in sequence:
 
 ```bash
 python3 immich_auto_album.py /mnt/library http://localhost:2283/api <key> \
@@ -1173,7 +1173,7 @@ Immich itself deals with this by marking images/videos it no longer sees in thei
 As of version 1.116.0, Immich no longer shows "offline" assets in the main timeline, but only in the Trash, together with deleted assets. If the trash is emptied, Immich forgets about these "offline" assets. If the asset is available again, it is removed from the trash and shows up as normal in the main timeline.
 
 This script offers two levels of synchronization options to deal with these issues with an option called `Sync Mode`. It is an optional argument / environment variable that may have values from 0 to 2.
-The following behaviors wil be triggered by the different values:
+The following behaviors will be triggered by the different values:
   - `0`: No syncing (default)
   - `1`: Delete all empty albums at the end of a run
   - `2`: Delete ("forget") all offline assets, then delete all empty albums
